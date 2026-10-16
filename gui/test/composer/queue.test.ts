@@ -12,7 +12,53 @@ test('delivers offscreen queued input without consuming a newer draft or racing 
   const scenario = (await Bun.file(
     new URL('../fixtures/scenarios/conversation.json', import.meta.url),
   ).json()) as Scenario;
-  scenario.updates = [];
+  scenario.updates = [
+    {
+      sessionId: 'notes',
+      delayMs: 10,
+      update: {
+        kind: 'event',
+        delivery: 'durable',
+        event: {
+          schema_version: 1,
+          event_id: 'notes-start',
+          seq: 1,
+          run_id: 'notes',
+          mono_ms: 0,
+          actor: { kind: 'supervisor' },
+          payload: {
+            event_type: 'task_scheduled',
+            data: { task_id: 'current-turn', state: 'started', queue_key: null, metadata: null },
+          },
+        },
+      },
+    },
+    {
+      sessionId: 'notes',
+      delayMs: 20,
+      update: {
+        kind: 'event',
+        delivery: 'durable',
+        event: {
+          schema_version: 1,
+          event_id: 'notes-end',
+          seq: 2,
+          run_id: 'notes',
+          mono_ms: 1,
+          actor: { kind: 'supervisor' },
+          payload: {
+            event_type: 'task_completed',
+            data: {
+              task_id: 'current-turn',
+              result_summary: 'Finished',
+              result_digest: 'finished',
+              metadata: null,
+            },
+          },
+        },
+      },
+    },
+  ];
   const sent: Intent[] = [];
   class RecordingBackend extends FixtureBackend {
     override async call<M extends Method>(
@@ -64,6 +110,9 @@ test('delivers offscreen queued input without consuming a newer draft or racing 
       });
     });
     startQueueDelivery(store);
+    expect(sent).toHaveLength(0);
+    expect(queuedDrafts(store)[key]).toHaveLength(2);
+    await store.continueSession('notes');
     await delivered;
     expect(sent.flatMap((intent) => (intent.kind === 'submit' ? [intent.text] : []))).toEqual([
       'First @notes.txt @agent:reviewer @resource:release',

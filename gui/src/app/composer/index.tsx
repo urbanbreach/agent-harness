@@ -788,6 +788,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
                 placeholder: colors.text_ghost,
                 selectionWash: colors.overlay_strong,
                 caretWidth: 1.5,
+                scrollBottomInset: 8,
               },
             }}
             style={{
@@ -795,7 +796,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
               maxHeight: 302,
               paddingLeft: 14,
               paddingRight: 14,
-              paddingTop: 3,
+              paddingTop: 2,
               width: '100%',
               fontSize: sp(13.5),
               lineHeight: sp(22),

@@ -177,7 +177,22 @@ export function Suggestions({
                     textOverflow: 'ellipsis',
                   }}
                 />
-                {item.scope && <Badge>{item.scope}</Badge>}
+                {item.scope && (
+                  <Badge
+                    style={{
+                      height: 18,
+                      paddingLeft: 5,
+                      paddingRight: 5,
+                      borderWidth: 1,
+                      borderColor: colors.border_strong,
+                      borderRadius: 4,
+                    }}
+                  >
+                    <text style={{ color: colors.text_tertiary, fontSize: sp(10.5) }}>
+                      {item.scope}
+                    </text>
+                  </Badge>
+                )}
               </div>
             ))
           )}

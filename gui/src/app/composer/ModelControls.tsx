@@ -110,7 +110,7 @@ export function ModelControls({
       },
     );
   }, [catalog]);
-  const providers = [...new Set(entries.map((entry) => entry.provider))];
+  const providers = [...new Set((catalog?.models ?? []).map((entry) => entry.provider))];
   const allowed = (provider: string) => !sessionId || !current || provider === current.provider;
   const usable = providers.filter(allowed);
   const favorites = Array.isArray(preferences.favoriteModels)
@@ -308,7 +308,7 @@ export function ModelControls({
   }
   const mode = accessChoices.find((choice) => choice.mode === accessMode)!;
   return (
-    <div style={{ ...row, gap: 4, minWidth: 0 }}>
+    <div style={{ ...row, gap: 1, minWidth: 0 }}>
       <div style={{ position: 'relative', ...row }}>
         <MenuChip
           ref={trigger}
@@ -390,8 +390,8 @@ export function ModelControls({
                       minWidth: 0,
                       paddingLeft: 24,
                       paddingRight: 24,
-                      paddingTop: 22,
-                      paddingBottom: 22,
+                      paddingTop: 20,
+                      paddingBottom: 20,
                       gap: 9,
                     }}
                   >
@@ -405,7 +405,7 @@ export function ModelControls({
                         backgroundColor: colors.overlay,
                       }}
                     >
-                      <Icon name="bot" size={19} />
+                      <Icon name="alert" size={19} color={colors.warning} />
                     </div>
                     <text style={{ color: colors.text, fontSize: sp(12.5), fontWeight: 500 }}>
                       No providers available
@@ -536,6 +536,7 @@ export function ModelControls({
                           ref={input}
                           icon="search"
                           iconSize={15}
+                          neutralFocus
                           placeholder="Search models…"
                           aria-label="Search models"
                           value={query}
@@ -543,7 +544,12 @@ export function ModelControls({
                             setQuery(value);
                             setHighlight(-1);
                           }}
-                          style={{ height: 34, borderRadius: 9, backgroundColor: colors.raised }}
+                          style={{
+                            height: 34,
+                            gap: 9,
+                            borderRadius: 9,
+                            backgroundColor: colors.raised,
+                          }}
                         />
                       </div>
                       <div
@@ -624,7 +630,7 @@ export function ModelControls({
                                   flexDirection: 'column',
                                   flexGrow: 1,
                                   minWidth: 0,
-                                  gap: 4,
+                                  gap: 0,
                                 }}
                               >
                                 <text
@@ -687,6 +693,9 @@ export function ModelControls({
           items={traitItems}
           menuStyle={{ minWidth: 214 }}
         />
+      )}
+      {!traitItems.length && (current?.variantLabel || current?.variant) && (
+        <MenuChip disabled chevron={false} label={current.variantLabel ?? current.variant!} />
       )}
       {((catalog?.profiles.length ?? 0) > 1 || profileOpen) && (
         <Dropdown

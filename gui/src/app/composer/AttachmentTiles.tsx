@@ -106,61 +106,63 @@ export function AttachmentTiles({
           </ContextMenu>
         ))}
       </div>
-      <Dialog
-        open={!!preview}
-        onClose={() => setPreview(undefined)}
-        title="Image preview"
-        scrimColor="rgba(0,0,0,.82)"
-        style={{
-          maxWidth: '100%',
-          height: '100%',
-          backgroundColor: 'transparent',
-          padding: 36,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <IconButton
-          name="x"
-          label="Close image preview"
-          onClick={() => setPreview(undefined)}
+      {preview && (
+        <Dialog
+          open
+          onClose={() => setPreview(undefined)}
+          title="Image preview"
+          scrimColor="rgba(0,0,0,.82)"
           style={{
-            position: 'absolute',
-            top: 14,
-            right: 14,
-            width: 32,
-            height: 32,
-            borderRadius: 32,
-            backgroundColor: '#0000007a',
-          }}
-          color="#ffffff"
-        />
-        {preview?.dataBase64 ? (
-          <img
-            src={`data:${preview.mime};base64,${preview.dataBase64}`}
-            objectFit="contain"
-            style={{ flexGrow: 1, width: '100%', minHeight: 0 }}
-          />
-        ) : (
-          <text style={{ color: '#ffffffc7' }}>Image unavailable</text>
-        )}
-        <text
-          style={{
-            marginTop: 12,
-            paddingLeft: 11,
-            paddingRight: 11,
-            paddingTop: 5,
-            paddingBottom: 5,
-            borderRadius: 30,
-            maxWidth: 560,
-            backgroundColor: '#0000007a',
-            color: '#ffffffe6',
-            fontSize: sp(12.5),
+            maxWidth: '100%',
+            height: '100%',
+            backgroundColor: 'transparent',
+            padding: 36,
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          {preview?.name}
-        </text>
-      </Dialog>
+          <IconButton
+            name="x"
+            label="Close image preview"
+            onClick={() => setPreview(undefined)}
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              width: 32,
+              height: 32,
+              borderRadius: 32,
+              backgroundColor: '#0000007a',
+            }}
+            color="#ffffff"
+          />
+          {preview?.dataBase64 ? (
+            <img
+              src={`data:${preview.mime};base64,${preview.dataBase64}`}
+              objectFit="contain"
+              style={{ flexGrow: 1, width: '100%', minHeight: 0 }}
+            />
+          ) : (
+            <text style={{ color: '#ffffffc7' }}>Image unavailable</text>
+          )}
+          <text
+            style={{
+              marginTop: 12,
+              paddingLeft: 11,
+              paddingRight: 11,
+              paddingTop: 5,
+              paddingBottom: 5,
+              borderRadius: 30,
+              maxWidth: 560,
+              backgroundColor: '#0000007a',
+              color: '#ffffffe6',
+              fontSize: sp(12.5),
+            }}
+          >
+            {preview?.name}
+          </text>
+        </Dialog>
+      )}
     </>
   );
 }

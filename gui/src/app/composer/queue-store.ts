@@ -79,12 +79,13 @@ export function startQueueDelivery(store: AppStore) {
   const delivering = new Set<string>();
   const failed = new Set<string>();
   const awaitingAdmission = new Map<string, number>();
+  const observedBusy = new Set<string>();
   function deliver() {
     const state = store.getSnapshot();
     if (state.backend.state !== 'connected') return;
     for (const [key, items] of Object.entries(queuedDrafts(store))) {
       const first = items[0];
-      if (!first || delivering.has(key) || failed.has(first.id)) continue;
+      if (!first || failed.has(first.id)) continue;
       let target: Selection;
       try {
         target = JSON.parse(key) as Selection;
@@ -93,6 +94,15 @@ export function startQueueDelivery(store: AppStore) {
       }
       if (target.kind !== 'session') continue;
       const view = state.views[target.sessionId];
+      if (
+        view?.status === 'working' ||
+        view?.status === 'waiting' ||
+        view?.status === 'background'
+      ) {
+        observedBusy.add(key);
+        continue;
+      }
+      if (delivering.has(key)) continue;
       const beforeAdmission = awaitingAdmission.get(key);
       if (beforeAdmission !== undefined) {
         if (!view || view.events.length <= beforeAdmission) continue;
@@ -100,17 +110,17 @@ export function startQueueDelivery(store: AppStore) {
       }
       if (
         !view ||
-        view.status === 'working' ||
-        view.status === 'waiting' ||
-        view.status === 'background' ||
         view.activeProviderRequests.size ||
         view.permissions.some((permission) => !permission.decision)
       )
         continue;
+      // A restored idle queue stays a draft until a turn settles in this process.
+      if (!observedBusy.has(key)) continue;
       const cwd = Object.entries(state.sessions).find(([, rows]) =>
         rows.some((row) => row.runId === target.sessionId),
       )?.[0];
       if (!cwd) continue;
+      observedBusy.delete(key);
       delivering.add(key);
       awaitingAdmission.set(key, view.events.length);
       const text = first.draft.text.trim();
