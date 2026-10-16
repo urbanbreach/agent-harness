@@ -1,0 +1,75 @@
+{
+  "projects": [
+    {
+      "id": "atlas",
+      "name": "atlas",
+      "cwd": "/tmp/composer-atlas"
+    }
+  ],
+  "sessions": [],
+  "state": {
+    "preferences": {
+      "theme": "dark",
+      "lastAccessMode": "full"
+    },
+    "layout": {
+      "selectedProject": "atlas",
+      "selectedTask": null
+    },
+    "drafts": {
+      "project:atlas": {
+        "text": "Review the release checklist and suggest the next step."
+      }
+    }
+  },
+  "extensions": {
+    "models.catalog": {
+      "current": {
+        "profile": "default",
+        "provider": "openai",
+        "providerLabel": "OpenAI",
+        "model": "gpt-6.1-sol",
+        "modelLabel": "GPT-6.1-Sol",
+        "variant": "low",
+        "variantLabel": "Low",
+        "label": "GPT-6.1-Sol",
+        "reasoningEffort": "low"
+      },
+      "models": [
+        {
+          "profile": "default",
+          "provider": "openai",
+          "providerLabel": "OpenAI",
+          "model": "gpt-6.1-sol",
+          "modelLabel": "GPT-6.1-Sol",
+          "variant": "low",
+          "variantLabel": "Low",
+          "label": "GPT-6.1-Sol",
+          "reasoningEffort": "low"
+        },
+        {
+          "profile": "default",
+          "provider": "openai",
+          "providerLabel": "OpenAI",
+          "model": "gpt-6.1-sol",
+          "modelLabel": "GPT-6.1-Sol",
+          "variant": "high",
+          "variantLabel": "High",
+          "label": "GPT-6.1-Sol",
+          "reasoningEffort": "high"
+        },
+        {
+          "profile": "default",
+          "provider": "anthropic",
+          "providerLabel": "Anthropic",
+          "model": "claude-opus-4-6",
+          "modelLabel": "Claude Opus 4.6",
+          "label": "Claude Opus 4.6"
+        }
+      ],
+      "profiles": [
+        "default"
+      ]
+    }
+  }
+}

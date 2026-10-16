@@ -1,0 +1,12 @@
+{
+  "projects": [{ "id": "atlas", "name": "atlas", "cwd": "/tmp/composer-atlas" }],
+  "sessions": [],
+  "state": {
+    "preferences": { "theme": "dark", "lastAccessMode": "full" },
+    "layout": { "selectedProject": "atlas", "selectedTask": null },
+    "drafts": { "project:atlas": { "text": "" } }
+  },
+  "extensions": {
+    "models.catalog": { "current": null, "models": [], "profiles": [], "defaultAccessMode": "full" }
+  }
+}
