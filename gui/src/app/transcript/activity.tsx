@@ -513,11 +513,11 @@ function DiffCounts({ files }: { files: ToolDiffFile[] }) {
     return null;
   return (
     <div style={{ ...row, gap: 6, fontSize: sp(12.5), flexShrink: 0 }}>
-      <text style={{ color: colors.success }}>
-        +{files.reduce((sum, file) => sum + file.additions!, 0)}
+      <text style={{ color: colors.success, whiteSpace: 'nowrap' }}>
+        {`+${files.reduce((sum, file) => sum + file.additions!, 0)}`}
       </text>
-      <text style={{ color: colors.danger }}>
-        −{files.reduce((sum, file) => sum + file.deletions!, 0)}
+      <text style={{ color: colors.danger, whiteSpace: 'nowrap' }}>
+        {`−${files.reduce((sum, file) => sum + file.deletions!, 0)}`}
       </text>
     </div>
   );
@@ -821,7 +821,7 @@ export function ActivityGroup({
       ([noun, count]) =>
         `${count} ${noun}${count === 1 ? '' : noun === 'search' || noun === 'file search' ? 'es' : 's'}`,
     )
-    .join(', ');
+    .join(' · ');
   const title =
     live && latest?.kind === 'reasoning'
       ? thoughtTitle(latest)

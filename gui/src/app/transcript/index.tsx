@@ -468,9 +468,9 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                 if (modifiers?.ctrl || modifiers?.cmd || modifiers?.alt || modifiers?.shift) return;
                 const key = event.key?.toLowerCase();
                 const next =
-                  key === 'arrowup'
+                  key === 'up'
                     ? Math.max(0, tick - 1)
-                    : key === 'arrowdown'
+                    : key === 'down'
                       ? Math.min(opening.length - 1, tick + 1)
                       : key === 'home'
                         ? 0
