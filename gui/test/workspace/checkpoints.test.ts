@@ -3,16 +3,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  captureNamedSnapshot,
   captureTurnEnd,
   captureTurnStart,
   checkpointRef,
   copySessionSnapshots,
   deleteSessionSnapshots,
   deleteSnapshot,
-  deleteSnapshotsAfter,
-  hasSnapshot,
-  listSessionSnapshots,
+  listCheckpointRefs,
   restoreNamedSnapshot,
 } from '../../src/workspace/checkpoints';
 import { gitCommand } from '../../src/workspace/git';
@@ -124,7 +121,7 @@ test('capture and restore roundtrip preserves HEAD, captures untracked files, re
   expect(await git(cwd, 'diff', '--cached', '--name-only')).toBe('');
   expect(await readFile(join(cwd, '.git', 'HEAD'))).toEqual(originalHead);
   expect(await git(cwd, 'rev-parse', 'HEAD')).toBe(originalCommit);
-  expect(await hasSnapshot(cwd, safetyRef)).toBe(true);
+  expect(await git(cwd, 'rev-parse', `${safetyRef}^{commit}`)).toBeTruthy();
   expect(await git(cwd, 'show', `${safetyRef}-index:tracked.txt`)).toBe('staged');
   expect(await git(cwd, 'rev-parse', `${safetyRef}-index`)).not.toBe(
     await git(cwd, 'rev-parse', `${safetyRef}^{tree}`),
@@ -153,8 +150,8 @@ test('snapshots exclude untracked env secrets without changing tracked env files
   const secrets = ['.env', '.env.local', 'nested/.env.production'];
   for (const path of [...secrets, '.env.example']) await writeFile(join(cwd, path), 'before\n');
   await writeFile(join(cwd, '.env.tracked'), 'tracked snapshot\n');
-  const ref = 'refs/harness-gui/secrets/named';
-  await captureNamedSnapshot(cwd, ref);
+  const ref = checkpointRef('secrets', 1, 'start');
+  await captureTurnStart(cwd, 'secrets', 1);
   const paths = (await git(cwd, 'ls-tree', '-r', '--name-only', ref)).split('\n');
   for (const path of secrets) {
     expect(paths).not.toContain(path);
@@ -176,8 +173,8 @@ test('snapshots exclude untracked env secrets without changing tracked env files
 
 test('restore refuses an unmerged real index before changing workspace files', async () => {
   const cwd = await repository();
-  const ref = 'refs/harness-gui/conflict/named';
-  await captureNamedSnapshot(cwd, ref);
+  const ref = checkpointRef('conflict', 1, 'start');
+  await captureTurnStart(cwd, 'conflict', 1);
   const blob = await git(cwd, 'rev-parse', 'HEAD:tracked.txt');
   await gitCommand(cwd, ['update-index', '--index-info'], {
     input: `0 ${'0'.repeat(blob.length)}\ttracked.txt\n100644 ${blob} 1\ttracked.txt\n100644 ${blob} 2\ttracked.txt\n100644 ${blob} 3\ttracked.txt\n`,
@@ -191,32 +188,31 @@ test('restore refuses an unmerged real index before changing workspace files', a
   expect(await readFile(join(cwd, 'tracked.txt'), 'utf8')).toBe('unresolved work\n');
 }, 30_000);
 
-test('named snapshots and fork refs survive independently and clean up only selected turns', async () => {
+test('fork refs survive source cleanup and restore independently', async () => {
   const cwd = await repository();
-  const named = 'refs/harness-gui/source/named';
   const initialIndex = await readFile(join(cwd, '.git', 'index'));
-  await captureNamedSnapshot(cwd, named);
-  expect(await readFile(join(cwd, '.git', 'index'))).toEqual(initialIndex);
   for (const turn of [0, 2, 10]) {
     await captureTurnStart(cwd, 'source', turn);
     await writeFile(join(cwd, 'tracked.txt'), `turn ${turn}\n`);
     await captureTurnEnd(cwd, 'source', turn);
   }
+  expect(await readFile(join(cwd, '.git', 'index'))).toEqual(initialIndex);
   await copySessionSnapshots(cwd, 'source', 'fork', 2);
-  expect(await listSessionSnapshots(cwd, 'fork')).toEqual([0, 2]);
+  expect(await listCheckpointRefs(cwd, 'fork')).toEqual([
+    checkpointRef('fork', 0, 'end'),
+    checkpointRef('fork', 0, 'start'),
+    checkpointRef('fork', 2, 'end'),
+    checkpointRef('fork', 2, 'start'),
+  ]);
   expect(await git(cwd, 'rev-parse', checkpointRef('fork', 2, 'start'))).toBe(
     await git(cwd, 'rev-parse', checkpointRef('source', 2, 'start')),
   );
-  await deleteSnapshotsAfter(cwd, 'source', 2);
-  expect(await listSessionSnapshots(cwd, 'source')).toEqual([0, 2]);
-  expect(await hasSnapshot(cwd, checkpointRef('source', 10, 'start'))).toBe(false);
   await deleteSessionSnapshots(cwd, 'source');
-  expect(await hasSnapshot(cwd, named)).toBe(false);
-  expect(await listSessionSnapshots(cwd, 'fork')).toEqual([0, 2]);
+  expect(await listCheckpointRefs(cwd, 'source')).toEqual([]);
   await restoreNamedSnapshot(cwd, checkpointRef('fork', 2, 'end'));
   expect(await readFile(join(cwd, 'tracked.txt'), 'utf8')).toBe('turn 2\n');
   await deleteSnapshot(cwd, checkpointRef('fork', 2, 'end'));
-  expect(await hasSnapshot(cwd, checkpointRef('fork', 2, 'end'))).toBe(false);
+  expect(await listCheckpointRefs(cwd, 'fork')).not.toContain(checkpointRef('fork', 2, 'end'));
 }, 30_000);
 
 test('plain directories distinguish unavailable turn checkpoints from explicit snapshot errors and reject unsafe refs', async () => {
@@ -224,10 +220,9 @@ test('plain directories distinguish unavailable turn checkpoints from explicit s
   await writeFile(join(cwd, 'keep.txt'), 'untouched\n');
   expect(await captureTurnStart(cwd, 'plain', 1)).toBeNull();
   expect((await captureTurnEnd(cwd, 'plain', 1)).state).toBe('unavailable');
-  await expect(captureNamedSnapshot(cwd, 'refs/harness-gui/plain/named')).rejects.toThrow(
+  await expect(restoreNamedSnapshot(cwd, 'refs/harness-gui/plain/named')).rejects.toThrow(
     'checkpoints require a Git repository',
   );
-  expect(await hasSnapshot(cwd, 'refs/harness-gui/plain/named')).toBe(false);
   for (const ref of [
     'HEAD',
     'refs/heads/main',
@@ -235,7 +230,7 @@ test('plain directories distinguish unavailable turn checkpoints from explicit s
     'refs/harness-gui/session/name.lock',
     'refs/harness-gui/session/name\n',
   ]) {
-    await expect(captureNamedSnapshot(cwd, ref)).rejects.toThrow('invalid checkpoint reference');
+    await expect(restoreNamedSnapshot(cwd, ref)).rejects.toThrow('invalid checkpoint reference');
   }
   for (const session of ['../escape', '', 'other/session']) {
     await expect(captureTurnStart(cwd, session, 1)).rejects.toThrow('invalid checkpoint session');
@@ -249,12 +244,12 @@ test('unborn repositories capture and restore without inventing HEAD and cancell
   await git(cwd, 'init', '--quiet');
   await writeFile(join(cwd, 'first.txt'), 'unborn snapshot\n');
   const head = await readFile(join(cwd, '.git', 'HEAD'));
-  const ref = 'refs/harness-gui/unborn/named';
+  const ref = checkpointRef('unborn', 1, 'start');
   const controller = new AbortController();
   controller.abort();
-  await expect(captureNamedSnapshot(cwd, ref, controller.signal)).rejects.toThrow();
-  expect(await hasSnapshot(cwd, ref)).toBe(false);
-  await captureNamedSnapshot(cwd, ref);
+  await expect(captureTurnStart(cwd, 'unborn', 1, controller.signal)).rejects.toThrow();
+  expect(await listCheckpointRefs(cwd, 'unborn')).toEqual([]);
+  await captureTurnStart(cwd, 'unborn', 1);
   expect(await Bun.file(join(cwd, '.git', 'index')).exists()).toBe(false);
   await writeFile(join(cwd, 'first.txt'), 'later\n');
   await writeFile(join(cwd, 'later.txt'), 'delete\n');
@@ -263,4 +258,19 @@ test('unborn repositories capture and restore without inventing HEAD and cancell
   expect(await Bun.file(join(cwd, 'later.txt')).exists()).toBe(false);
   expect(await readFile(join(cwd, '.git', 'HEAD'))).toEqual(head);
   expect(await Bun.file(join(cwd, '.git', 'index')).exists()).toBe(false);
+}, 30_000);
+
+test('restore refuses target files omitted from the safety capture', async () => {
+  const cwd = await repository();
+  await writeFile(join(cwd, 'cache.txt'), 'checkpoint\n');
+  const ref = await captureTurnStart(cwd, 'collision', 1);
+  await writeFile(join(cwd, '.gitignore'), 'ignored/\ncache.txt\n');
+  await writeFile(join(cwd, 'cache.txt'), 'new ignored work\n');
+  const index = await readFile(join(cwd, '.git', 'index'));
+  await expect(restoreNamedSnapshot(cwd, ref!)).rejects.toThrow(
+    'not protected by the safety snapshot',
+  );
+  expect(await readFile(join(cwd, 'cache.txt'), 'utf8')).toBe('new ignored work\n');
+  expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('ignored/\ncache.txt\n');
+  expect(await readFile(join(cwd, '.git', 'index'))).toEqual(index);
 }, 30_000);

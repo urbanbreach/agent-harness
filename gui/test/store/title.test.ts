@@ -12,14 +12,14 @@ test('native placeholder titles yield a bounded first-prompt label without repla
     startedMs: 0,
     text: '  Improve search relevance with a careful measurable rollout today  ',
     attachments: [],
-    fileTags: [],
-    agentTags: [],
-    resourceTags: [],
     steering: false,
   };
   view.entries = [prompt];
   expect(taskTitle(undefined, view)).toBe('Improve search relevance with a careful measurable');
   prompt.text = 'A'.repeat(80);
+  expect(taskTitle(undefined, view)).toBe('A'.repeat(54));
+  // A later prompt must not drop the task back to the untitled label.
+  view.entries = [prompt, { ...prompt, id: 'later', text: 'Follow up' }];
   expect(taskTitle(undefined, view)).toBe('A'.repeat(54));
   view.title = '  Search rollout review  ';
   expect(taskTitle(undefined, view)).toBe('Search rollout review');

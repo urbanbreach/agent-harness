@@ -1,7 +1,7 @@
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { gitCommand } from './git';
+import { capturePaths, gitCommand, repositoryRoot } from './git';
 
 const namespace = 'refs/harness-gui/';
 const requiresGit = 'checkpoints require a Git repository';
@@ -44,17 +44,6 @@ export function checkpointRef(session: string, turn: number, phase: 'start' | 'e
   return `${namespace}${session}/${turn}-${phase}`;
 }
 
-async function repository(cwd: string, signal?: AbortSignal): Promise<string | null> {
-  signal?.throwIfAborted();
-  const result = await gitCommand(cwd, ['rev-parse', '--show-toplevel'], {
-    signal,
-    allowFailure: true,
-  });
-  if (result.exitCode === 0) return result.stdout.trimEnd();
-  if (result.stderr.includes('not a git repository')) return null;
-  throw new Error(result.stderr.trim() || 'could not inspect Git repository');
-}
-
 async function resolveCommit(
   cwd: string,
   ref: string,
@@ -92,21 +81,10 @@ async function capture(
   return temporaryIndex(async (env) => {
     const head = await resolveCommit(cwd, 'HEAD', signal);
     await gitCommand(cwd, ['read-tree', head ?? '--empty'], { signal, env });
-    const untracked = (
-      await gitCommand(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], { signal })
-    ).stdout.split('\0');
-    const secrets = untracked.filter((path) => {
-      const name = path.slice(path.lastIndexOf('/') + 1);
-      return name === '.env' || (name.startsWith('.env.') && name !== '.env.example');
+    await gitCommand(cwd, ['add', '-A', '--', ...(await capturePaths(cwd, signal))], {
+      signal,
+      env,
     });
-    await gitCommand(
-      cwd,
-      ['add', '-A', '--', '.', ...secrets.map((path) => `:(top,literal,exclude)${path}`)],
-      {
-        signal,
-        env,
-      },
-    );
     const tree = (await gitCommand(cwd, ['write-tree'], { signal, env })).stdout.trim();
     const commit = (
       await gitCommand(
@@ -142,18 +120,6 @@ async function capture(
   });
 }
 
-export async function captureNamedSnapshot(
-  cwd: string,
-  ref: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  validateRef(ref);
-  const root = await repository(cwd, signal);
-  if (!root) throw new Error(requiresGit);
-  await capture(root, ref, false, signal);
-  return ref;
-}
-
 export async function captureTurnStart(
   cwd: string,
   session: string,
@@ -161,7 +127,7 @@ export async function captureTurnStart(
   signal?: AbortSignal,
 ): Promise<string | null> {
   const ref = checkpointRef(session, turn, 'start');
-  const root = await repository(cwd, signal);
+  const root = await repositoryRoot(cwd, signal);
   if (!root) return null;
   await capture(root, ref, true, signal);
   return ref;
@@ -214,7 +180,7 @@ export async function captureTurnEnd(
   signal?: AbortSignal,
 ): Promise<Checkpoint> {
   const ref = checkpointRef(session, turn, 'end');
-  const root = await repository(cwd, signal);
+  const root = await repositoryRoot(cwd, signal);
   const checkpoint: Checkpoint = {
     turn,
     ref,
@@ -237,23 +203,13 @@ export async function captureTurnEnd(
   return checkpoint;
 }
 
-export async function hasSnapshot(
-  cwd: string,
-  ref: string,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  validateRef(ref);
-  const root = await repository(cwd, signal);
-  return root !== null && (await resolveCommit(root, ref, signal)) !== null;
-}
-
 export async function listCheckpointRefs(
   cwd: string,
   session: string,
   signal?: AbortSignal,
 ): Promise<string[]> {
   validateSession(session);
-  const root = await repository(cwd, signal);
+  const root = await repositoryRoot(cwd, signal);
   if (!root) return [];
   return (
     await gitCommand(root, ['for-each-ref', '--format=%(refname)', `${namespace}${session}/`], {
@@ -262,20 +218,6 @@ export async function listCheckpointRefs(
   ).stdout
     .split('\n')
     .filter(Boolean);
-}
-
-export async function listSessionSnapshots(
-  cwd: string,
-  session: string,
-  signal?: AbortSignal,
-): Promise<number[]> {
-  const refs = await listCheckpointRefs(cwd, session, signal);
-  return refs
-    .flatMap((ref) => {
-      const match = /\/(\d+)-end$/.exec(ref);
-      return match ? [Number(match[1])] : [];
-    })
-    .sort((a, b) => a - b);
 }
 
 async function restoreFiles(
@@ -299,7 +241,7 @@ export async function restoreNamedSnapshot(
   signal?: AbortSignal,
 ): Promise<{ safetyRef: string }> {
   validateRef(ref);
-  const root = await repository(cwd, signal);
+  const root = await repositoryRoot(cwd, signal);
   if (!root) throw new Error(requiresGit);
   const target = await resolveCommit(root, ref, signal);
   if (!target) throw new Error(`checkpoint is unavailable: ${ref}`);
@@ -323,6 +265,33 @@ export async function restoreNamedSnapshot(
   // Pin the real index separately; the working-tree snapshot cannot preserve partial staging.
   await gitCommand(root, ['update-ref', `${safetyRef}-index`, index.stdout.trim()], { signal });
   const current = await capture(root, safetyRef, false, signal);
+  const currentPaths = new Set(
+    (await gitCommand(root, ['ls-tree', '-r', '--name-only', '-z', current], { signal })).stdout
+      .split('\0')
+      .filter(Boolean),
+  );
+  const targetPaths = (
+    await gitCommand(root, ['ls-tree', '-r', '--name-only', '-z', target], { signal })
+  ).stdout
+    .split('\0')
+    .filter(Boolean);
+  for (const path of targetPaths) {
+    for (
+      let candidate = path;
+      candidate;
+      candidate = candidate.includes('/') ? candidate.slice(0, candidate.lastIndexOf('/')) : ''
+    ) {
+      if (currentPaths.has(candidate)) continue;
+      const info = await lstat(resolve(root, candidate)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
+        return null;
+      });
+      if (info && (!info.isDirectory() || candidate === path))
+        throw new Error(
+          `Cannot restore checkpoint: ${candidate} is not protected by the safety snapshot`,
+        );
+    }
+  }
   try {
     await restoreFiles(root, current, target, signal);
   } catch (error) {
@@ -346,7 +315,7 @@ export async function deleteSnapshot(
   signal?: AbortSignal,
 ): Promise<void> {
   validateRef(ref);
-  const root = await repository(cwd, signal);
+  const root = await repositoryRoot(cwd, signal);
   if (root) await gitCommand(root, ['update-ref', '-d', ref], { signal });
 }
 
@@ -357,19 +326,6 @@ export async function deleteSessionSnapshots(
 ): Promise<void> {
   for (const ref of await listCheckpointRefs(cwd, session, signal))
     await deleteSnapshot(cwd, ref, signal);
-}
-
-export async function deleteSnapshotsAfter(
-  cwd: string,
-  session: string,
-  retainedTurn: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  validateTurn(retainedTurn);
-  for (const ref of await listCheckpointRefs(cwd, session, signal)) {
-    const match = /\/(\d+)-(?:start|end)$/.exec(ref);
-    if (match && Number(match[1]) > retainedTurn) await deleteSnapshot(cwd, ref, signal);
-  }
 }
 
 export async function copySessionSnapshots(

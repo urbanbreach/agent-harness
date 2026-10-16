@@ -1,9 +1,13 @@
 import { expect, test } from 'bun:test';
 import { FixtureBackend, type Scenario } from '../../src/backend/fixture';
-import { AppStore } from '../../src/store/store';
+import { AppStore, draftKey } from '../../src/store/store';
 import { createBackendPersist } from '../../src/store/persist-backend';
 import type { Method, Methods } from '../../src/backend/protocol';
 import { registerBeforeSubmit } from '../../src/app/turn-hooks';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gitCommand } from '../../src/workspace/git';
 
 async function conversation() {
   const scenario = (await Bun.file(
@@ -379,5 +383,168 @@ test('draft images persist as blob references and initialization restores previe
     });
   } finally {
     await store.dispose();
+  }
+});
+
+test('old catalog responses cannot resurrect a deleted session', async () => {
+  const backend = new GatedBackend(await conversation());
+  const store = new AppStore(backend);
+  const blocked = Promise.withResolvers<void>();
+  const started = Promise.withResolvers<void>();
+  try {
+    await store.initialize();
+    const cwd = store.getSnapshot().projects[0]!.cwd;
+    let first = true;
+    backend.responseGate = async (method) => {
+      if (method !== 'sessions.list' || !first) return;
+      first = false;
+      started.resolve();
+      await blocked.promise;
+    };
+    const old = store.loadSessions(cwd);
+    await started.promise;
+    await store.removeTask('notes');
+    blocked.resolve();
+    await old;
+    expect(store.getSnapshot().sessions[cwd]?.map((row) => row.runId)).not.toContain('notes');
+    expect(store.getSnapshot().views.notes).toBeUndefined();
+  } finally {
+    blocked.resolve();
+    await store.dispose();
+  }
+});
+
+test('delayed creation finishes in the background after newer navigation', async () => {
+  const backend = new GatedBackend(await conversation());
+  const store = new AppStore(backend);
+  const blocked = Promise.withResolvers<void>();
+  const started = Promise.withResolvers<void>();
+  try {
+    await store.initialize();
+    backend.responseGate = async (method) => {
+      if (method !== 'session.create') return;
+      started.resolve();
+      await blocked.promise;
+    };
+    const creating = store.createSession({ cwd: store.getSnapshot().projects[0]!.cwd });
+    await started.promise;
+    await store.selectTask('notes');
+    blocked.resolve();
+    const handle = await creating;
+    expect(store.getSnapshot().selectedTask).toBe('notes');
+    expect(store.getSnapshot().live[handle.sessionId]).toEqual(handle);
+  } finally {
+    blocked.resolve();
+    await store.dispose();
+  }
+});
+
+test('asynchronous rejection restores durable input without overwriting newer edits', async () => {
+  const backend = new GatedBackend(await conversation());
+  const listeners = new Set<Parameters<typeof backend.subscribe>[0]>();
+  const subscribe = backend.subscribe;
+  backend.subscribe = (listener) => {
+    listeners.add(listener);
+    return subscribe(listener);
+  };
+  const store = new AppStore(backend);
+  try {
+    await store.initialize();
+    await store.selectTask('notes');
+    const target = store.getSnapshot().selection;
+    for (const newer of [false, true]) {
+      store.setDraft(target, { text: 'refused input' });
+      await store.submit(target, { text: 'refused input' });
+      if (newer) store.setDraft(target, { text: 'newer edit' });
+      for (const listener of listeners)
+        listener({
+          method: 'session.update',
+          params: {
+            sessionId: 'notes',
+            update: { kind: 'restoreQueued', texts: ['refused input'] },
+          },
+        });
+      await store.flush();
+      const drafts = await backend.call('state.read', { name: 'drafts' });
+      expect(drafts).toMatchObject({
+        'session:notes': { text: newer ? 'newer edit' : 'refused input' },
+      });
+      if (newer)
+        expect(await backend.call('state.read', { name: 'preferences' })).toMatchObject({
+          composerQueues: { [JSON.stringify(target)]: [{ draft: { text: 'refused input' } }] },
+        });
+    }
+  } finally {
+    await store.dispose();
+  }
+});
+
+test('shutdown waits for an in-flight attachment save and the newest debounced draft', async () => {
+  const backend = new GatedBackend(await conversation());
+  const store = new AppStore(backend);
+  const blocked = Promise.withResolvers<void>();
+  const started = Promise.withResolvers<void>();
+  await store.initialize();
+  const target = store.getSnapshot().selection;
+  let persisted: unknown;
+  backend.responseGate = async (method, params) => {
+    if (method === 'state.write' && (params as Methods['state.write']['params']).name === 'drafts')
+      persisted = await backend.call('state.read', { name: 'drafts' });
+  };
+  backend.gate = async (method) => {
+    if (method !== 'blobs.put') return;
+    started.resolve();
+    await blocked.promise;
+  };
+  store.setDraft(target, {
+    text: 'less than 250ms',
+    attachments: [{ mime: 'image/png', dataBase64: 'aGVsbG8=' }],
+  });
+  const shutdown = store.dispose();
+  await started.promise;
+  expect(backend.getStatus().state).toBe('connected');
+  store.setDraft(target, { text: 'newest draft' });
+  blocked.resolve();
+  await shutdown;
+  expect(backend.getStatus().state).toBe('closed');
+  expect(persisted).toMatchObject({
+    [draftKey(target)]: { text: 'newest draft' },
+  });
+});
+
+test('offscreen submissions capture checkpoints while steering leaves the next baseline untouched', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'harness-offscreen-'));
+  const scenario = await conversation();
+  scenario.projects[0]!.cwd = cwd;
+  for (const session of scenario.sessions) session.row.cwd = cwd;
+  const store = new AppStore(new FixtureBackend(scenario));
+  try {
+    await gitCommand(cwd, ['init', '--quiet']);
+    await writeFile(join(cwd, 'note.txt'), 'before steering\n');
+    await store.initialize();
+    await store.loadSession('notes');
+    await store.selectTask('chat');
+    const target = {
+      kind: 'session' as const,
+      sessionId: 'notes',
+      projectId: scenario.projects[0]!.id,
+    };
+    await store.submit(target, { text: 'steer', mode: 'steer', consumeDraft: false });
+    expect(
+      (await gitCommand(cwd, ['for-each-ref', '--format=%(refname)', 'refs/harness-gui/notes/']))
+        .stdout,
+    ).toBe('');
+    await writeFile(join(cwd, 'note.txt'), 'after steering\n');
+    await store.submit(target, { text: 'queued', mode: 'submit', consumeDraft: false });
+    expect(store.getSnapshot().selectedTask).toBe('chat');
+    expect(
+      (await gitCommand(cwd, ['show', 'refs/harness-gui/notes/1-start:note.txt'])).stdout,
+    ).toBe('after steering\n');
+    expect(await store.backend.call('state.read', { name: 'turn-checkpoints' })).toMatchObject({
+      notes: { pending: [{ checkpoint: { turn: 1 } }] },
+    });
+  } finally {
+    await store.dispose();
+    await rm(cwd, { recursive: true, force: true });
   }
 });

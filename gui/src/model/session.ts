@@ -27,9 +27,6 @@ export interface UserEntry extends EntryBase {
   requestId: string;
   text: string;
   attachments: AttachmentMetadata[];
-  fileTags: unknown[];
-  agentTags: unknown[];
-  resourceTags: unknown[];
   steering: boolean;
   queued?: boolean;
 }
@@ -142,7 +139,6 @@ export interface SessionView {
   subagents: Record<string, TaskView>;
   todos: TodoItem[];
   usage?: CompletionUsage;
-  usageByRequest: Record<string, CompletionUsage>;
   context?: {
     occupiedTokens: number;
     maximumInputTokens: number | null;
@@ -152,16 +148,11 @@ export interface SessionView {
   };
   retries: Record<string, { retry: ProviderRequestRetryMetadata; startedMs: number }>;
   compaction: Record<string, { lifecycle?: unknown; status?: unknown; progress?: unknown }>;
-  contextPruning: Data<'context_pruned'>[];
   snapshots: Data<'workspace_snapshot'>[];
-  workspaceReverts: Data<'workspace_reverted'>[];
-  edits: Record<string, unknown>;
-  artifacts: Data<'artifact_written'>[];
   yolo: boolean;
   statusText?: string;
   commandOutput?: unknown;
   rewind?: unknown;
-  restoredQueued: string[];
   events: EventEnvelopeV1[];
   seenSeq: ReadonlySet<number>;
   providerTurns: Record<string, string>;
@@ -186,16 +177,10 @@ export function emptySessionView(meta?: SessionCatalogEntry): SessionView {
     tasks: {},
     subagents: {},
     todos: [],
-    usageByRequest: {},
     retries: {},
     compaction: {},
-    contextPruning: [],
     snapshots: [],
-    workspaceReverts: [],
-    edits: {},
-    artifacts: [],
     yolo: false,
-    restoredQueued: [],
     events: [],
     seenSeq: new Set(),
     providerTurns: {},
@@ -340,7 +325,7 @@ export function applyUpdate(view: SessionView, update: Update): SessionView {
     case 'rewindComplete':
       return { ...view, rewind: update };
     case 'restoreQueued':
-      return { ...view, restoredQueued: update.texts };
+      return view;
     case 'queuedReceipt':
       return update.error ? notice(view, `queue:${update.id}`, 'error', update.error, 0) : view;
     case 'forked':
@@ -613,9 +598,6 @@ function reduceEvent(
             requestId: data.request_id,
             text: data.text,
             attachments: [],
-            fileTags: [],
-            agentTags: [],
-            resourceTags: [],
             steering,
           },
         ],
@@ -721,7 +703,6 @@ function reduceEvent(
         ...(event.data.usage
           ? {
               usage: event.data.usage,
-              usageByRequest: { ...view.usageByRequest, [requestId]: event.data.usage },
             }
           : {}),
       };
@@ -845,13 +826,20 @@ function reduceEvent(
         ],
         status: 'waiting',
       };
-      if (permission.tool_call_id)
+      if (
+        permission.tool_call_id &&
+        (!view.rootAgentId || !agentId || agentId === view.rootAgentId)
+      )
         updateTool(permission.tool_call_id, {
           status: 'waiting',
           permissions: [...(view.tools[permission.tool_call_id]?.permissions ?? []), permission],
         });
       if (['question', 'ask', 'ask_user'].includes(permission.kind.toLowerCase())) {
-        if (permission.tool_call_id && !view.tools[permission.tool_call_id]?.toolId)
+        if (
+          permission.tool_call_id &&
+          (!view.rootAgentId || !agentId || agentId === view.rootAgentId) &&
+          !view.tools[permission.tool_call_id]?.toolId
+        )
           updateTool(permission.tool_call_id, {
             toolId: 'user.question',
             args: parse(permission.summary),
@@ -889,7 +877,7 @@ function reduceEvent(
           (item) => item.permissionId !== event.data.permission_id,
         ),
       };
-      if (permission?.tool_call_id)
+      if (permission?.tool_call_id && view.tools[permission.tool_call_id])
         updateTool(permission.tool_call_id, {
           status: 'queued',
           permissions: view.tools[permission.tool_call_id]!.permissions.map((item) =>
@@ -1142,41 +1130,24 @@ function reduceEvent(
         ),
       };
     case 'context_pruned':
-      return prune({ ...view, contextPruning: [...view.contextPruning, event.data] }, event.data);
+      return prune(view, event.data);
     case 'workspace_snapshot':
       return { ...view, snapshots: [...view.snapshots, event.data] };
     case 'workspace_reverted':
-      return { ...view, workspaceReverts: [...view.workspaceReverts, event.data] };
     case 'edit_proposed':
     case 'edit_applied':
     case 'edit_rejected':
-      return { ...view, edits: { ...view.edits, [event.data.edit_id]: event.data } };
+      return view;
     case 'artifact_written':
       if (event.data.tool_call_id)
         updateTool(event.data.tool_call_id, {
           artifacts: [...(view.tools[event.data.tool_call_id]?.artifacts ?? []), event.data],
         });
-      return { ...view, artifacts: [...view.artifacts, event.data] };
+      return view;
     case 'yolo_mode_changed':
       return { ...view, yolo: event.data.enabled };
-    case 'ui_intent_received': {
-      const params = event.data.params,
-        id = params.request_id ?? correlation;
-      if (!id) return view;
-      return {
-        ...view,
-        entries: view.entries.map((entry) =>
-          entry.kind === 'user' && entry.requestId === id
-            ? {
-                ...entry,
-                fileTags: array(parse(params.file_tags ?? '[]')),
-                agentTags: array(parse(params.agent_tags ?? '[]')),
-                resourceTags: array(parse(params.resource_tags ?? '[]')),
-              }
-            : entry,
-        ),
-      };
-    }
+    case 'ui_intent_received':
+      return view;
     case 'subagent_transition': {
       const data = event.data,
         id = data.child_id,

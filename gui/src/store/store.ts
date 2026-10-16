@@ -90,8 +90,9 @@ export class AppStore {
   private writeTimer?: Timer;
   private writing?: Promise<void>;
   private draftTimer?: Timer;
-  private draftGenerations = new Map<string, number>();
   private selectionGeneration = 0;
+  private catalogGenerations = new Map<string, number>();
+  private submittedDrafts = new Map<string, Draft[]>();
   private submissions = new Map<string, Promise<string>>();
   private removed = new Set<string>();
   private draftSaving?: Promise<void>;
@@ -122,6 +123,23 @@ export class AppStore {
         if (notification.method !== 'session.update') return;
         const { sessionId, update } = notification.params;
         if (this.removed.has(sessionId)) return;
+        if (update.kind === 'restoreQueued') {
+          const row = this.row(sessionId);
+          const target: Selection = {
+            kind: 'session',
+            sessionId,
+            projectId:
+              this.state.projects.find((project) => project.cwd === (row?.projectCwd ?? row?.cwd))
+                ?.id ??
+              row?.cwd ??
+              '',
+          };
+          const submitted = this.submittedDrafts.get(sessionId) ?? [];
+          for (const text of update.texts) {
+            const index = submitted.findIndex((draft) => draft.text === text);
+            this.restoreDraft(target, index >= 0 ? submitted.splice(index, 1)[0]! : { text });
+          }
+        }
         if (update.kind === 'forked') {
           const parent = this.row(sessionId);
           if (parent) {
@@ -160,6 +178,11 @@ export class AppStore {
           );
         if (update.kind === 'event' && update.delivery === 'durable') {
           const payload = update.event.payload;
+          if (payload.event_type === 'user_message_submitted') {
+            const submitted = this.submittedDrafts.get(sessionId);
+            const index = submitted?.findIndex((draft) => draft.text === payload.data.text) ?? -1;
+            if (index >= 0) submitted!.splice(index, 1);
+          }
           const catalog =
             payload.event_type === 'session_title_updated'
               ? { run_name: payload.data.title }
@@ -368,14 +391,30 @@ export class AppStore {
   }
   setDraft(target: Selection, draft: Draft) {
     const key = draftKey(target);
-    this.draftGenerations.set(key, (this.draftGenerations.get(key) ?? 0) + 1);
     this.patch({ drafts: { ...this.state.drafts, [key]: structuredClone(draft) } });
     this.scheduleDraftSave();
+  }
+  restoreDraft(target: Selection, draft: Draft) {
+    const current = this.getDraft(target);
+    if (!current?.text.trim() && !current?.attachments?.length) {
+      this.setDraft(target, draft);
+      return;
+    }
+    const key = JSON.stringify(target);
+    const queues = (this.state.preferences.composerQueues ?? {}) as unknown as Record<
+      string,
+      { id: string; draft: Draft }[]
+    >;
+    this.setPreferences({
+      composerQueues: {
+        ...queues,
+        [key]: [...(queues[key] ?? []), { id: crypto.randomUUID(), draft }],
+      } as unknown as Json,
+    });
   }
   consumeDraft(target: Selection): Draft | undefined {
     const key = draftKey(target);
     const draft = this.state.drafts[key];
-    this.draftGenerations.set(key, (this.draftGenerations.get(key) ?? 0) + 1);
     const drafts = { ...this.state.drafts };
     delete drafts[key];
     this.patch({ drafts });
@@ -538,7 +577,6 @@ export class AppStore {
   private async submitDraft(target: Selection, draft: SubmitDraft): Promise<string> {
     if (!draft.text.trim() && !draft.attachments?.length)
       throw new Error('Cannot submit an empty draft');
-    const key = draftKey(target);
     if (
       target.kind !== 'session' &&
       target.projectId &&
@@ -547,7 +585,6 @@ export class AppStore {
       throw new Error(`Unknown project ${target.projectId}`);
     const { runBeforeSubmit, mode, consumeDraft = true, ...submittedDraft } = draft;
     const previous = consumeDraft ? (this.consumeDraft(target) ?? submittedDraft) : submittedDraft;
-    const generation = this.draftGenerations.get(key);
     let sessionId = target.kind === 'session' ? target.sessionId : undefined;
     try {
       await this.flushDrafts();
@@ -582,10 +619,6 @@ export class AppStore {
       }
       const cwd = this.state.live[sessionId]?.cwd ?? this.row(sessionId)?.cwd;
       if (!cwd) throw new Error(`Unknown workspace for session ${sessionId}`);
-      if (target.kind !== 'session')
-        await prepareTurnCheckpoint({ sessionId, cwd }, this).catch((error) =>
-          this.reportError(String(error)),
-        );
       await runSubmitHooks({ sessionId, cwd }, (error) => this.reportError(String(error)));
       await runBeforeSubmit?.({ sessionId, cwd });
       const status = this.sessionStatus(sessionId);
@@ -596,6 +629,10 @@ export class AppStore {
           : status === 'working' || status === 'waiting'
             ? 'followUp'
             : 'submit');
+      if (kind !== 'steer')
+        await prepareTurnCheckpoint({ sessionId, cwd }, this).catch((error) =>
+          this.reportError(String(error)),
+        );
       const storedAttachments = draft.attachments
         ? await Promise.all(draft.attachments.map((attachment) => this.storeAttachment(attachment)))
         : undefined;
@@ -613,30 +650,46 @@ export class AppStore {
               agentTags: draft.agentTags,
               resourceTags: draft.resourceTags,
             };
+      const submitted = this.submittedDrafts.get(sessionId) ?? [];
+      submitted.push(submittedDraft);
+      this.submittedDrafts.set(sessionId, submitted);
       await this.sendIntent(sessionId, intent);
       return sessionId;
     } catch (error) {
-      if (consumeDraft && this.draftGenerations.get(key) === generation) {
+      if (sessionId) {
+        const submitted = this.submittedDrafts.get(sessionId);
+        const index = submitted?.indexOf(submittedDraft) ?? -1;
+        if (index >= 0) submitted!.splice(index, 1);
+      }
+      if (consumeDraft) {
         const destination: Selection =
           sessionId && target.kind !== 'session'
             ? {
                 kind: 'session',
                 sessionId,
-                projectId: this.state.selectedProject ?? target.projectId ?? '',
+                projectId:
+                  target.projectId ??
+                  this.row(sessionId)?.projectCwd ??
+                  this.row(sessionId)?.cwd ??
+                  '',
               }
             : target;
-        if (draftKey(destination) === key || !this.getDraft(destination))
-          this.setDraft(destination, previous);
+        this.restoreDraft(destination, previous);
       }
       this.patch({ error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   }
   async loadSessions(cwd: string) {
-    const [rows, pins] = await Promise.all([
+    const generation = (this.catalogGenerations.get(cwd) ?? 0) + 1;
+    this.catalogGenerations.set(cwd, generation);
+    const [listedRows, listedPins] = await Promise.all([
       this.backend.call('sessions.list', { cwd }),
       this.backend.call('sessions.pins', { cwd }),
     ]);
+    if (this.catalogGenerations.get(cwd) !== generation) return this.state.sessions[cwd] ?? [];
+    const rows = listedRows.filter((row) => !this.removed.has(row.runId));
+    const pins = listedPins.filter((id) => !this.removed.has(id));
     // Replace only views whose catalog changed, so unrelated transcripts keep their identity.
     let views = this.state.views;
     for (const row of rows) {
@@ -680,6 +733,7 @@ export class AppStore {
     return promise;
   }
   async createSession(params: Methods['session.create']['params']) {
+    const generation = this.selectionGeneration;
     const handle = await this.backend.call('session.create', params);
     this.patch({
       live: { ...this.state.live, [handle.sessionId]: handle },
@@ -687,8 +741,10 @@ export class AppStore {
     });
     const projectId =
       this.state.projects.find((project) => project.cwd === params.cwd)?.id ?? params.cwd;
-    this.selectionGeneration++;
-    this.commitSelection({ kind: 'session', sessionId: handle.sessionId, projectId });
+    if (generation === this.selectionGeneration) {
+      this.selectionGeneration++;
+      this.commitSelection({ kind: 'session', sessionId: handle.sessionId, projectId });
+    }
     await this.loadSessions(params.cwd);
     await this.loadSession(handle.sessionId);
     return handle;
@@ -795,7 +851,7 @@ export class AppStore {
     } finally {
       for (const unsubscribe of this.unsubscribers) unsubscribe();
       this.forkRefreshes.clear();
-      this.backend.close();
+      await this.backend.close();
     }
   }
 }

@@ -90,7 +90,7 @@ describe('session projection', () => {
       data: { request_id: 'child-turn', text: 'Review the delegated change' },
     });
     childPrompt.actor = { kind: 'worker', agent_id: 'child' };
-    const view = projectEvents([
+    let view = projectEvents([
       event(1, {
         event_type: 'agent_spawned',
         data: { agent_id: 'parent', profile: 'default', parent_agent_id: null },
@@ -121,6 +121,47 @@ describe('session projection', () => {
       'An example answer.',
     ]);
     expect(view.subagents.child).toMatchObject({ id: 'child', state: 'running' });
+    const childPermission = {
+      ...event(
+        7,
+        {
+          event_type: 'permission_requested',
+          data: {
+            permission_id: 'child-permission',
+            kind: 'command',
+            tool_call_id: 'child-call',
+            summary: 'Run child command',
+            request_digest: '',
+            timeout_ms: 10000,
+            default_decision: 'deny',
+          },
+        },
+        'child-turn',
+      ),
+      actor: { kind: 'worker' as const, agent_id: 'child' },
+    };
+    view = applyUpdate(view, { kind: 'event', delivery: 'durable', event: childPermission });
+    expect(view.permissions).toHaveLength(1);
+    expect(view.tools['child-call']).toBeUndefined();
+    expect(view.turns.map((turn) => turn.id)).toEqual(['turn']);
+    view = applyUpdate(view, {
+      kind: 'event',
+      delivery: 'durable',
+      event: event(8, {
+        event_type: 'permission_resolved',
+        data: { permission_id: 'child-permission', decision: 'allow', reason: null },
+      }),
+    });
+    view = applyUpdate(view, {
+      kind: 'event',
+      delivery: 'durable',
+      event: event(9, {
+        event_type: 'task_completed',
+        data: { task_id: 'turn', result_summary: 'done', result_digest: '', metadata: null },
+      }),
+    });
+    expect(view.status).toBe('idle');
+    expect(view.turns.every((turn) => turn.status === 'completed')).toBe(true);
   });
 
   test('plain exchange settles a reusable turn and drops duplicate durable delivery without changing references', () => {
@@ -541,6 +582,5 @@ describe('session projection', () => {
       }),
     ]);
     expect(view.entries[0]).toMatchObject({ text: 'A[removed]B' });
-    expect(view.contextPruning).toHaveLength(1);
   });
 });

@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { chmod, stat, mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -52,6 +52,15 @@ test('UTF-8 file operations reject traversal, escaping symlinks and invalid byte
   try {
     await writeText(root, 'safe.txt', 'héllo\n');
     expect(await readText(root, 'safe.txt')).toBe('héllo\n');
+    await chmod(join(root, 'safe.txt'), 0o664);
+    const previousUmask = process.umask(0o022);
+    try {
+      await writeText(root, 'safe.txt', 'updated\n');
+      expect((await stat(join(root, 'safe.txt'))).mode & 0o777).toBe(0o664);
+      expect(await readText(root, 'safe.txt')).toBe('updated\n');
+    } finally {
+      process.umask(previousUmask);
+    }
     await symlink(outside, join(root, 'escape'));
     await symlink(join(outside, 'missing.txt'), join(root, 'dangling'));
     for (const path of [

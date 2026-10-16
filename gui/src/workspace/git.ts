@@ -57,14 +57,24 @@ export async function gitCommand(
   }
 }
 
-async function repositoryRoot(cwd: string, signal?: AbortSignal): Promise<string | null> {
+export async function repositoryRoot(cwd: string, signal?: AbortSignal): Promise<string | null> {
   const result = await gitCommand(cwd, ['rev-parse', '--show-toplevel'], {
     signal,
     allowFailure: true,
   });
-  if (result.exitCode === 0) return result.stdout.trim();
+  if (result.exitCode === 0) return result.stdout.replace(/\n$/, '');
   if (result.stderr.includes('not a git repository')) return null;
   throw new GitError(result);
+}
+export async function capturePaths(cwd: string, signal?: AbortSignal): Promise<string[]> {
+  const untracked = (
+    await gitCommand(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], { signal })
+  ).stdout.split('\0');
+  const secrets = untracked.filter((path) => {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    return name === '.env' || (name.startsWith('.env.') && name !== '.env.example');
+  });
+  return ['.', ...secrets.map((path) => `:(top,literal,exclude)${path}`)];
 }
 async function revision(cwd: string, ref: string, signal?: AbortSignal): Promise<string | null> {
   const result = await gitCommand(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{tree}`], {
@@ -105,7 +115,10 @@ async function captureTrees(
     }
     const index = (await gitCommand(cwd, ['write-tree'], { env, signal })).stdout.trim();
     if (!current) return { index, current: index };
-    await gitCommand(cwd, ['add', '--all', '--', '.'], { env, signal });
+    await gitCommand(cwd, ['add', '--all', '--', ...(await capturePaths(cwd, signal))], {
+      env,
+      signal,
+    });
     const tree = (await gitCommand(cwd, ['write-tree'], { env, signal })).stdout.trim();
     return { index, current: tree };
   } finally {
@@ -406,7 +419,10 @@ async function patchSnapshot(
     await gitCommand(
       snapshot.root,
       [
+        '-c',
+        'diff.suppressBlankEmpty=false',
         'diff',
+        '--no-color',
         '--no-ext-diff',
         '--no-textconv',
         '--no-renames',
@@ -485,5 +501,7 @@ export async function expandReviewContext(
 ): Promise<ReviewSnapshot> {
   if (!Number.isSafeInteger(context) || context < 0)
     throw new Error('context must be a nonnegative integer');
-  return patchSnapshot(snapshot, Math.min(context, 2_147_483_647), signal);
+  const expanded = await patchSnapshot(snapshot, Math.min(context, 2_147_483_647), signal);
+  // Context must never displace changes already present in the compact snapshot.
+  return expanded.truncated || expanded.patch.length > 32 * 1024 * 1024 ? snapshot : expanded;
 }

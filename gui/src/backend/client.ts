@@ -12,7 +12,7 @@ export interface Backend {
   getStatus(): BackendStatus;
   getStderr(): string;
   reconnect(): Promise<void>;
-  close(): void;
+  close(): void | Promise<void>;
 }
 export class BackendError extends Error {
   constructor(
@@ -50,6 +50,7 @@ export class JsonLines {
 export class BackendClient implements Backend {
   private process?: Bun.Subprocess<'pipe', 'pipe', 'pipe'>;
   private generation = 0;
+  private closing?: Promise<void>;
   private nextId = 1;
   private pending = new Map<
     number,
@@ -191,17 +192,32 @@ export class BackendClient implements Backend {
     return promise;
   }
   async reconnect() {
-    this.close();
+    await this.close();
     this.start();
   }
-  close() {
+  close(): Promise<void> {
+    if (this.closing) return this.closing;
     ++this.generation;
-    this.process?.stdin.end();
-    this.process = undefined;
+    const child = this.process;
     for (const pending of this.pending.values())
       pending.reject(new Error('Backend connection closed'));
     this.pending.clear();
     this.setStatus({ state: 'closed', reconnectable: true });
+    this.closing = (async () => {
+      if (!child) return;
+      let timer: Timer | undefined;
+      try {
+        child.stdin.end();
+        timer = setTimeout(() => child.kill('SIGKILL'), 1000);
+        await child.exited;
+      } finally {
+        clearTimeout(timer);
+        if (this.process === child) this.process = undefined;
+      }
+    })().finally(() => {
+      this.closing = undefined;
+    });
+    return this.closing;
   }
 }
 function asError(error: unknown): Error {

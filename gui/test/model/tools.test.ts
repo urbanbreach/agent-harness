@@ -2,74 +2,57 @@ import { describe, expect, test } from 'bun:test';
 import { presentTool } from '../../src/model/tools';
 
 describe('tool presentation', () => {
-  test('uses state-sensitive titles and compact action/detail grammar', () => {
+  test('classifies tool activity independently of translated labels', () => {
     const cases = [
       {
         id: 'bash',
         args: { command: 'cargo check', description: 'Check workspace' },
         status: 'running',
         kind: 'command',
-        action: 'Run',
-        title: 'Running command: Check workspace',
-        detail: 'Check workspace',
+        target: 'cargo check',
       },
       {
         id: 'fs.read',
         args: { filePath: 'src/main.rs' },
         status: 'succeeded',
         kind: 'read',
-        action: 'Read',
-        title: 'Read main.rs',
-        detail: 'main.rs',
+        target: 'src/main.rs',
       },
       {
         id: 'grep',
         args: { pattern: 'needle', include: '*.rs' },
         status: 'failed',
         kind: 'search',
-        action: 'Search',
-        title: 'Failed to search files for needle in *.rs',
-        detail: 'Failed to search files for needle in *.rs',
+        target: 'needle',
       },
       {
         id: 'websearch',
         args: { query: 'Rust ownership' },
         status: 'succeeded',
         kind: 'web',
-        action: 'Search',
-        title: 'Searched the web for Rust ownership',
-        detail: 'Search for Rust ownership',
+        target: 'Rust ownership',
       },
       {
         id: 'todowrite',
         args: {},
         status: 'running',
         kind: 'todo',
-        action: 'Plan',
-        title: 'Updating plan',
-        detail: 'Updating plan',
       },
       {
         id: 'question',
         args: { questions: [{ question: 'Which branch?' }] },
         status: 'running',
         kind: 'question',
-        action: 'Ask questions',
-        title: 'Ask questions',
-        detail: 'Which branch?',
       },
       {
         id: 'extension.inspectState',
         args: {},
         status: 'succeeded',
         kind: 'generic',
-        action: 'Tool',
-        title: 'Inspect State',
-        detail: 'Inspect State',
       },
     ];
-    for (const { id, args, status, ...expected } of cases) {
-      expect(presentTool(id, args, undefined, { status })).toMatchObject(expected);
+    for (const { id, args, status, kind, target } of cases) {
+      expect(presentTool(id, args, undefined, { status })).toMatchObject({ kind, status, target });
     }
   });
 

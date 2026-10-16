@@ -1,4 +1,14 @@
-import { readdir, realpath, writeFile, lstat, open, mkdtemp, rename, rm } from 'node:fs/promises';
+import {
+  chmod,
+  readdir,
+  realpath,
+  writeFile,
+  lstat,
+  open,
+  mkdtemp,
+  rename,
+  rm,
+} from 'node:fs/promises';
 import { watch, constants } from 'node:fs';
 import { isAbsolute, relative, resolve, sep, dirname } from 'node:path';
 
@@ -128,10 +138,11 @@ export async function writeText(
       (info) => info.mode,
       (error: NodeJS.ErrnoException) => {
         if (error.code !== 'ENOENT') throw error;
-        return 0o666;
+        return undefined;
       },
     );
-    await writeFile(temporary, text, { encoding: 'utf8', signal, mode, flag: 'wx' });
+    await writeFile(temporary, text, { encoding: 'utf8', signal, mode: mode ?? 0o666, flag: 'wx' });
+    if (mode !== undefined) await chmod(temporary, mode & 0o7777);
     signal?.throwIfAborted();
     const currentParent = await realpath(parent);
     if (currentParent !== parent || !contained(canonical, currentParent))

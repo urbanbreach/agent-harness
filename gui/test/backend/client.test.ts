@@ -56,6 +56,31 @@ test('child transport correlates out-of-order responses, delivers notifications,
     expect(client.getStatus()).toMatchObject({ state: 'failed', reconnectable: true });
     expect(client.getStderr()).toContain('synthetic diagnostic');
   } finally {
-    client.close();
+    await client.close();
   }
+});
+
+test('closing owns a child with a pending request until bounded termination completes', async () => {
+  const client = new BackendClient([
+    process.execPath,
+    '-e',
+    `
+    process.stdout.write(JSON.stringify({method:'session.update',params:{sessionId:String(process.pid),update:{kind:'status',text:'ready'}}})+'\\n');
+    for await (const chunk of Bun.stdin.stream()) {}
+    await new Promise(() => { process.stdin.resume(); });
+  `,
+  ]);
+  const ready = Promise.withResolvers<number>();
+  client.subscribe((notification) => {
+    if (notification.method === 'session.update')
+      ready.resolve(Number(notification.params.sessionId));
+  });
+  const pid = await ready.promise;
+  const pending = client.call('sessions.list', { cwd: '/demo' });
+  const rejected = pending.catch((error: unknown) => error);
+  const closing = client.close();
+  expect(() => process.kill(pid, 0)).not.toThrow();
+  expect(await rejected).toMatchObject({ message: 'Backend connection closed' });
+  await closing;
+  expect(() => process.kill(pid, 0)).toThrow();
 });

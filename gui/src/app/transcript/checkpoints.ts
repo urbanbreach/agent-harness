@@ -1,5 +1,5 @@
 import { t } from '../../i18n';
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { SessionView } from '../../model/session';
 import { getAppStore, type AppStore } from '../../store';
 import type { Json } from '../../backend/protocol';
@@ -9,7 +9,6 @@ import {
   checkpointRef,
   type Checkpoint,
 } from '../../workspace/checkpoints';
-import { registerBeforeSubmit } from '../turn-hooks';
 
 export interface TurnCheckpoint extends Checkpoint {
   startRef: string;
@@ -219,8 +218,6 @@ export function useTurnCheckpoints(
   sessionId: string,
   view: SessionView,
 ): Record<string, TurnCheckpoint> {
-  const latest = useRef(view);
-  latest.current = view;
   const state = session(sessionId);
   const mapping = useSyncExternalStore(
     (listener) => {
@@ -232,13 +229,6 @@ export function useTurnCheckpoints(
     () => state.data.turns,
     () => state.data.turns,
   );
-  useEffect(() => {
-    void reconcile(sessionId, latest.current).catch(console.error);
-    return registerBeforeSubmit(async (context) => {
-      if (context.sessionId !== sessionId) return;
-      await prepareTurnCheckpoint(context);
-    });
-  }, [sessionId, state]);
   useEffect(() => {
     void reconcile(sessionId, view).catch(console.error);
   }, [sessionId, view.turns]);

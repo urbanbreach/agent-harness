@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { render, useGpuix, type KeyEvent } from '@gpuix/react';
+import { createRenderer, render, startFrameLoop, useGpuix, type KeyEvent } from '@gpuix/react';
+import type { GpuixRenderer } from '@gpuix/native';
 import { basename } from 'node:path';
 import { App } from './app/App';
 import { Composer, WorkspaceFooter, type ComposerTarget } from './app/composer';
@@ -26,7 +27,12 @@ import { useTheme } from './theme';
 
 // `bun --hot` reruns this module in the same process. Flush the previous store's drafts
 // and close its backend, so each reload does not leave another gui-server running.
-const hot = globalThis as { harnessGuiStore?: AppStore };
+const hot = globalThis as {
+  harnessGuiStore?: AppStore;
+  harnessGuiRenderer?: GpuixRenderer;
+  harnessGuiLoop?: { stop(): void };
+};
+hot.harnessGuiLoop?.stop();
 await hot.harnessGuiStore?.dispose().catch(() => {});
 const backend = await createBackend();
 const store = new AppStore(backend);
@@ -40,6 +46,20 @@ const savedWindow = await persist.read<WindowGeometry>('window.geometry').catch(
   return undefined;
 });
 const initialWindow = restoreWindowGeometry(savedWindow);
+let shutdown: Promise<void> | undefined;
+function terminate() {
+  shutdown ??= store
+    .dispose()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((error) => {
+      shutdown = undefined;
+      store.reportError(t('notice.saveFailed', { error: String(error) }));
+      console.error(error);
+    });
+  return shutdown;
+}
 
 function ErrorToasts({ error }: { error?: string }) {
   const { showToast } = useToast();
@@ -198,11 +218,7 @@ function Application() {
   };
   const quit = async () => {
     await captureWindow();
-    await store.flushDrafts();
-    await store.flush();
-    backend.close();
-    if (renderer) nativeRenderer(renderer).closeWindow();
-    process.exit(0);
+    await terminate();
   };
   useEffect(() => {
     taskSwitcher.reconcile(
@@ -644,11 +660,16 @@ function Application() {
   );
 }
 
-render(<Application />, {
+const windowOptions = {
   ...initialWindow,
   title: 'Harness',
   appId: 'Harness',
   keyboardFocusDim: false,
   minWidth: 980,
   minHeight: 680,
-});
+};
+const renderer = hot.harnessGuiRenderer ?? createRenderer();
+if (!hot.harnessGuiRenderer) renderer.init(windowOptions);
+hot.harnessGuiRenderer = renderer;
+render(<Application />, { ...windowOptions, renderer });
+hot.harnessGuiLoop = startFrameLoop(renderer, { onTerminated: () => void terminate() });

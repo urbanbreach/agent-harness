@@ -106,6 +106,54 @@ test('review caps patch lines without dropping full summary and supports cancell
   await expect(collectReviewDiff(root, 'branch', controller.signal)).rejects.toThrow();
 });
 
+test('review patches ignore color and blank-context display configuration', async () => {
+  const root = await repository();
+  await Bun.write(join(root, 'base.txt'), 'before\n\nmiddle\n\nafter\n');
+  await commit(root, { message: 'Blank context', stageAll: true });
+  await gitCommand(root, ['config', 'color.ui', 'always']);
+  await gitCommand(root, ['config', 'diff.suppressBlankEmpty', 'true']);
+  await Bun.write(join(root, 'base.txt'), 'changed\n\nmiddle\n\nlast\n');
+  const snapshot = await collectReviewDiff(root, 'uncommitted');
+  for (const value of [snapshot, await expandReviewContext(snapshot, 2_147_483_647)]) {
+    expect(value.patch).not.toContain('\u001b[');
+    expect(value.patch).toContain('\n \n middle\n \n');
+    expect(value.patch).toContain('-before\n+changed\n');
+    expect(value.patch).toContain('-after\n+last\n');
+  }
+});
+
+test('passive change inspection never writes untracked environment secrets into Git objects', async () => {
+  const root = await repository();
+  const secrets = [
+    { path: '.env', content: 'TOKEN=private-root-secret\n' },
+    { path: 'nested/.env.local', content: 'TOKEN=private-nested-secret\n' },
+  ];
+  const hashes: string[] = [];
+  for (const secret of secrets) {
+    await Bun.write(join(root, secret.path), secret.content);
+    hashes.push(
+      (await gitCommand(root, ['hash-object', '--stdin'], { input: secret.content })).stdout.trim(),
+    );
+  }
+  await Bun.write(join(root, '.env.example'), 'TOKEN=example\n');
+  const beforeIndex = await readFile(join(root, '.git/index'));
+  const assertSecretsAbsent = async () => {
+    for (const hash of hashes)
+      expect(
+        (await gitCommand(root, ['cat-file', '-e', hash], { allowFailure: true })).exitCode,
+      ).not.toBe(0);
+  };
+  await assertSecretsAbsent();
+  expect(await inspectBranches(root)).toMatchObject({ additions: 1, deletions: 0 });
+  await assertSecretsAbsent();
+  const snapshot = await collectReviewDiff(root, 'uncommitted');
+  expect(snapshot.files.map((file) => file.path)).toEqual(['.env.example']);
+  await assertSecretsAbsent();
+  expect(await readFile(join(root, '.git/index'))).toEqual(beforeIndex);
+  for (const secret of secrets)
+    expect(await readFile(join(root, secret.path), 'utf8')).toBe(secret.content);
+});
+
 test('branch switching creates real branches, reports detached and worktree occupancy, and surfaces conflicts', async () => {
   const root = await repository();
   const feature = await switchBranch(root, 'feature', true);
