@@ -1,0 +1,8 @@
+diff --git a/packages/native/src/text/paint.rs b/packages/native/src/text/paint.rs
+--- a/packages/native/src/text/paint.rs
++++ b/packages/native/src/text/paint.rs
+@@ -404,3 +404,3 @@
+     for wash in washes {
+-        let rects = range_rects(layout, &wash.range, 0.0, 0.0);
++        let rects = range_rects(layout, &wash.range, 1.0, 1.0);
+         if rects.is_empty() {
