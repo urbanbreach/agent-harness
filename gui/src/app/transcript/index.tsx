@@ -1,3 +1,4 @@
+import { t, useLocale } from '../../i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findRanges, useGpuix, useTextSearch, type PublicInstance } from '@gpuix/react';
 import { useSessionView, usePreferences } from '../../store';
@@ -52,6 +53,7 @@ function renderedText(blocks: MarkdownBlock[]): string {
 }
 const empty = emptySessionView();
 export function TranscriptView({ sessionId }: { sessionId: string }) {
+  const locale = useLocale();
   const view = useSessionView(sessionId) ?? empty;
   const preferences = usePreferences();
   const { colors, sp, reducedMotion } = useTheme();
@@ -140,13 +142,13 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     const remove = ['follow', 'tail'].map((command) =>
       registerAction({
         id: `transcript.${command}`,
-        label: command === 'follow' ? 'Follow latest output' : 'Scroll to latest output',
+        label: t(command === 'follow' ? 'transcript.follow' : 'transcript.tail'),
         enabled: () => rows.length > 0,
         run: followTail,
       }),
     );
     return () => remove.forEach((unregister) => unregister());
-  }, [rows.length, renderer]);
+  }, [rows.length, renderer, locale]);
   function navigate(back: boolean) {
     if (!matches.length) return;
     const next =
@@ -180,7 +182,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     () =>
       registerAction({
         id: 'transcript.copySelection',
-        label: 'common.copy_selection',
+        label: t('clipboard.selection'),
         enabled: () => !!renderer?.getSelectedText?.(),
         run: () => {
           const selected = renderer?.getSelectedText?.();
@@ -199,13 +201,13 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     }
     const removeFailed = registerAction({
       id: 'transcript.latestFailed',
-      label: 'Jump to latest failed turn',
+      label: t('transcript.latest_failed'),
       enabled: () => !!failed,
       run: () => jump(failed?.id),
     });
     const removeStreaming = registerAction({
       id: 'transcript.streaming',
-      label: 'Jump to live streaming turn',
+      label: t('transcript.streaming'),
       enabled: () => !!streaming,
       run: () => jump(streaming?.id),
     });
@@ -213,7 +215,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
       removeFailed();
       removeStreaming();
     };
-  }, [rows, view.turns, renderer]);
+  }, [rows, view.turns, renderer, locale]);
   useEffect(() => {
     if (findOpen && input.current) {
       renderer?.focusElement?.(input.current.id);
@@ -425,7 +427,17 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                           fontWeight: '500',
                         }}
                       >
-                        {`${row.turn.status === 'interrupted' ? 'You stopped after' : 'Worked for'} ${duration(row.turn.durationMs ?? (row.turn.endedMs ?? row.turn.startedMs) - row.turn.startedMs)}`}
+                        {t(
+                          row.turn.status === 'interrupted'
+                            ? 'transcript.you_stopped_after'
+                            : 'transcript.worked_for',
+                          {
+                            duration: duration(
+                              row.turn.durationMs ??
+                                (row.turn.endedMs ?? row.turn.startedMs) - row.turn.startedMs,
+                            ),
+                          },
+                        )}
                       </text>
                       <Icon
                         name={expanded.has(row.turn.id) ? 'chevron-down' : 'chevron-right'}
@@ -472,10 +484,18 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                         }}
                       >
                         {view.status === 'background'
-                          ? 'Waiting for background tasks'
+                          ? t('transcript.waiting_background')
                           : Object.values(view.retries).length
-                            ? `Retrying (${Object.values(view.retries).at(-1)!.retry.attempt}/${Object.values(view.retries).at(-1)!.retry.max_attempts})…`
-                            : `Working for ${duration(Math.max(0, (referenceNow ?? now) - workingStart), true)}`}
+                            ? t('transcript.retrying', {
+                                attempt: Object.values(view.retries).at(-1)!.retry.attempt,
+                                max: Object.values(view.retries).at(-1)!.retry.max_attempts,
+                              })
+                            : t('transcript.working_for', {
+                                duration: duration(
+                                  Math.max(0, (referenceNow ?? now) - workingStart),
+                                  true,
+                                ),
+                              })}
                       </text>
                     </div>
                     <BackgroundWork sessionId={sessionId} view={view} />
@@ -544,7 +564,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                   renderer?.scrollIntoView?.(target.id);
                 }
               }}
-              aria-label={`Turn ${tick + 1}`}
+              aria-label={t('transcript.turn', { number: tick + 1 })}
               style={{ width: 44, height: 12, borderRadius: 4 }}
             >
               <div
@@ -603,7 +623,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
           name="arrow-down"
           size={16}
           color={colors.text}
-          label="Scroll to bottom"
+          label={t('transcript.scroll_to_bottom')}
           onClick={followTail}
           style={{
             position: 'absolute',
@@ -640,7 +660,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
           <TextField
             ref={input}
             value={query}
-            placeholder="Find"
+            placeholder={t('transcript.find')}
             onChange={setQuery}
             interceptedKeys={['enter', 'shift-enter', 'escape']}
             onKeyDown={(event) => {
@@ -670,25 +690,28 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
           >
             {query
               ? matches.length
-                ? `${search.active + 1} of ${matches.length}${matches.length === 20000 ? '+' : ''}`
-                : 'No results'
+                ? t('transcript.match_count', {
+                    current: search.active + 1,
+                    total: `${matches.length}${matches.length === 20000 ? '+' : ''}`,
+                  })
+                : t('transcript.no_results')
               : ''}
           </text>
           <IconButton
             name="arrow-up"
             size={13}
-            label="Previous match"
+            label={t('transcript.previous_match')}
             disabled={!matches.length}
             onClick={() => navigate(true)}
           />
           <IconButton
             name="arrow-down"
             size={13}
-            label="Next match"
+            label={t('transcript.next_match')}
             disabled={!matches.length}
             onClick={() => navigate(false)}
           />
-          <IconButton name="x" size={14} label="Close find" onClick={closeFind} />
+          <IconButton name="x" size={14} label={t('transcript.close_find')} onClick={closeFind} />
         </div>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { SessionView } from '../../model/session';
 import { getAppStore, type AppStore } from '../../store';
@@ -235,13 +236,12 @@ export async function copyTurnCheckpoints(
   targetSession: string,
   throughTurnId: string,
 ): Promise<void> {
-  if (sourceSession === targetSession)
-    throw new Error('Checkpoint fork requires a different session');
+  if (sourceSession === targetSession) throw new Error(t('transcript.fork_same_session'));
   const source = session(sourceSession);
   await source.loaded;
   await source.operations;
   const through = source.data.turns[throughTurnId];
-  if (!through) throw new Error('The fork turn has no workspace checkpoint');
+  if (!through) throw new Error(t('transcript.fork_no_checkpoint'));
   const copied: Record<string, TurnCheckpoint> = {};
   for (const [turnId, checkpoint] of Object.entries(source.data.turns)) {
     if (checkpoint.turn > through.turn) continue;

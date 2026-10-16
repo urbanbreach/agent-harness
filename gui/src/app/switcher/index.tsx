@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { DismissableLayer, useWindowSize, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
+import { t, useLocale } from '../../i18n';
 import { providerColor as providerTint } from '../../theme/colors';
 import { Icon, ellipsis, row } from '../../ui';
 import type { IconName } from '../../ui/icon-names';
@@ -45,6 +46,7 @@ export function TaskSwitcher({
   restoreFocusId,
   now,
 }: TaskSwitcherProps) {
+  useLocale();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const { colors, sp } = useTheme();
   const window = useWindowSize();
@@ -87,7 +89,7 @@ export function TaskSwitcher({
             ref={panel}
             tabIndex={-1}
             role="listbox"
-            aria-label="Recent tasks"
+            aria-label={t('shell.switcher_recent_tasks')}
             onMouseDownOutside={(event) => {
               if (event.button === 0) controller.cancel();
             }}
@@ -150,12 +152,12 @@ export function TaskSwitcher({
                     seconds === undefined
                       ? ''
                       : seconds < 60
-                        ? 'just now'
+                        ? t('shell.switcher_just_now')
                         : seconds < 3600
-                          ? `${Math.floor(seconds / 60)}m`
+                          ? t('shell.switcher_age_minutes', { count: Math.floor(seconds / 60) })
                           : seconds < 86400
-                            ? `${Math.floor(seconds / 3600)}h`
-                            : `${Math.floor(seconds / 86400)}d`;
+                            ? t('shell.switcher_age_hours', { count: Math.floor(seconds / 3600) })
+                            : t('shell.switcher_age_days', { count: Math.floor(seconds / 86400) });
                   return (
                     <div
                       key={id}
@@ -164,7 +166,7 @@ export function TaskSwitcher({
                         else cards.current.delete(id);
                       }}
                       role="option"
-                      aria-label={task.title || 'New task'}
+                      aria-label={task.title || t('task.untitled')}
                       aria-selected={highlighted}
                       onMouseMove={() => controller.highlight(id)}
                       onMouseDown={(event) => {
@@ -240,7 +242,7 @@ export function TaskSwitcher({
                                 color: colors.text,
                               }}
                             >
-                              {task.projectName || 'No project'}
+                              {task.projectName || t('shell.switcher_no_project')}
                             </text>
                           </div>
                           <text
@@ -288,7 +290,7 @@ export function TaskSwitcher({
                             color: highlighted ? colors.text : colors.text_secondary,
                           }}
                         >
-                          {task.title || 'New task'}
+                          {task.title || t('task.untitled')}
                         </text>
                       </div>
                     </div>

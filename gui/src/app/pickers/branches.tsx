@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DismissableLayer, type KeyEvent, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
+import { t, useLocale } from '../../i18n';
 import { Icon, MenuChip, TextField, row } from '../../ui';
 import { inspectBranches, switchBranch, type BranchSnapshot } from '../../workspace/git';
 import { PickerEmpty, PickerRow, PickerSeparator } from './index';
@@ -35,6 +36,7 @@ export function filterBranches(snapshot: BranchSnapshot, query: string) {
 }
 export function BranchSelector(props: BranchSelectorProps) {
   const { colors, sp } = useTheme();
+  useLocale();
   const [snapshot, setSnapshot] = useState<BranchSnapshot | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -60,7 +62,7 @@ export function BranchSelector(props: BranchSelectorProps) {
         })
         .catch((error) => {
           if (!controller.signal.aborted)
-            props.onError?.(`Could not inspect branches: ${String(error)}`);
+            props.onError?.(t('shell.errors_inspect_branches', { error: String(error) }));
         });
     return () => controller.abort();
   }, [path]);
@@ -75,7 +77,7 @@ export function BranchSelector(props: BranchSelectorProps) {
       if (version === generation.current) setSnapshot(value);
     } catch (error) {
       if (version === generation.current)
-        props.onError?.(`Could not inspect branches: ${String(error)}`);
+        props.onError?.(t('shell.errors_inspect_branches', { error: String(error) }));
     }
   }
   const selected = props.planned
@@ -110,7 +112,9 @@ export function BranchSelector(props: BranchSelectorProps) {
       }
     } catch (error) {
       props.onError?.(
-        `Could not change branch: ${error instanceof Error ? error.message : String(error)}`,
+        t('errors.change_branch', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
       );
     } finally {
       operation.current = false;
@@ -167,10 +171,10 @@ export function BranchSelector(props: BranchSelectorProps) {
   }
   if (!path || !snapshot) return null;
   const label = pending
-    ? 'Switching…'
+    ? t('branches.switching')
     : !props.planned && snapshot.detached
-      ? `Detached HEAD (${snapshot.current})`
-      : selected || 'Detached HEAD';
+      ? t('shell.branches_detached_head_with_branch', { branch: snapshot.current })
+      : selected || t('branches.detached_head');
   return (
     <div style={{ position: 'relative' }}>
       <MenuChip
@@ -201,7 +205,7 @@ export function BranchSelector(props: BranchSelectorProps) {
           >
             <div
               role="listbox"
-              aria-label="Branches"
+              aria-label={t('branches.title')}
               onKeyDown={keys}
               onMouseDownOutside={(event) => {
                 if (event.button === 0) setOpen(false);
@@ -237,7 +241,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                         color: colors.text,
                       }}
                     >
-                      Create and checkout new branch
+                      {t('branches.create_and_checkout')}
                     </text>
                   </div>
                   <TextField
@@ -250,7 +254,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                     onSubmit={() => {
                       if (name.trim()) void change(name.trim(), true);
                     }}
-                    placeholder="New branch name"
+                    placeholder={t('input.new_branch_name')}
                     style={{
                       height: 36,
                       marginTop: 12,
@@ -269,7 +273,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                       color: colors.text_tertiary,
                     }}
                   >
-                    Press Return to create · Esc to cancel
+                    {t('branches.create_hint')}
                   </text>
                 </div>
               ) : (
@@ -298,7 +302,9 @@ export function BranchSelector(props: BranchSelectorProps) {
                             : -1,
                         );
                       }}
-                      placeholder={`Search ${props.projectName || 'project'} branches`}
+                      placeholder={t('branches.search_project', {
+                        project: props.projectName || t('project.project_lower'),
+                      })}
                       icon="search"
                       iconSize={15}
                       style={{
@@ -322,7 +328,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                       color: colors.text_tertiary,
                     }}
                   >
-                    Branches
+                    {t('branches.title')}
                   </text>
                   <div
                     style={{
@@ -351,14 +357,14 @@ export function BranchSelector(props: BranchSelectorProps) {
                         />
                       ))
                     ) : (
-                      <PickerEmpty>No branches found</PickerEmpty>
+                      <PickerEmpty>{t('branches.none_found')}</PickerEmpty>
                     )}
                   </div>
                   {!props.planned && (
                     <>
                       <PickerSeparator />
                       <PickerRow
-                        label="Create and checkout new branch…"
+                        label={t('branches.create_and_checkout_ellipsis')}
                         icon="plus"
                         highlighted={cursor === branches.length}
                         onSelect={() => choose(branches.length)}

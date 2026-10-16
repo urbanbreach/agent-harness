@@ -3,6 +3,7 @@ import { getAppStore } from '../../store';
 import { Button, TextField } from '../../ui';
 import { useTheme } from '../../theme';
 import { SettingsCard, SettingsRow } from './index';
+import { t } from '../../i18n';
 
 export function MaintenanceActions({ cwd }: { cwd: string }) {
   const backend = getAppStore().backend;
@@ -46,51 +47,35 @@ export function MaintenanceActions({ cwd }: { cwd: string }) {
     <>
       <SettingsCard>
         {[
-          [
-            'index',
-            'Rebuild session index',
-            'Recreate the searchable session index from durable session histories.',
-          ],
-          [
-            'crash',
-            'Scan crash reports',
-            'Inspect locally recorded crashes without contacting a provider.',
-          ],
-          [
-            'models',
-            'Refresh model catalog',
-            'Refresh provider model metadata. This does not generate an agent response.',
-          ],
+          ['index', t('settings.rebuild_index'), t('settings.rebuild_index_description')],
+          ['crash', t('settings.scan_crashes'), t('settings.scan_crashes_description')],
+          ['models', t('settings.refresh_models'), t('settings.refresh_models_description')],
           [
             'protocols',
-            'Provider protocols',
-            'Inspect supported provider protocols and configuration.',
+            t('settings.provider_protocols'),
+            t('settings.provider_protocols_description'),
           ],
-          [
-            'validate',
-            'Validate configuration',
-            'Check the effective Harness configuration for errors.',
-          ],
+          ['validate', t('settings.validate_config'), t('settings.validate_config_description')],
         ].map(([id, title, description]) => (
           <SettingsRow key={id} title={title!} description={description}>
             <Button disabled={busy} onClick={() => void run(id!)}>
-              Run
+              {t('settings.run')}
             </Button>
           </SettingsRow>
         ))}
         <SettingsRow
-          title="Explain configuration"
-          description="Enter a configuration key to inspect its effective value and source."
+          title={t('settings.explain_config')}
+          description={t('settings.explain_config_description')}
           last
         >
           <TextField
-            placeholder="Config key"
+            placeholder={t('settings.config_key')}
             value={path}
             onChange={setPath}
             style={{ width: 160 }}
           />
           <Button disabled={busy || !path.trim()} onClick={() => void run('explain')}>
-            Explain
+            {t('settings.explain')}
           </Button>
         </SettingsRow>
       </SettingsCard>
@@ -103,7 +88,7 @@ export function MaintenanceActions({ cwd }: { cwd: string }) {
             color: colors.text_secondary,
           }}
         >
-          {busy ? 'Running…' : output}
+          {busy ? t('settings.running') : output}
         </div>
       )}
     </>

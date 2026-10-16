@@ -1,3 +1,4 @@
+import { t, useLocale } from '../../i18n';
 import { useEffect, useRef } from 'react';
 import { useGpuix, type PublicInstance, type StyleDesc } from '@gpuix/react';
 import { useTheme } from '../../theme';
@@ -53,6 +54,7 @@ export function Suggestions({
   onAccept: (row: Suggestion) => void;
   onDismiss: () => void;
 }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const scroll = useRef<PublicInstance>(null);
@@ -74,7 +76,7 @@ export function Suggestions({
     >
       <div
         role="listbox"
-        aria-label="Composer suggestions"
+        aria-label={t('composer.suggestions')}
         onMouseDownOutside={onDismiss}
         style={{
           width: Math.max(0, width - 2),
@@ -111,7 +113,7 @@ export function Suggestions({
             >
               <Spinner size={12} />
               <text style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
-                Loading suggestions…
+                {t('composer.loading_suggestions')}
               </text>
             </div>
           ) : (
@@ -186,7 +188,15 @@ export function Suggestions({
                     }}
                   >
                     <text style={{ color: colors.text_tertiary, fontSize: sp(12.5) }}>
-                      {item.scope === 'builtin' ? 'built-in' : item.scope}
+                      {item.scope === 'builtin'
+                        ? t('command_scope.builtin')
+                        : item.scope === 'project'
+                          ? t('command_scope.project')
+                          : item.scope === 'user'
+                            ? t('command_scope.user')
+                            : item.scope === 'skill'
+                              ? t('command_scope.skill')
+                              : item.scope}
                     </text>
                   </Badge>
                 )}

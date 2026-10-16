@@ -18,6 +18,7 @@ import {
   type StyleDesc,
 } from '@gpuix/react';
 import { useTheme } from '../theme';
+import { t, useLocale } from '../i18n';
 import { bare, Icon, IconButton, Tooltip, row } from './controls';
 
 export type ToastKind = 'alert' | 'success';
@@ -66,6 +67,7 @@ export function Toast({
   onDismiss: () => void;
   id?: number;
 }) {
+  useLocale();
   const { colors, sp, reducedMotion } = useTheme();
   const { renderer } = useGpuix();
   const anchor = useRef<PublicInstance>(null);
@@ -172,10 +174,10 @@ export function Toast({
           >
             {message}
           </text>
-          <Tooltip content="Dismiss notification">
+          <Tooltip content={t('notice.dismiss')}>
             <IconButton
               name="x"
-              label="Dismiss notification"
+              label={t('notice.dismiss')}
               size={12}
               style={{ width: 26, height: 26 }}
               onClick={onDismiss}

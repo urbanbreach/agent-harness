@@ -1,3 +1,4 @@
+import { t, getLocale } from '../../i18n';
 import type { SessionView, TranscriptEntry, TurnView, TextEntry } from '../../model/session';
 
 export type TranscriptRow =
@@ -12,13 +13,8 @@ export function duration(ms: number, compact = false): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor(seconds / 60) % 60;
   const rest = seconds % 60;
-  if (compact)
-    return hours
-      ? `${hours}h${minutes ? ` ${minutes}m` : ''}`
-      : minutes
-        ? `${minutes}m${rest ? ` ${rest}s` : ''}`
-        : `${rest}s`;
-  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const unit = (n: number, word: 'hour' | 'minute' | 'second') =>
+    t(`transcript.${word}_${compact ? 'short' : n === 1 ? 'one' : 'other'}`, { count: n });
   return hours
     ? `${unit(hours, 'hour')}${minutes ? ` ${unit(minutes, 'minute')}` : ''}`
     : minutes
@@ -29,16 +25,23 @@ export function duration(ms: number, compact = false): string {
 export function timestamp(ms: number, now = new Date()): string {
   const date = new Date(ms);
   if (!Number.isFinite(ms) || ms <= 0) return '';
-  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const locale = getLocale();
+  const time = date.toLocaleTimeString(locale === 'en' ? 'en-US' : locale, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   if (day >= today) return time;
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (day.getTime() === yesterday.getTime()) return `Yesterday ${time}`;
+  if (day.getTime() === yesterday.getTime()) return t('transcript.yesterday', { time });
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  if (day >= monday) return `${date.toLocaleDateString('en-US', { weekday: 'long' })} ${time}`;
+  if (day >= monday)
+    return `${date.toLocaleDateString(locale === 'en' ? 'en-US' : locale, { weekday: 'long' })} ${time}`;
+  if (locale !== 'en')
+    return `${date.toLocaleDateString(locale, { month: 'short', day: 'numeric', ...(date.getFullYear() !== now.getFullYear() ? ({ year: 'numeric' } as const) : {}) })} ${time}`;
   const n = date.getDate();
   const suffix =
     n % 100 >= 11 && n % 100 <= 13

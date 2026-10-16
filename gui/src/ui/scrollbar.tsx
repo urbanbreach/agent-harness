@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGpuix, useWindowSize, type EventPayload, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../theme';
+import { t, useLocale } from '../i18n';
 
 export interface ScrollbarProps {
   viewport: number;
@@ -18,6 +19,7 @@ export function Scrollbar({
   edgeFades = false,
   surface,
 }: ScrollbarProps) {
+  useLocale();
   const { colors } = useTheme();
   const { renderer } = useGpuix();
   const window = useWindowSize();
@@ -131,8 +133,11 @@ export function Scrollbar({
       <div
         ref={track}
         role="scrollbar"
-        aria-label="Scroll"
-        aria-valuetext={`${Math.round(offset)} of ${Math.round(range)}`}
+        aria-label={t('shell.scroll')}
+        aria-valuetext={t('shell.scroll_position', {
+          offset: Math.round(offset),
+          range: Math.round(range),
+        })}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onMouseDown={begin}

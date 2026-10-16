@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { t, useLocale } from '../../i18n';
 import { useGpuix, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import { IconButton, TextField, row } from '../../ui';
 import { nativeRenderer } from '../../native';
 import { EmptyMessage } from './shared';
 export function BrowserView({ active }: { active: boolean }) {
+  useLocale();
   const { colors } = useTheme();
   const { renderer } = useGpuix();
   const input = useRef<PublicInstance>(null);
@@ -47,7 +49,7 @@ export function BrowserView({ active }: { active: boolean }) {
           iconSize={11}
           value={address}
           onChange={setAddress}
-          placeholder="Search or enter address"
+          placeholder={t('input.search_or_enter_address')}
           style={{ flexGrow: 1, marginLeft: 4, marginRight: 4, height: 28 }}
           onFocus={() => {
             if (input.current && renderer)
@@ -63,8 +65,8 @@ export function BrowserView({ active }: { active: boolean }) {
         <IconButton name="external-link" size={14} disabled style={{ width: 26, height: 26 }} />
       </div>
       <EmptyMessage
-        title="Browser unavailable"
-        description="The browser surface is not available on this platform yet"
+        title={t('browser.unavailable')}
+        description={t('browser.unavailable_on_platform')}
         icon="alert"
         bottomPadding={40}
       />

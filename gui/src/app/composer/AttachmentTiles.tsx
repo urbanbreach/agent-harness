@@ -1,3 +1,4 @@
+import { t, useLocale } from '../../i18n';
 import { useState } from 'react';
 import { useTheme } from '../../theme';
 import { Button, ContextMenu, Dialog, Icon, IconButton, Tooltip } from '../../ui';
@@ -10,6 +11,7 @@ export function AttachmentTiles({
   attachments: DraftAttachment[];
   onRemove: (index: number) => void;
 }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const [preview, setPreview] = useState<DraftAttachment>();
   return (
@@ -32,7 +34,7 @@ export function AttachmentTiles({
             items={[
               {
                 id: 'reveal',
-                label: 'Show in File Manager',
+                label: t('common.reveal_in_finder'),
                 icon: 'folder',
                 disabled: !attachment.path,
                 onSelect: () => {
@@ -44,7 +46,7 @@ export function AttachmentTiles({
           >
             <Tooltip content={`@${attachment.path ?? attachment.name}`}>
               <Button
-                aria-label={attachment.name ?? 'Attachment'}
+                aria-label={attachment.name ?? t('composer.attachment')}
                 onClick={() => {
                   if (attachment.mime.startsWith('image/')) setPreview(attachment);
                 }}
@@ -88,7 +90,7 @@ export function AttachmentTiles({
             </Tooltip>
             <IconButton
               name="x"
-              label={`Remove ${attachment.name}`}
+              label={t('composer.remove_attachment', { name: attachment.name ?? '' })}
               size={9}
               onClick={() => onRemove(index)}
               style={{
@@ -110,7 +112,7 @@ export function AttachmentTiles({
         <Dialog
           open
           onClose={() => setPreview(undefined)}
-          title="Image preview"
+          title={t('composer.image_preview')}
           scrimColor="rgba(0,0,0,.82)"
           style={{
             maxWidth: '100%',
@@ -123,7 +125,7 @@ export function AttachmentTiles({
         >
           <IconButton
             name="x"
-            label="Close image preview"
+            label={t('attachments.close_preview')}
             onClick={() => setPreview(undefined)}
             style={{
               position: 'absolute',
@@ -143,7 +145,7 @@ export function AttachmentTiles({
               style={{ flexGrow: 1, width: '100%', minHeight: 0 }}
             />
           ) : (
-            <text style={{ color: '#ffffffc7' }}>Image unavailable</text>
+            <text style={{ color: '#ffffffc7' }}>{t('attachments.preview_unavailable')}</text>
           )}
           <text
             style={{

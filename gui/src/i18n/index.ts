@@ -83,14 +83,23 @@ export function useLanguage(): Language {
   return useSyncExternalStore(subscribe, () => preference);
 }
 
-/** The resolved locale, for consumers outside the keyed workspace tree. */
+/** The resolved locale, for components that must re-render on a change (e.g. memoized ones). */
 export function useLocale(): Locale {
   return useSyncExternalStore(subscribe, () => locale);
 }
 
-/** Both placeholder syntaxes appear in the catalogs; `{AppName}` is always Harness. */
+/** The resolved locale, for formatting outside components (dates, counts). */
+export function getLocale(): Locale {
+  return locale;
+}
+
+/**
+ * Both placeholder syntaxes appear in the catalogs; `{AppName}` is always Harness.
+ * The types require complete catalogs; while a catalog is being edited, English and
+ * then the key itself stand in rather than failing the render.
+ */
 export function t(key: TranslationKey, vars: TranslationVariables = {}): string {
-  const text = locale === 'en' ? english[key] : catalogs[locale][key];
+  const text: string = (locale === 'en' ? undefined : catalogs[locale][key]) ?? english[key] ?? key;
   return text.replace(/%?\{([^}]+)\}/g, (placeholder, name: string) => {
     const value = vars[name] ?? (name === 'AppName' ? 'Harness' : undefined);
     return value === undefined ? placeholder : String(value);

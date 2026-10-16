@@ -16,7 +16,7 @@ import { Button, Tooltip } from '../ui/controls';
 import { Menu } from '../ui/menus';
 import type { MenuItem } from '../ui/menus';
 import type { IconName } from '../ui/icon-names';
-import { t } from '../i18n';
+import { t, useLocale } from '../i18n';
 import { highlightCode } from '../syntax';
 import { parseMarkdown } from './parse';
 import type { MarkdownBlock, MarkdownInline } from './model';
@@ -351,6 +351,7 @@ function MathFlow({
   display?: boolean;
 }) {
   const env = useMarkdown();
+  useLocale();
   const native = useNativeRenderer();
   const [menu, setMenu] = useState<{ x: number; y: number }>();
   const [focused, setFocused] = useState(false);
@@ -468,6 +469,7 @@ function Inline({
 }
 
 const CodeBlock = memo(function CodeBlock({ text, language }: { text: string; language: string }) {
+  useLocale();
   const env = useMarkdown();
   const native = useNativeRenderer();
   const [copied, setCopied] = useState(false);
@@ -604,6 +606,7 @@ export function tableColumnFractions(table: Extract<MarkdownBlock, { type: 'tabl
 }
 
 const Block = memo(function Block({ block }: { block: MarkdownBlock }) {
+  useLocale();
   const env = useMarkdown();
   switch (block.type) {
     case 'paragraph':

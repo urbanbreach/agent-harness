@@ -39,7 +39,7 @@ export function parseReviewPatch(snapshot: ReviewData): ReviewFile[] {
           lines.push({
             kind: 'gap',
             id: `missing:${old}:${start}`,
-            text: `${missing.toLocaleString()} unmodified lines`,
+            text: missing.toLocaleString(),
             lines: [],
             leading: !inHunk,
             trailing: false,
@@ -112,7 +112,7 @@ export function foldContext(
       output.push({
         kind: 'gap',
         id,
-        text: `${hidden.toLocaleString()} unmodified lines`,
+        text: hidden.toLocaleString(),
         lines: lines.slice(at + head, end - tail),
         leading,
         trailing,

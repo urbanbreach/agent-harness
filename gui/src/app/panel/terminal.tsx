@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t, useLocale } from '../../i18n';
 import { useWindowSize, type EventPayload, type KeyEvent, type PublicInstance } from '@gpuix/react';
 import { basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -137,6 +138,7 @@ const terminalInterceptedKeys = [
 ];
 
 export function TerminalView({ cwd, active }: { cwd: string | null; active: boolean }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const { showToast } = useToast();
   const native = useNativeRenderer();
@@ -433,7 +435,7 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
         }}
       >
         <text style={{ fontSize: sp(13), fontWeight: 500, color: colors.text }}>
-          Terminal unavailable
+          {t('right_panel.terminal_unavailable')}
         </text>
         <text
           style={{
@@ -445,7 +447,7 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
             color: colors.text_tertiary,
           }}
         >
-          Open the Terminal surface again to start a shell
+          {t('right_panel.terminal_unavailable_description')}
         </text>
       </div>
     );
@@ -484,7 +486,7 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
         }}
       >
         <div
-          aria-label={exited ? 'Shell exited' : 'Shell running'}
+          aria-label={exited ? t('panel.shell_exited') : t('panel.shell_running')}
           style={{
             width: 6,
             height: 6,
@@ -506,17 +508,17 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
             color: colors.text_secondary,
           }}
         >
-          {snapshot?.title || 'Terminal'}
+          {snapshot?.title || t('right_panel.terminal')}
         </text>
         <text style={{ flexShrink: 0, fontSize: sp(12.5), color: colors.text_tertiary }}>
-          {basename(cwd) || 'workspace'}
+          {basename(cwd) || t('workspace.workspace')}
         </text>
       </div>
       <div
         ref={grid}
         tabIndex={-1}
         role="region"
-        aria-label="Terminal"
+        aria-label={t('right_panel.terminal')}
         onKeyUp={(e) => {
           if (!e.modifiers?.ctrl) setLink(undefined);
         }}
@@ -560,7 +562,7 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
         <input
           ref={input}
           value=""
-          aria-label="Terminal input"
+          aria-label={t('panel.terminal_input')}
           readOnly
           interceptedKeys={terminalInterceptedKeys}
           onKeyDown={keys}
@@ -613,7 +615,7 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
               lineHeight: sp(17),
             }}
           >
-            {error ?? 'Starting terminal…'}
+            {error ?? t('terminal.starting')}
           </text>
         )}
         {snapshot?.rows.map((row, y) => {
@@ -745,15 +747,20 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
           restoreFocusId={input.current?.id}
           onClose={() => setMenu(undefined)}
           items={[
-            { id: 'copy', label: 'Copy', disabled: !selectedText(), onSelect: copy },
+            { id: 'copy', label: t('menu.copy'), disabled: !selectedText(), onSelect: copy },
             {
               id: 'paste',
-              label: 'Paste',
+              label: t('menu.paste'),
               disabled: !menu.paste,
               onSelect: () => paste(menu.paste),
             },
             { id: 'separator', type: 'separator' },
-            { id: 'all', label: 'Select All', disabled: !session.current, onSelect: selectAll },
+            {
+              id: 'all',
+              label: t('menu.select_all'),
+              disabled: !session.current,
+              onSelect: selectAll,
+            },
           ]}
         />
       )}

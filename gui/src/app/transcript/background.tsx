@@ -1,3 +1,5 @@
+import { taskStateLabel } from '../../model/tools';
+import { t, useLocale } from '../../i18n';
 import { useState } from 'react';
 import { useEffect } from 'react';
 import type { Intent } from '../../backend/protocol';
@@ -15,6 +17,7 @@ function childSession(task: TaskView): string | undefined {
   return typeof id === 'string' ? id : undefined;
 }
 export function BackgroundWork({ sessionId, view }: { sessionId: string; view: SessionView }) {
+  const locale = useLocale();
   const { colors, sp, codeFontSize } = useTheme();
   const [expanded, setExpanded] = useState<string>();
   const [error, setError] = useState('');
@@ -48,7 +51,7 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
     try {
       const sessions = await getAppStore().loadSessions(view.workspaceRoot);
       const row = sessions.find((row) => row.runId === id);
-      if (!row) throw new Error('The child transcript is not available yet.');
+      if (!row) throw new Error(t('transcript.child_unavailable'));
       await getAppStore().selectTask(row.runId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -58,7 +61,7 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
     const stops = rows.map(({ task, child }) =>
       registerAction({
         id: `transcript.background:${task.id}`,
-        label: 'Background work',
+        label: t('transcript.background'),
         run: () => {
           if (child) void openChild(task);
           else {
@@ -69,7 +72,7 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
       }),
     );
     return () => stops.forEach((stop) => stop());
-  }, [sessionId, view.tasks, view.subagents]);
+  }, [sessionId, view.tasks, view.subagents, locale]);
   if (!rows.length) return null;
   return (
     <div
@@ -95,7 +98,7 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
       >
         <Icon name="bot" size={12} />
         <text style={{ flexGrow: 1, color: colors.text_secondary, fontSize: sp(12.5) }}>
-          Background work
+          {t('transcript.background')}
         </text>
         {view.status === 'working' && (
           <Button
@@ -103,7 +106,7 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
             style={{ height: 24, paddingLeft: 6, paddingRight: 6 }}
           >
             <text style={{ color: colors.text_secondary, fontSize: sp(12.5) }}>
-              Run in background
+              {t('transcript.run_background')}
             </text>
           </Button>
         )}
@@ -149,13 +152,13 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
                   fontSize: sp(12.5),
                 }}
               >
-                {task.state}
+                {taskStateLabel(task.state)}
               </text>
             </Button>
             {active(task) && (
               <IconButton
                 name="square"
-                label={child ? 'Stop subagent' : 'Cancel task'}
+                label={t(child ? 'transcript.stop_subagent' : 'transcript.cancel_task')}
                 onClick={() =>
                   send(
                     child

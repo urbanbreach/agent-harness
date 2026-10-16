@@ -6,6 +6,7 @@ import { useTheme } from '../../theme';
 import { providerColor } from '../../theme/colors';
 import { openUrl, writeClipboard } from '../../workspace/os';
 import { SettingsCard, SettingsRow } from './index';
+import { t } from '../../i18n';
 
 export function ProvidersPage() {
   const { colors, sp } = useTheme();
@@ -63,7 +64,7 @@ export function ProvidersPage() {
     starting.current = true;
     earlyUpdates.current = [];
     try {
-      setMessage('Starting sign-in…');
+      setMessage(t('settings.starting_sign_in'));
       const result = await backend.call('auth.start', { args, stdin });
       activeAttempt.current = result.attempt;
       setAttempt(result.attempt);
@@ -79,8 +80,8 @@ export function ProvidersPage() {
   return (
     <SettingsCard>
       <SettingsRow
-        title="Providers"
-        description="Connect Harness directly to model providers. Add an API key or sign in to a subscription account, then refresh."
+        title={t('settings.providers')}
+        description={t('settings.providers_description')}
         last
         style={{ paddingTop: 14, paddingBottom: 4 }}
       >
@@ -100,7 +101,7 @@ export function ProvidersPage() {
           }}
         >
           <Icon name="rotate-cw" size={11} />
-          {checking ? 'Checking…' : 'Refresh'}
+          {checking ? t('settings.checking') : t('settings.refresh')}
         </Button>
       </SettingsRow>
       {error && (
@@ -110,7 +111,7 @@ export function ProvidersPage() {
         <div key={provider.id}>
           <SettingsRow
             title={provider.label}
-            description={`${provider.connected ? 'Connected' : 'Not connected'} · ${provider.description}`}
+            description={`${provider.connected ? t('settings.connected') : t('settings.not_connected')} · ${provider.description}`}
             style={{ paddingTop: 10, paddingBottom: 10 }}
             leading={
               <div
@@ -154,7 +155,7 @@ export function ProvidersPage() {
             }
           >
             <Button
-              aria-label={`Configure ${provider.label}`}
+              aria-label={t('settings.configure_provider', { provider: provider.label })}
               style={{ width: 22, height: 22 }}
               onClick={() => {
                 setExpanded(expanded === provider.id ? undefined : provider.id);
@@ -203,7 +204,7 @@ export function ProvidersPage() {
                     }}
                     style={{ padding: 8, borderRadius: 7, borderColor: colors.border_strong }}
                   >
-                    Disconnect
+                    {t('settings.disconnect')}
                   </Button>
                 )}
               </div>
@@ -214,18 +215,22 @@ export function ProvidersPage() {
                       onClick={() => void start(['claude-account', 'list'])}
                       style={{ padding: 8 }}
                     >
-                      List accounts
+                      {t('settings.list_accounts')}
                     </Button>
                     <Button
                       onClick={() => void start(['claude-account', 'add'])}
                       style={{ padding: 8 }}
                     >
-                      Add account
+                      {t('settings.add_account')}
                     </Button>
                   </div>
-                  <TextField placeholder="Account ID" value={accountId} onChange={setAccountId} />
                   <TextField
-                    placeholder="Display name"
+                    placeholder={t('settings.account_id')}
+                    value={accountId}
+                    onChange={setAccountId}
+                  />
+                  <TextField
+                    placeholder={t('settings.display_name')}
                     value={accountName}
                     onChange={setAccountName}
                   />
@@ -244,21 +249,30 @@ export function ProvidersPage() {
                         }
                         style={{ padding: 8 }}
                       >
-                        {action === 'pin' ? 'Pin' : action === 'rename' ? 'Rename' : 'Remove'}
+                        {action === 'pin'
+                          ? t('settings.pin')
+                          : action === 'rename'
+                            ? t('settings.rename')
+                            : t('settings.remove')}
                       </Button>
                     ))}
                     <Button
                       onClick={() => void start(['claude-account', 'unpin'])}
                       style={{ padding: 8 }}
                     >
-                      Unpin
+                      {t('settings.unpin')}
                     </Button>
                   </div>
                 </>
               )}
               {apiKeyProvider === provider.id && (
                 <>
-                  <TextField placeholder="API key" secure value={input} onChange={setInput} />
+                  <TextField
+                    placeholder={t('settings.api_key')}
+                    secure
+                    value={input}
+                    onChange={setInput}
+                  />
                   <Button
                     disabled={!input}
                     onClick={() => {
@@ -272,7 +286,7 @@ export function ProvidersPage() {
                     }}
                     style={{ padding: 8 }}
                   >
-                    Save API key
+                    {t('settings.save_api_key')}
                   </Button>
                 </>
               )}
@@ -282,20 +296,20 @@ export function ProvidersPage() {
               {url && (
                 <div style={{ display: 'flex', flexDirection: 'row', gap: 8 }}>
                   <Button onClick={() => void openUrl(url).catch(report)} style={{ padding: 8 }}>
-                    Open sign-in page
+                    {t('settings.open_sign_in')}
                   </Button>
                   <Button
                     onClick={() => void writeClipboard(url).catch(report)}
                     style={{ padding: 8 }}
                   >
-                    Copy URL
+                    {t('settings.copy_url')}
                   </Button>
                 </div>
               )}
               {attempt !== undefined && (
                 <>
                   <TextField
-                    placeholder="Device code or authorization response…"
+                    placeholder={t('settings.auth_response')}
                     value={input}
                     onChange={setInput}
                     onKeyDown={(event) => {
@@ -317,7 +331,7 @@ export function ProvidersPage() {
                       }}
                       style={{ padding: 8 }}
                     >
-                      Continue
+                      {t('settings.continue')}
                     </Button>
                     <Button
                       onClick={() => {
@@ -327,7 +341,7 @@ export function ProvidersPage() {
                       }}
                       style={{ padding: 8 }}
                     >
-                      Cancel
+                      {t('settings.cancel')}
                     </Button>
                   </div>
                 </>

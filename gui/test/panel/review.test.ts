@@ -34,8 +34,7 @@ test('review preserves immutable content, A/M/D/B status and line numbers throug
   const partial = parseReviewPatch(captured).find((file) => file.path === 'src/main.ts')!;
   expect(
     partial.lines.some(
-      (line) =>
-        line.kind === 'gap' && line.lines.length === 0 && line.text === '117 unmodified lines',
+      (line) => line.kind === 'gap' && line.lines.length === 0 && line.text === '117',
     ),
   ).toBe(true);
   await Bun.write(join(cwd, 'src/main.ts'), 'newer external content\n');

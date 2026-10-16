@@ -6,6 +6,7 @@ import { getAppStore, useSessionView } from '../../store';
 import { useTheme } from '../../theme';
 import { Button, Icon, TextField, useToast } from '../../ui';
 import { bare, row } from '../../ui/controls';
+import { t, useLocale } from '../../i18n';
 
 type Resolution = Extract<Intent, { kind: 'resolvePermission' }>;
 type Question = {
@@ -23,7 +24,7 @@ function parseQuestion(value: unknown): Question {
   const item = record(value);
   return {
     question: typeof item.question === 'string' ? item.question : '',
-    header: typeof item.header === 'string' ? item.header : 'Question',
+    header: typeof item.header === 'string' ? item.header : '',
     options: Array.isArray(item.options)
       ? item.options.flatMap((value) => {
           const option = record(value);
@@ -70,6 +71,7 @@ function ApprovalCard({
   toolName?: string;
 }) {
   const { colors, sp } = useTheme();
+  useLocale();
   const { renderer } = useGpuix();
   const { showToast } = useToast();
   const questions = request?.questions.map(parseQuestion) ?? [];
@@ -134,7 +136,9 @@ function ApprovalCard({
       locked.current = false;
       setPending(false);
       showToast(
-        `Could not send response: ${error instanceof Error ? error.message : String(error)}`,
+        t('composer.response_error', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
       );
     }
   }
@@ -217,7 +221,7 @@ function ApprovalCard({
     >
       <div
         role="group"
-        aria-label={request ? 'Answer questions' : 'Permission request'}
+        aria-label={t(request ? 'composer.answer_questions' : 'composer.permission_request')}
         aria-busy={pending}
         onKeyDown={keys}
         style={{
@@ -238,7 +242,7 @@ function ApprovalCard({
           <>
             <div style={{ ...row, gap: 8 }}>
               <text style={{ fontSize: sp(12.5), fontWeight: 600, color: colors.text_tertiary }}>
-                {question.header || 'Question'}
+                {question.header || t('composer.question')}
               </text>
               {questions.length > 1 && (
                 <text
@@ -252,7 +256,7 @@ function ApprovalCard({
                     fontSize: sp(12.5),
                   }}
                 >
-                  {page + 1} of {questions.length}
+                  {t('user_input.progress', { current: page + 1, total: questions.length })}
                 </text>
               )}
             </div>
@@ -354,10 +358,10 @@ function ApprovalCard({
               value={custom[page] ?? ''}
               icon="pencil"
               iconSize={11}
-              aria-label={
-                question.custom ? 'Type another answer' : 'Custom answers are not allowed'
-              }
-              placeholder="Type another answer"
+              aria-label={t(
+                question.custom ? 'user_input.other_placeholder' : 'composer.custom_not_allowed',
+              )}
+              placeholder={t('user_input.other_placeholder')}
               readOnly={pending || !question.custom}
               tabIndex={pending || !question.custom ? -1 : 0}
               onFocus={() => {
@@ -397,7 +401,7 @@ function ApprovalCard({
                   onClick={() => setPage(page - 1)}
                   style={{ ...buttonStyle, height: 26, paddingLeft: 8, paddingRight: 8 }}
                 >
-                  Back
+                  {t('user_input.back')}
                 </Button>
               )}
               <div style={{ flexGrow: 1 }} />
@@ -408,7 +412,13 @@ function ApprovalCard({
                 onClick={next}
                 style={{ ...buttonStyle, height: 26, paddingLeft: 10, paddingRight: 10 }}
               >
-                {pending ? 'Sending…' : page === questions.length - 1 ? 'Submit' : 'Next'}
+                {t(
+                  pending
+                    ? 'composer.sending'
+                    : page === questions.length - 1
+                      ? 'user_input.submit'
+                      : 'user_input.next',
+                )}
               </Button>
             </div>
           </>
@@ -424,7 +434,7 @@ function ApprovalCard({
                   whiteSpace: 'normal',
                 }}
               >
-                {toolName || 'Permission requested'} · {permission?.kind}
+                {toolName || t('composer.permission_requested')} · {permission?.kind}
               </text>
             </div>
             <div
@@ -450,7 +460,13 @@ function ApprovalCard({
               </text>
             </div>
             <div style={{ ...row, gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              {(['Allow once', 'Allow for session', 'Deny'] as const).map((label, index) => (
+              {(
+                [
+                  t('permission.allow_once'),
+                  t('permission.allow_for_session'),
+                  t('composer.deny'),
+                ] as const
+              ).map((label, index) => (
                 <Button
                   key={label}
                   ref={(node) => {

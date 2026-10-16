@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DismissableLayer, useGpuix, type KeyEvent, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
+import { t, useLocale } from '../../i18n';
 import { Button, Icon, MenuChip, TextField, ellipsis, row } from '../../ui';
 import type { IconName } from '../../ui/icon-names';
 import { Scrollbar } from '../../ui/scrollbar';
@@ -162,6 +163,7 @@ export function ProjectPicker(
   props: ProjectSelectorProps & { onClose: () => void; triggerId?: number },
 ) {
   const { colors } = useTheme();
+  useLocale();
   const { renderer } = useGpuix();
   const input = useRef<PublicInstance>(null);
   const rows = useRef(new Map<number, PublicInstance>());
@@ -184,7 +186,8 @@ export function ProjectPicker(
     } else if (index === projects.length) {
       void (async () => {
         try {
-          if (!renderer?.promptForPaths) throw new Error('The native folder picker is unavailable');
+          if (!renderer?.promptForPaths)
+            throw new Error(t('shell.native_folder_picker_unavailable'));
           const paths = await renderer.promptForPaths({
             directories: true,
             files: false,
@@ -250,7 +253,7 @@ export function ProjectPicker(
       >
         <div
           role="listbox"
-          aria-label="Projects"
+          aria-label={t('shell.projects')}
           onKeyDown={keys}
           onMouseDownOutside={(event) => {
             if (event.button === 0) props.onClose();
@@ -280,7 +283,7 @@ export function ProjectPicker(
               ref={input}
               value={query}
               onSubmit={() => choose(cursor < 0 ? 0 : cursor)}
-              placeholder="Search projects"
+              placeholder={t('input.search_projects')}
               icon="search"
               iconSize={12}
               onChange={(value) => {
@@ -324,7 +327,7 @@ export function ProjectPicker(
                   />
                 ))
               ) : (
-                <PickerEmpty>No projects found</PickerEmpty>
+                <PickerEmpty>{t('project.none_found')}</PickerEmpty>
               )}
             </div>
             <Scrollbar
@@ -340,14 +343,14 @@ export function ProjectPicker(
           </div>
           <PickerSeparator />
           <PickerRow
-            label="New project…"
+            label={t('project.new_project')}
             icon="folder-new"
             highlighted={cursor === projects.length}
             onSelect={() => choose(projects.length)}
             onHover={() => setCursor(projects.length)}
           />
           <PickerRow
-            label="Don't work in a project"
+            label={t('project.no_project')}
             icon="x"
             checked={
               props.currentProjectId === null ||
@@ -364,6 +367,7 @@ export function ProjectPicker(
 }
 export function ProjectSelector(props: ProjectSelectorProps) {
   const { colors, sp } = useTheme();
+  useLocale();
   const [open, setOpen] = useState(false);
   const trigger = useRef<PublicInstance>(null);
   const [triggerWidth, setTriggerWidth] = useState(0);
@@ -371,8 +375,8 @@ export function ProjectSelector(props: ProjectSelectorProps) {
   const label =
     props.label ??
     (project?.projectless || props.currentProjectId === null
-      ? 'No project'
-      : (project?.name ?? 'choose a project'));
+      ? t('project.no_project_name')
+      : (project?.name ?? t('project.choose_project')));
   return (
     <div style={{ position: 'relative' }}>
       {props.site === 'empty' ? (

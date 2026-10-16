@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import type { DraftAttachment } from '../../store/store';
@@ -21,8 +22,7 @@ const imageMime: Record<string, string> = {
 };
 export async function importPath(path: string): Promise<DraftAttachment> {
   const info = await lstat(path);
-  if (!info.isFile() && !info.isDirectory())
-    throw new Error('Only regular files and folders can be attached');
+  if (!info.isFile() && !info.isDirectory()) throw new Error(t('composer.attachment_type_error'));
   let bytes = 0;
   let count = 0;
   async function inspect(current: string): Promise<void> {
@@ -30,8 +30,8 @@ export async function importPath(path: string): Promise<DraftAttachment> {
     if (entry.isFile()) {
       bytes += entry.size;
       count += 1;
-      if (bytes > maxAttachmentBytes) throw new Error('Attachments must be smaller than 32 MB');
-      if (count > 4096) throw new Error('Folders may contain at most 4,096 files');
+      if (bytes > maxAttachmentBytes) throw new Error(t('composer.attachment_size_error'));
+      if (count > 4096) throw new Error(t('composer.attachment_count_error'));
     } else if (entry.isDirectory()) {
       for (const name of await readdir(current)) await inspect(join(current, name));
     }

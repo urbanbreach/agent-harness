@@ -13,7 +13,7 @@ import {
 } from '@gpuix/react';
 import { useTheme } from '../theme';
 import { nativeRenderer, type InputCommand, type NativeEvent } from '../native';
-import { t } from '../i18n';
+import { t, useLocale, type TranslationKey } from '../i18n';
 import { Menu, type MenuItem } from './menus';
 import type { IconName } from './icon-names';
 
@@ -138,11 +138,12 @@ export const IconButton = forwardRef<PublicInstance, IconButtonProps>(function I
   { name, size = 13, color, label, style, ...props },
   ref,
 ) {
+  useLocale();
   return (
     <Button
       {...props}
       ref={ref}
-      aria-label={label ?? props['aria-label'] ?? name}
+      aria-label={label ?? props['aria-label'] ?? t(`shell.icon_${name}`)}
       style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, ...style }}
     >
       <Icon name={name} size={size} color={color} />
@@ -222,12 +223,13 @@ export function Switch({
   label: string;
   style?: StyleDesc;
 }) {
+  useLocale();
   const { colors } = useTheme();
   return (
     <Button
       role="switch"
       aria-label={label}
-      aria-valuetext={checked ? 'On' : 'Off'}
+      aria-valuetext={checked ? t('shell.switch_on') : t('shell.switch_off')}
       disabled={disabled}
       focusableWhenDisabled
       onClick={() => onChange(!checked)}
@@ -266,6 +268,7 @@ export const TextField = forwardRef<PublicInstance, TextFieldProps>(function Tex
   { icon, iconSize = 13, neutralFocus = false, style, onChange, onFocus, onBlur, theme, ...props },
   ref,
 ) {
+  useLocale();
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const [focused, setFocused] = useState(false);
@@ -273,7 +276,7 @@ export const TextField = forwardRef<PublicInstance, TextFieldProps>(function Tex
   const text = useRef(props.value ?? '');
   const selection = useRef({ start: 0, end: 0 });
   const [editMenu, setEditMenu] = useState<{
-    items: MenuItem[];
+    items: (MenuItem & { labelKey?: TranslationKey })[];
     position: { x: number; y: number };
   }>();
   useEffect(() => {
@@ -310,23 +313,23 @@ export const TextField = forwardRef<PublicInstance, TextFieldProps>(function Tex
         y: event.y ?? (bounds?.y ?? 0) + (bounds?.height ?? 0),
       },
       items: [
-        { id: 'cut', label: t('action.cut'), disabled: !selected, onSelect: () => command('cut') },
+        { id: 'cut', labelKey: 'action.cut', disabled: !selected, onSelect: () => command('cut') },
         {
           id: 'copy',
-          label: t('action.copy'),
+          labelKey: 'action.copy',
           disabled: !selected,
           onSelect: () => command('copy'),
         },
         {
           id: 'paste',
-          label: t('action.paste'),
+          labelKey: 'action.paste',
           disabled: !clipboard,
           onSelect: () => command('paste'),
         },
         { id: 'separator', type: 'separator' },
         {
           id: 'selectAll',
-          label: t('action.selectAll'),
+          labelKey: 'action.selectAll',
           disabled: !text.current.length || all,
           onSelect: () => command('selectAll'),
         },
@@ -425,7 +428,10 @@ export const TextField = forwardRef<PublicInstance, TextFieldProps>(function Tex
       />
       {editMenu && (
         <Menu
-          items={editMenu.items}
+          items={editMenu.items.map(({ labelKey, ...item }) => ({
+            ...item,
+            label: labelKey ? t(labelKey) : undefined,
+          }))}
           position={editMenu.position}
           restoreFocusId={input.current?.id}
           onClose={() => setEditMenu(undefined)}
@@ -560,12 +566,13 @@ const spinnerEpoch = Date.now();
 export function Spinner({
   size = 13,
   color,
-  label = 'Loading',
+  label,
 }: {
   size?: number;
   color?: string;
   label?: string;
 }) {
+  useLocale();
   const { reducedMotion, colors, sp } = useTheme();
   const [phase, setPhase] = useState(() => (Date.now() - spinnerEpoch) / 900);
   useEffect(() => {
@@ -579,7 +586,7 @@ export function Spinner({
   return (
     <svg
       role="status"
-      aria-label={label}
+      aria-label={label ?? t('shell.loading')}
       source={`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M ${x} ${y} A 9 9 0 1 1 ${12 + 9 * Math.sin(angle + 5)} ${12 - 9 * Math.cos(angle + 5)}" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`}
       style={{
         width: sp(size),

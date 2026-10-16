@@ -1,6 +1,7 @@
 import type { Command, FileEntry, SelectedFileTag, Skill } from '../../backend/protocol';
 import { isAbsolute, resolve, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { t, type TranslationKey } from '../../i18n';
 
 export interface Trigger {
   kind: '/' | '@';
@@ -18,48 +19,48 @@ export interface Suggestion {
   agent?: { name: string };
   resource?: { name: string; uri: string; mime: string };
 }
-const appCommandDescriptions: Record<string, string> = {
-  compact: 'Compact the conversation',
-  handoff: 'Prepare a handoff',
-  shake: 'Prune conversation context',
-  rewind: 'Rewind the conversation',
-  fork: 'Fork this conversation',
-  clone: 'Duplicate this task',
-  rename: 'Rename this task',
-  export: 'Export Markdown',
-  resume: 'Resume a terminal agent session',
-  new: 'Start a new task',
-  clear: 'Start a new task',
-  sessions: 'Find a saved session',
-  continue: 'Resume a saved session',
-  tree: 'Browse the session tree',
-  models: 'Choose a model',
-  model: 'Choose a model',
-  mo: 'Choose a model',
-  agents: 'Choose an agent profile',
-  mcps: 'Manage tools and MCP servers',
-  toggles: 'Manage tools and MCP servers',
-  yolo: 'Toggle Full access',
-  login: 'Manage provider sign-in',
-  'claude-account': 'Manage Claude accounts',
-  help: 'Open command help',
-  feedback: 'Open help and feedback',
-  follow: 'Jump to the latest message',
-  undo: 'Rewind the conversation',
-  summarize: 'Compact the conversation',
-  exit: 'Quit Harness',
-  quit: 'Quit Harness',
-  q: 'Quit Harness',
-  copy: 'Copy transcript Markdown',
-  timestamps: 'Toggle message times',
-  thinking: 'Toggle reasoning',
-  settings: 'Open settings',
-  'view-plan': 'Open the plan',
-  worktree: 'Choose a worktree',
-  dashboard: 'Open session details',
-  status: 'Open session details',
-  usage: 'Open usage',
-  import: 'Import or resume a session',
+const appCommandDescriptions: Record<string, TranslationKey> = {
+  compact: 'composer.command_compact',
+  handoff: 'composer.command_handoff',
+  shake: 'composer.prune_context',
+  rewind: 'composer.command_rewind',
+  fork: 'composer.command_fork',
+  clone: 'composer.command_clone',
+  rename: 'composer.command_rename',
+  export: 'composer.command_export',
+  resume: 'commands.resume_description',
+  new: 'composer.command_new',
+  clear: 'composer.command_new',
+  sessions: 'composer.command_sessions',
+  continue: 'composer.command_continue',
+  tree: 'composer.command_tree',
+  models: 'composer.command_model',
+  model: 'composer.command_model',
+  mo: 'composer.command_model',
+  agents: 'composer.command_agents',
+  mcps: 'composer.command_mcps',
+  toggles: 'composer.command_mcps',
+  yolo: 'composer.command_yolo',
+  login: 'composer.command_login',
+  'claude-account': 'composer.command_claude_account',
+  help: 'composer.command_help',
+  feedback: 'composer.command_feedback',
+  follow: 'composer.command_follow',
+  undo: 'composer.command_rewind',
+  summarize: 'composer.command_compact',
+  exit: 'composer.command_quit',
+  quit: 'composer.command_quit',
+  q: 'composer.command_quit',
+  copy: 'composer.command_copy',
+  timestamps: 'composer.command_timestamps',
+  thinking: 'composer.command_thinking',
+  settings: 'composer.command_settings',
+  'view-plan': 'composer.command_plan',
+  worktree: 'composer.command_worktree',
+  dashboard: 'composer.command_status',
+  status: 'composer.command_status',
+  usage: 'composer.command_usage',
+  import: 'composer.command_import',
 };
 export const appCommands = Object.keys(appCommandDescriptions);
 // These commands only configure terminal input, terminal shells, or the TUI event viewer.
@@ -116,7 +117,7 @@ export function suggestions(
       ...agents.map((agent) => ({
         value: `@agent:${encodeURIComponent(agent.name)}`,
         label: agent.name,
-        description: 'Agent',
+        description: t('composer.agent'),
         agent,
       })),
       ...resources.map((resource) => ({
@@ -149,7 +150,7 @@ export function suggestions(
         rows.push({
           value: `/${name}`,
           label: `/${name}`,
-          description: appCommandDescriptions[name]!,
+          description: t(appCommandDescriptions[name]!),
           scope: 'Harness',
           local: true,
         });

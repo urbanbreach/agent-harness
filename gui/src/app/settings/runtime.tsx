@@ -4,6 +4,7 @@ import { getAppStore } from '../../store';
 import { Button, Dropdown, Switch, TextField } from '../../ui';
 import { useTheme } from '../../theme';
 import { SettingsCard, SettingsRow } from './index';
+import { t } from '../../i18n';
 
 export function RuntimePage({ cwd }: { cwd: string }) {
   const { colors, sp } = useTheme();
@@ -36,7 +37,7 @@ export function RuntimePage({ cwd }: { cwd: string }) {
     <>
       <TextField
         icon="search"
-        placeholder="Search runtime settings…"
+        placeholder={t('settings.search_runtime')}
         value={query}
         onChange={setQuery}
         style={{ marginTop: 15 }}
@@ -115,7 +116,7 @@ export function RuntimePage({ cwd }: { cwd: string }) {
                       }}
                       style={{ padding: 6, fontSize: sp(12.5) }}
                     >
-                      Reset
+                      {t('settings.reset')}
                     </Button>
                   )}
                 </div>

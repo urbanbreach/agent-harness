@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useEffect, useState } from 'react';
 import { useTheme } from '../../theme';
 import { getAppStore } from '../../store';
@@ -13,10 +14,7 @@ export async function loadPromptAttachments(
       const blob = await getAppStore().backend.call('blobs.get', {
         digest: attachment.content_ref,
       });
-      if (!blob)
-        throw new Error(
-          'The original attachment is unavailable. Copy this prompt to the composer and reattach the file.',
-        );
+      if (!blob) throw new Error(t('transcript.attachment_unavailable'));
       return { mime: blob.mime, dataBase64: blob.dataBase64 };
     }),
   );
@@ -82,7 +80,11 @@ export function AttachmentTile({ attachment }: { attachment: AttachmentMetadata 
         </Button>
       </Tooltip>
       {preview && source && (
-        <Dialog open title={attachment.detail ?? 'Image preview'} onClose={() => setPreview(false)}>
+        <Dialog
+          open
+          title={attachment.detail ?? t('transcript.image_preview')}
+          onClose={() => setPreview(false)}
+        >
           <img
             src={source}
             objectFit="contain"

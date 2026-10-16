@@ -5,6 +5,7 @@ import type { ForeignCandidate, Update } from '../../backend/protocol';
 import { Button, Dialog, Icon, TextField, useToast } from '../../ui';
 import { Markdown } from '../../markdown';
 import { useTheme } from '../../theme';
+import { t, useLocale } from '../../i18n';
 import { runAction } from '../actions';
 import { requestPromptEdit } from '../transcript/messages';
 import type { PaletteRow } from './index';
@@ -26,6 +27,7 @@ export function NestedPalette({
   onPage(page: PalettePage): void;
 }) {
   const store = getAppStore();
+  const locale = useLocale();
   const state = useStore((state) => state);
   const { colors, sp } = useTheme();
   const { showToast } = useToast();
@@ -89,10 +91,10 @@ export function NestedPalette({
           ),
         ].map((kind) => ({
           id: kind,
-          label: kind === 'all' ? 'All sources' : kind,
-          detail: kind === provider ? 'Current provider' : undefined,
+          label: kind === 'all' ? t('settings.palette_all_sources') : kind,
+          detail: kind === provider ? t('command_palette.current_provider') : undefined,
           icon: 'bot',
-          section: 'Providers',
+          section: t('command_palette.providers'),
           run: () => {
             setProvider(kind);
             onPage('resume');
@@ -102,10 +104,10 @@ export function NestedPalette({
         rows = [
           {
             id: 'provider',
-            label: provider === 'all' ? 'All sources' : provider,
-            detail: 'Change provider',
+            label: provider === 'all' ? t('settings.palette_all_sources') : provider,
+            detail: t('command_palette.change_provider'),
             icon: 'bot',
-            section: 'Terminal sessions',
+            section: t('command_palette.sessions'),
             run: () => onPage('providers'),
           },
         ];
@@ -118,10 +120,10 @@ export function NestedPalette({
               label: candidate.path.split('/').pop() ?? candidate.path,
               detail:
                 importing === candidate.path
-                  ? 'Loading conversation…'
+                  ? t('command_palette.loading_selected_session')
                   : `${candidate.kind} · ${candidate.path}`,
               icon: importing === candidate.path ? 'loader-circle' : 'message-square',
-              section: 'Terminal sessions',
+              section: t('command_palette.sessions'),
               run: () => {
                 if (importing) return;
                 setImporting(candidate.path);
@@ -134,7 +136,9 @@ export function NestedPalette({
                     runAction('settings.close');
                     runAction('composer.focus');
                   })
-                  .catch((error) => showToast(`Couldn’t resume session: ${String(error)}`))
+                  .catch((error) =>
+                    showToast(t('command_palette.resume_failed', { error: String(error) })),
+                  )
                   .finally(() => setImporting(undefined));
               },
             })),
@@ -146,7 +150,7 @@ export function NestedPalette({
         id: String(index),
         label: text,
         icon: 'history',
-        section: 'Prompt history',
+        section: t('settings.palette_prompt_history'),
         run: () => {
           store.setDraft(state.selection, { ...store.getDraft(state.selection), text });
           onClose();
@@ -158,9 +162,9 @@ export function NestedPalette({
       const stashes = (state.preferences.stashedDrafts ?? []) as unknown as Draft[];
       rows = stashes.map((draft, index) => ({
         id: String(index),
-        label: draft.text || 'Draft with attachments',
+        label: draft.text || t('settings.palette_draft_attachments'),
         icon: 'file-text',
-        section: 'Stashed drafts',
+        section: t('settings.palette_stashed_drafts'),
         run: () => {
           store.setDraft(state.selection, draft);
           store.setPreferences({ stashedDrafts: stashes.filter((_, at) => at !== index) as never });
@@ -173,12 +177,12 @@ export function NestedPalette({
         .flat()
         .map((session) => ({
           id: session.runId,
-          label: session.catalog.run_name ?? 'New task',
+          label: session.catalog.run_name ?? t('command_palette.new_task'),
           detail: session.catalog.parent_session_id
-            ? `Child of ${session.catalog.parent_session_id}`
-            : 'Root session',
+            ? t('settings.palette_child_session', { id: session.catalog.parent_session_id })
+            : t('settings.palette_root_session'),
           icon: 'git-branch',
-          section: 'Session tree',
+          section: t('settings.palette_session_tree'),
           run: () => {
             void store
               .selectTask(session.runId)
@@ -198,14 +202,14 @@ export function NestedPalette({
         rows = [...(rewind.points ?? [])].reverse().map((point) => ({
           id: point.request_id,
           label: point.text,
-          detail: `Message ${point.seq}`,
+          detail: t('settings.palette_message_number', { seq: point.seq }),
           icon: 'rotate-ccw',
-          section: 'Rewind conversation',
+          section: t('settings.palette_rewind'),
           run: () => {
             onClose();
             runAction('settings.close');
             if (!requestPromptEdit(sessionId, point.request_id))
-              showToast('This prompt cannot be edited: its workspace checkpoint is unavailable.');
+              showToast(t('settings.palette_prompt_edit_unavailable'));
           },
         }));
     }
@@ -222,6 +226,7 @@ export function NestedPalette({
     );
   }, [
     page,
+    locale,
     query,
     candidates,
     provider,
@@ -244,10 +249,10 @@ export function NestedPalette({
             value={source}
             onChange={setSource}
             onSubmit={() => setScan((value) => value + 1)}
-            placeholder="Folder containing foreign sessions"
+            placeholder={t('settings.palette_foreign_sessions_folder')}
           />
           <Button onClick={() => setScan((value) => value + 1)} style={{ padding: 6 }}>
-            Scan folder
+            {t('settings.palette_scan_folder')}
           </Button>
           {(loading ||
             error ||
@@ -260,18 +265,17 @@ export function NestedPalette({
               <Icon name={loading ? 'loader-circle' : error ? 'alert' : 'search'} size={18} />
               <div style={{ fontSize: sp(13), color: colors.text_secondary }}>
                 {loading
-                  ? 'Loading terminal sessions…'
+                  ? t('command_palette.loading_sessions')
                   : error
-                    ? 'Couldn’t load terminal sessions'
-                    : 'No resumable terminal sessions'}
+                    ? t('command_palette.could_not_load_sessions')
+                    : t('command_palette.no_resume_sessions')}
               </div>
               <div style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
-                {error ||
-                  'Sessions already in Harness are hidden. Start one in an agent CLI and try again.'}
+                {error || t('command_palette.no_resume_sessions_hint')}
               </div>
               {!loading && (
                 <Button onClick={() => onPage('providers')} style={{ padding: 8 }}>
-                  Change provider
+                  {t('command_palette.change_provider')}
                 </Button>
               )}
             </div>
@@ -282,7 +286,7 @@ export function NestedPalette({
         <div style={{ padding: 16, color: colors.danger, fontSize: sp(12.5) }}>{error}</div>
       )}
       {page === 'news' && (
-        <Dialog open onClose={onClose} title="What's new">
+        <Dialog open onClose={onClose} title={t('settings.palette_whats_new')}>
           <div
             style={{ display: 'flex', flexDirection: 'column', padding: 20, gap: 16, minHeight: 0 }}
           >
@@ -294,9 +298,11 @@ export function NestedPalette({
                 justifyContent: 'space-between',
               }}
             >
-              <text style={{ fontSize: sp(18), fontWeight: 500 }}>What's new</text>
+              <text style={{ fontSize: sp(18), fontWeight: 500 }}>
+                {t('settings.palette_whats_new')}
+              </text>
               <Button
-                aria-label="Close release notes"
+                aria-label={t('settings.palette_close_release_notes')}
                 onClick={onClose}
                 style={{ width: 28, height: 28 }}
               >
@@ -306,7 +312,9 @@ export function NestedPalette({
             {error ? (
               <text style={{ color: colors.danger }}>{error}</text>
             ) : news === undefined ? (
-              <text style={{ color: colors.text_secondary }}>Loading release notes…</text>
+              <text style={{ color: colors.text_secondary }}>
+                {t('settings.palette_loading_release_notes')}
+              </text>
             ) : (
               <div style={{ maxHeight: 480, overflowY: 'scroll' }}>
                 <Markdown source={news} />

@@ -1,3 +1,25 @@
+import { t, getLocale, type TranslationKey } from '../i18n';
+
+const taskStateKeys: Record<string, TranslationKey | undefined> = {
+  queued: 'transcript.state_queued',
+  running: 'transcript.state_running',
+  completed: 'transcript.state_completed',
+  failed: 'transcript.state_failed',
+  cancelled: 'transcript.state_cancelled',
+  timed_out: 'transcript.state_timed_out',
+  succeeded: 'transcript.state_succeeded',
+  done: 'transcript.state_done',
+  finished: 'transcript.state_finished',
+  stopped: 'transcript.state_stopped',
+  waiting: 'transcript.state_waiting',
+  stale: 'transcript.state_stale',
+};
+
+export function taskStateLabel(state: string, spaced = false): string {
+  if (getLocale() === 'en') return spaced ? state.replace(/_/g, ' ') : state;
+  const key = taskStateKeys[state];
+  return key ? t(key) : state;
+}
 export type ToolKind =
   | 'read'
   | 'write'
@@ -326,7 +348,9 @@ function projectOutput(
           .join('\n') ||
         text(output) ||
         '',
-      error: failed ? string(out, 'error', 'message') || text(output) || 'Tool failed' : undefined,
+      error: failed
+        ? string(out, 'error', 'message') || text(output) || t('transcript.tool_failed')
+        : undefined,
     };
   }
   return typeof output === 'string'
@@ -366,31 +390,43 @@ export function presentTool(
   let target = path;
   let detail = custom;
   let title = custom || humanize(id);
-  let action = 'Tool';
+  let action = t('transcript.action_tool');
   const state = (active: string, settled: string, failure: string) =>
     failed ? failure : live ? active : settled;
   switch (kind) {
     case 'command': {
-      action = 'Run';
+      action = t('transcript.action_run');
       const description = string(input, 'description', 'i');
       target = string(input, 'command');
       detail = description || target || custom;
       title = detail
         ? state(
-            `Running ${description ? 'command: ' : ''}${detail}`,
-            `Ran ${description ? 'command: ' : ''}${detail}`,
-            `Command failed: ${detail}`,
+            t('transcript.command_running', {
+              detail: `${description ? t('transcript.command_prefix') : ''}${detail}`,
+            }),
+            t('transcript.command_ran', {
+              detail: `${description ? t('transcript.command_prefix') : ''}${detail}`,
+            }),
+            t('transcript.command_failed_detail', { detail }),
           )
-        : state('Running command', 'Ran command', 'Command failed');
+        : state(
+            t('transcript.command_running_empty'),
+            t('transcript.command_ran_empty'),
+            t('transcript.command_failed'),
+          );
       break;
     }
     case 'read':
     case 'skill': {
-      action = 'Read';
+      action = t('transcript.action_read');
       target = kind === 'skill' ? string(input, 'name') : path;
       detail = target ? leaf(target) : custom;
-      const subject = detail || (kind === 'skill' ? 'skill' : 'file');
-      title = state(`Reading ${subject}`, `Read ${subject}`, `Failed to read ${subject}`);
+      const subject = detail || t(kind === 'skill' ? 'transcript.skill' : 'transcript.file');
+      title = state(
+        t('transcript.read_running', { subject }),
+        t('transcript.read_done', { subject }),
+        t('transcript.read_failed', { subject }),
+      );
       const display = object(object(out.metadata).display);
       const start =
         number(out, 'offset') ??
@@ -402,70 +438,106 @@ export function presentTool(
       const end =
         number(display, 'lineEnd') ?? (limit && limit > 0 ? start + limit - 1 : undefined);
       if (end !== undefined && end >= start)
-        detail = `${detail || subject} (${start}-${total === undefined ? end : Math.min(end, total)}${total !== undefined && total > end - start + 1 ? ` of ${total}` : ''})`;
+        detail = t('transcript.line_range', {
+          subject: detail || subject,
+          start,
+          end: total === undefined ? end : Math.min(end, total),
+          total:
+            total !== undefined && total > end - start + 1
+              ? t('transcript.of_total', { total })
+              : '',
+        });
       break;
     }
     case 'write':
     case 'edit': {
-      action = 'Edit';
+      action = t('transcript.action_edit');
       const files = diffFiles(input, out, meta, path);
       target = files.length === 1 ? files[0]?.path : path;
-      detail = files.length > 1 ? `${files.length} files` : target ? leaf(target) : custom;
-      const subject = detail || 'files';
-      title = state(`Editing ${subject}`, `Edited ${subject}`, `Failed to edit ${subject}`);
+      detail =
+        files.length > 1
+          ? t('transcript.file_count', { count: files.length })
+          : target
+            ? leaf(target)
+            : custom;
+      const subject = detail || t('transcript.files');
+      title = state(
+        t('transcript.edit_running', { subject }),
+        t('transcript.edit_done', { subject }),
+        t('transcript.edit_failed', { subject }),
+      );
       break;
     }
     case 'list':
-      action = 'List';
+      action = t('transcript.action_list');
       target = path || '.';
       detail = leaf(target);
       title = state(
-        `Listing files in ${detail}`,
-        `Listed files in ${detail}`,
-        `Failed to list files in ${detail}`,
+        t('transcript.list_running', { subject: detail }),
+        t('transcript.list_done', { subject: detail }),
+        t('transcript.list_failed', { subject: detail }),
       );
       break;
     case 'search': {
-      action = 'Search';
+      action = t('transcript.action_search');
       target = query;
       const scope = string(input, 'glob', 'include');
-      const term = query ? `${query}${scope ? ` in ${scope}` : ''}` : scope;
-      title =
-        state('Searching files', 'Searched files', 'Failed to search files') +
-        (term ? ` for ${term}` : '');
+      const term = query ? (scope ? t('transcript.search_scope', { query, scope }) : query) : scope;
+      title = state(
+        t('transcript.search_running'),
+        t('transcript.search_done'),
+        t('transcript.search_failed'),
+      );
+      if (term) title = t('transcript.search_term', { title, term });
       detail = title;
       break;
     }
     case 'web': {
-      action = 'Search';
+      action = t('transcript.action_search');
       target = string(input, 'query', 'url');
       const fetch = id === 'webfetch' || id === 'web.fetch';
       title = fetch
         ? state(
-            `Fetching ${target || 'web page'}`,
-            `Fetched ${target || 'web page'}`,
-            `Failed to fetch ${target || 'web page'}`,
+            t('transcript.fetch_running', { subject: target || t('transcript.web_page') }),
+            t('transcript.fetch_done', { subject: target || t('transcript.web_page') }),
+            t('transcript.fetch_failed', { subject: target || t('transcript.web_page') }),
           )
-        : state('Searching the web', 'Searched the web', 'Failed to search the web') +
-          (target ? ` for ${target}` : '');
-      detail = target ? (fetch ? target : `Search for ${target}`) : custom;
+        : state(t('transcript.web_running'), t('transcript.web_done'), t('transcript.web_failed'));
+      if (!fetch && target) title = t('transcript.search_term', { title, term: target });
+      detail = target ? (fetch ? target : t('transcript.search_for', { term: target })) : custom;
       break;
     }
     case 'todo':
     case 'plan':
-      action = 'Plan';
-      title = state('Updating plan', 'Updated plan', 'Failed to update plan');
+      action = t('transcript.action_plan');
+      title = state(
+        t('transcript.plan_running'),
+        t('transcript.plan_done'),
+        t('transcript.plan_failed'),
+      );
       if (id === 'plan_enter')
-        title = state('Entering plan mode', 'Entered plan mode', 'Plan mode entry failed');
+        title = state(
+          t('transcript.plan_enter_running'),
+          t('transcript.plan_enter_done'),
+          t('transcript.plan_enter_failed'),
+        );
       if (id === 'plan_exit')
-        title = state('Exiting plan mode', 'Exited plan mode', 'Plan mode exit failed');
+        title = state(
+          t('transcript.plan_exit_running'),
+          t('transcript.plan_exit_done'),
+          t('transcript.plan_exit_failed'),
+        );
       if (id === 'todoread' || id === 'todo.read')
-        title = state('Reading plan', 'Read plan', 'Failed to read plan');
+        title = state(
+          t('transcript.plan_read_running'),
+          t('transcript.plan_read_done'),
+          t('transcript.plan_read_failed'),
+        );
       detail = custom || string(input, 'goal', 'reason') || title;
       break;
     case 'question':
-      action = 'Ask questions';
-      title = 'Ask questions';
+      action = t('transcript.ask_questions');
+      title = t('transcript.ask_questions');
       detail =
         string(input, 'question') ||
         string(object(array(input.questions)[0]), 'question', 'header') ||
@@ -484,20 +556,20 @@ export function presentTool(
       title =
         (
           {
-            spawn_subagent: 'Spawn subagent',
-            'agent.spawn': 'Spawn subagent',
-            task: 'Spawn subagent',
-            get_command_or_subagent_output: 'Check background output',
-            get_task_output: 'Check background output',
-            background_output: 'Check background output',
-            wait_commands_or_subagents: 'Wait for background tasks',
-            wait_tasks: 'Wait for background tasks',
-            kill_command_or_subagent: 'Cancel background task',
-            kill_task: 'Cancel background task',
-            background_cancel: 'Cancel background task',
-            send_subagent_message: 'Send subagent message',
-            'agent.message': 'Send subagent message',
-            'agent.send_message': 'Send subagent message',
+            spawn_subagent: t('transcript.spawn_subagent'),
+            'agent.spawn': t('transcript.spawn_subagent'),
+            task: t('transcript.spawn_subagent'),
+            get_command_or_subagent_output: t('transcript.check_background'),
+            get_task_output: t('transcript.check_background'),
+            background_output: t('transcript.check_background'),
+            wait_commands_or_subagents: t('transcript.wait_background'),
+            wait_tasks: t('transcript.wait_background'),
+            kill_command_or_subagent: t('transcript.cancel_background'),
+            kill_task: t('transcript.cancel_background'),
+            background_cancel: t('transcript.cancel_background'),
+            send_subagent_message: t('transcript.message_subagent'),
+            'agent.message': t('transcript.message_subagent'),
+            'agent.send_message': t('transcript.message_subagent'),
           } as Record<string, string>
         )[id] || title;
       action = title;
@@ -508,28 +580,37 @@ export function presentTool(
       break;
     case 'session':
       target = string(input, 'query', 'session_id', 'run_id');
-      title = `${humanize(id.replace('session_', ''))} session`;
+      title = t(
+        (
+          {
+            session_list: 'transcript.session_list',
+            session_read: 'transcript.session_read',
+            session_search: 'transcript.session_search',
+            session_info: 'transcript.session_info',
+          } as Record<string, TranslationKey>
+        )[id]!,
+      );
       detail = target || title;
       break;
     case 'lsp':
-      title = `LSP ${string(input, 'operation', 'command') || 'request'}`;
+      title = `LSP ${string(input, 'operation', 'command') || t('transcript.lsp_request')}`;
       target = path;
       detail = path
         ? `${path}${number(input, 'line') !== undefined ? `:${number(input, 'line')}:${number(input, 'character') ?? 0}` : ''}`
         : title;
       break;
     case 'eval':
-      action = 'Evaluate';
-      title = string(input, 'summary', 'title', 'i') || 'Evaluate code';
+      action = t('transcript.evaluate');
+      title = string(input, 'summary', 'title', 'i') || t('transcript.evaluate_code');
       target = string(input, 'language');
       detail = target || title;
       break;
     case 'context':
-      title = id === 'new_context' ? 'New context' : 'Context notes';
+      title = t(id === 'new_context' ? 'transcript.new_context' : 'transcript.context_notes');
       detail = custom || title;
       break;
     case 'github': {
-      title = `GitHub ${id.endsWith('pull_request') ? 'pull request' : 'issue'}`;
+      title = t(id.endsWith('pull_request') ? 'transcript.github_pr' : 'transcript.github_issue');
       const owner = string(input, 'owner');
       const repo = string(input, 'repo');
       const issue = number(input, 'issue_number', 'pull_number');

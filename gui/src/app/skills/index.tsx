@@ -16,6 +16,7 @@ import { bare, ellipsis, row } from '../../ui/controls';
 import { Markdown } from '../../markdown';
 import { nativeRenderer } from '../../native';
 import { openPath, openUrl, revealPath } from '../../workspace/os';
+import { t, useLocale } from '../../i18n';
 
 type Catalog = Methods['skills.list']['result'];
 type Skill = Catalog['skills'][number];
@@ -24,15 +25,16 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 function updatedLabel(value: number, now: number) {
   const seconds = Math.max(0, (now - value) / 1000);
   return seconds < 90
-    ? 'Just now'
+    ? t('skills.updated_just_now')
     : seconds < 3600
-      ? `${Math.floor(seconds / 60)}m ago`
+      ? t('skills.updated_minutes', { count: Math.floor(seconds / 60) })
       : seconds < 86400
-        ? `${Math.floor(seconds / 3600)}h ago`
-        : `${Math.floor(seconds / 86400)}d ago`;
+        ? t('skills.updated_hours', { count: Math.floor(seconds / 3600) })
+        : t('skills.updated_days', { count: Math.floor(seconds / 86400) });
 }
 
 export function SkillsPage({ cwd }: { cwd?: string }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const { showToast } = useToast();
@@ -64,7 +66,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
       if (result.errors.length) showToast(result.errors.join('\n'));
     } catch (error) {
       if (request === generation.current)
-        showToast(`Couldn’t scan skill folders: ${message(error)}`);
+        showToast(t('settings.skills_scan_failed', { error: message(error) }));
     } finally {
       if (request === generation.current) setScanning(false);
     }
@@ -111,7 +113,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
         if (active) setBody({ id: selectedId, text: result.body });
       })
       .catch((error) => {
-        if (active) showToast(`Couldn’t read the skill: ${message(error)}`);
+        if (active) showToast(t('settings.skills_read_failed', { error: message(error) }));
       });
     return () => {
       active = false;
@@ -122,8 +124,8 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
   for (const skill of filtered) {
     const label =
       skill.scope === 'user'
-        ? 'User'
-        : skill.project?.split('/').filter(Boolean).pop() || 'Project';
+        ? t('skills.section_user')
+        : skill.project?.split('/').filter(Boolean).pop() || t('settings.skills_project');
     const group = groups.get(label) ?? [];
     group.push(skill);
     groups.set(label, group);
@@ -167,7 +169,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
       });
     } catch (error) {
       if (context.current === requestCwd) setCatalog(catalog);
-      showToast(`Couldn’t update the skill: ${message(error)}`);
+      showToast(t('skills.toggle_failed', { error: message(error) }));
     } finally {
       if (context.current === requestCwd) {
         setBusy(undefined);
@@ -191,10 +193,10 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
     );
     try {
       await getAppStore().backend.call('skills.trash', { cwd, id: skill.id });
-      showToast(`Moved “${skill.name}” to the Trash`, 'success');
+      showToast(t('skills.deleted_toast', { name: skill.name }), 'success');
     } catch (error) {
       if (context.current === requestCwd) setCatalog(catalog);
-      showToast(`Couldn’t delete the skill: ${message(error)}`);
+      showToast(t('skills.delete_failed', { error: message(error) }));
     } finally {
       if (context.current === requestCwd) {
         setBusy(undefined);
@@ -214,13 +216,13 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
   function copy(skill: Skill) {
     setArmed(undefined);
     try {
-      if (!renderer) throw new Error('Clipboard is unavailable');
+      if (!renderer) throw new Error(t('settings.skills_clipboard_unavailable'));
       nativeRenderer(renderer).writeClipboardText(skill.primaryDirectory);
       setCopied(skill.id);
       clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(undefined), 2000);
     } catch (error) {
-      showToast(`Couldn’t copy the path: ${message(error)}`);
+      showToast(t('settings.skills_copy_failed', { error: message(error) }));
     }
   }
   const selectedSources = selected?.installs.map((install) => install.source).join(' · ');
@@ -340,11 +342,11 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
             paddingBottom: 16,
           }}
         >
-          Scanning skill folders…
+          {t('skills.scanning')}
         </text>
         {!scanning && (
           <Button
-            aria-label="Rescan skill folders"
+            aria-label={t('settings.skills_rescan')}
             onClick={() => void scan()}
             style={{ marginTop: 12, width: 28, height: 28 }}
           >
@@ -377,11 +379,11 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
         >
           <Icon name="package" size={21} />
         </div>
-        <text style={{ color: colors.text, fontSize: sp(13), fontWeight: 500 }}>No skills yet</text>
+        <text style={{ color: colors.text, fontSize: sp(13), fontWeight: 500 }}>
+          {t('skills.empty_title')}
+        </text>
         <text style={{ ...textStyle, maxWidth: 420, textAlign: 'center' }}>
-          A skill is a folder with a SKILL.md — reusable instructions any agent can load, like a
-          deploy runbook or a review checklist. Skills installed for Claude Code, Codex, and every
-          other agent show up here, invoked as /name.
+          {t('skills.empty_description')}
         </text>
         <Button
           disabled={scanning}
@@ -389,7 +391,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
           style={{ height: 26, paddingLeft: 10, paddingRight: 10, borderRadius: 6 }}
         >
           <Icon name="rotate-cw" size={11} />
-          <text style={{ ...textStyle, marginLeft: 5 }}>Rescan skill folders</text>
+          <text style={{ ...textStyle, marginLeft: 5 }}>{t('settings.skills_rescan')}</text>
         </Button>
       </div>
     );
@@ -421,7 +423,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
         >
           <TextField
             icon="search"
-            placeholder="Search skills…"
+            placeholder={t('skills.search')}
             value={query}
             onChange={(value) => {
               setQuery(value);
@@ -448,12 +450,12 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
           <Dropdown
             outlined
             icon="package"
-            label={source || 'All skills'}
+            label={source || t('skills.filter_all')}
             style={{ width: '100%', height: 26, justifyContent: 'space-between' }}
             items={[
               {
                 id: 'all',
-                label: 'All skills',
+                label: t('skills.filter_all'),
                 selected: !source,
                 onSelect: () => {
                   setSource('');
@@ -561,7 +563,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                           <text
                             style={{ color: colors.warning, fontSize: sp(12.5), flexShrink: 0 }}
                           >
-                            Disabled
+                            {t('skills.disabled_badge')}
                           </text>
                         )}
                       </div>
@@ -585,7 +587,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
         ) : (
           <div style={{ ...column, flexGrow: 1, padding: 18 }}>
             <text style={{ ...textStyle, color: colors.text_tertiary }}>
-              No skills match your search
+              {t('skills.no_match')}
             </text>
           </div>
         )}
@@ -603,8 +605,8 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
         >
           <text style={{ color: colors.text_ghost, fontSize: sp(12.5) }}>
             {search || source
-              ? `${filtered.length} of ${skills.length} shown`
-              : `${skills.length} ${skills.length === 1 ? 'skill' : 'skills'}${disabled ? ` · ${disabled} disabled` : ''}`}
+              ? t('skills.filter_caption', { shown: filtered.length, total: skills.length })
+              : `${t(skills.length === 1 ? 'skills.count_one' : 'skills.count_many', { count: skills.length })}${disabled ? ` · ${t('skills.count_disabled', { count: disabled })}` : ''}`}
           </text>
         </div>
       </div>
@@ -634,7 +636,9 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                   {selected.name}
                 </text>
                 {!selected.enabled && (
-                  <text style={{ color: colors.warning, fontSize: sp(12.5) }}>Disabled</text>
+                  <text style={{ color: colors.warning, fontSize: sp(12.5) }}>
+                    {t('skills.disabled_badge')}
+                  </text>
                 )}
               </div>
               <text
@@ -645,14 +649,16 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                   fontSize: sp(12.5),
                 }}
               >
-                {`${selectedSources} · ${selected.scope === 'user' ? 'available in every project' : `in ${selected.project?.split('/').filter(Boolean).pop() || 'this project'}`}`}
+                {`${selectedSources} · ${selected.scope === 'user' ? t('skills.scope_user_detail') : t('skills.scope_in_project', { project: selected.project?.split('/').filter(Boolean).pop() || t('settings.skills_this_project') })}`}
               </text>
             </div>
             <div
               tabIndex={busy ? -1 : 0}
               role="switch"
-              aria-label={`${selected.enabled ? 'Disable' : 'Enable'} ${selected.name}`}
-              aria-valuetext={selected.enabled ? 'On' : 'Off'}
+              aria-label={t(selected.enabled ? 'skills.disable_named' : 'skills.enable_named', {
+                name: selected.name,
+              })}
+              aria-valuetext={t(selected.enabled ? 'settings.skills_on' : 'settings.skills_off')}
               onClick={() => void toggle(selected)}
               style={{
                 ...row,
@@ -680,13 +686,13 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
             </div>
           </div>
           <text style={{ ...textStyle, marginTop: 14 }}>
-            {selected.description || 'No description'}
+            {selected.description || t('skills.no_description')}
           </text>
           <div style={{ ...column, marginTop: 16 }}>
-            {metadata('Invoke', `/${selected.name}`, true)}
+            {metadata(t('skills.detail_invoke'), `/${selected.name}`, true)}
             {selected.installs.map((install) =>
               metadata(
-                selected.installs.length === 1 ? 'Location' : install.source,
+                selected.installs.length === 1 ? t('skills.detail_location') : install.source,
                 home && (install.directory === home || install.directory.startsWith(`${home}/`))
                   ? `~${install.directory.slice(home.length)}`
                   : install.directory,
@@ -694,14 +700,14 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
               ),
             )}
             {metadata(
-              'Contents',
-              `${selected.supportingFiles ? `${selected.supportingFiles} supporting ${selected.supportingFiles === 1 ? 'file' : 'files'} · ` : ''}${selected.sizeBytes < 1024 ? `${selected.sizeBytes} B` : selected.sizeBytes < 1024 * 1024 ? `${(selected.sizeBytes / 1024).toFixed(1)} KB` : `${(selected.sizeBytes / (1024 * 1024)).toFixed(1)} MB`}`,
+              t('skills.detail_contents'),
+              `${selected.supportingFiles ? `${t(selected.supportingFiles === 1 ? 'skills.file_count_one' : 'skills.file_count_many', { count: selected.supportingFiles })} · ` : ''}${selected.sizeBytes < 1024 ? `${selected.sizeBytes} B` : selected.sizeBytes < 1024 * 1024 ? `${(selected.sizeBytes / 1024).toFixed(1)} KB` : `${(selected.sizeBytes / (1024 * 1024)).toFixed(1)} MB`}`,
               false,
               selected.updatedAt === null && !selected.allowedTools.length,
             )}
             {selected.updatedAt !== null &&
               metadata(
-                'Updated',
+                t('skills.detail_updated'),
                 updatedLabel(
                   selected.updatedAt,
                   typeof referenceNow === 'number' ? referenceNow : Date.now(),
@@ -710,27 +716,30 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                 !selected.allowedTools.length,
               )}
             {selected.allowedTools.length > 0 &&
-              metadata('Tools', selected.allowedTools.join(', '), true, true)}
+              metadata(t('skills.allowed_tools'), selected.allowedTools.join(', '), true, true)}
           </div>
           {selected.installs.length > 1 && (
             <div style={{ ...row, marginTop: 12, gap: 6 }}>
               <Icon name="alert" size={11} color={colors.warning} />
               <text style={{ ...textStyle, color: colors.warning }}>
-                {`Same name in ${selected.installs.length - 1} other ${selected.installs.length === 2 ? 'location' : 'locations'} — the most specific copy wins`}
+                {t(
+                  selected.installs.length === 2 ? 'skills.duplicate_one' : 'skills.duplicate_many',
+                  { count: selected.installs.length - 1 },
+                )}
               </text>
             </div>
           )}
           <div style={{ ...row, flexWrap: 'wrap', marginTop: 16, gap: 7 }}>
-            {action('Open SKILL.md', 'pencil', () => void pathAction(selected, 'open'))}
-            {action('Show in File Manager', 'folder', () => void pathAction(selected, 'reveal'))}
+            {action(t('skills.open_file'), 'pencil', () => void pathAction(selected, 'open'))}
+            {action(t('skills.reveal'), 'folder', () => void pathAction(selected, 'reveal'))}
             {action(
-              copied === selected.id ? 'Copied' : 'Copy Path',
+              copied === selected.id ? t('common.copied') : t('skills.copy_path'),
               copied === selected.id ? 'check' : 'copy',
               () => copy(selected),
             )}
             <div style={{ flexGrow: 1 }} />
             {action(
-              armed === selected.id ? 'Confirm delete' : 'Delete',
+              t(armed === selected.id ? 'skills.confirm_delete' : 'skills.delete'),
               'trash',
               () => void trash(selected),
               armed === selected.id,
@@ -773,7 +782,9 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
           style={{ ...column, flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}
         >
           <Icon name="package" size={22} color={colors.text_ghost} />
-          <text style={{ fontSize: sp(12.5), color: colors.text_ghost }}>Select a skill</text>
+          <text style={{ fontSize: sp(12.5), color: colors.text_ghost }}>
+            {t('skills.select_placeholder')}
+          </text>
         </div>
       )}
     </div>

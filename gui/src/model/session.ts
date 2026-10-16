@@ -1,3 +1,4 @@
+import { t, type TranslationKey, type TranslationVariables } from '../i18n';
 import type { Update, SessionCatalogEntry } from '../backend/protocol';
 import type {
   EventEnvelopeV1,
@@ -48,6 +49,7 @@ export interface NoticeEntry extends EntryBase {
   kind: 'notice';
   level: 'info' | 'warning' | 'error';
   message: string;
+  localized?: { key: TranslationKey; vars?: TranslationVariables };
   source?: string;
 }
 export interface CompactionEntry extends EntryBase {
@@ -307,8 +309,11 @@ export function applyUpdate(view: SessionView, update: Update): SessionView {
         view,
         `yolo:${view.entries.length}`,
         'error',
-        'Could not change access mode',
+        t('transcript.access_failed'),
         0,
+        undefined,
+        undefined,
+        { key: 'transcript.access_failed' },
       );
     case 'compaction':
       return update.message
@@ -353,10 +358,23 @@ function notice(
   ms: number,
   source?: string,
   seq?: number,
+  localized?: NoticeEntry['localized'],
 ): SessionView {
   return {
     ...view,
-    entries: [...view.entries, { kind: 'notice', id, level, message, startedMs: ms, source, seq }],
+    entries: [
+      ...view.entries,
+      {
+        kind: 'notice',
+        id,
+        level,
+        message,
+        startedMs: ms,
+        source,
+        seq,
+        ...(localized ? { localized } : {}),
+      },
+    ],
   };
 }
 function settle(
@@ -987,10 +1005,11 @@ function reduceEvent(
         view,
         base.id,
         'warning',
-        `Late task result: ${event.data.task_id}`,
+        t('transcript.late_result', { task: event.data.task_id }),
         ms,
         'task',
         seq,
+        { key: 'transcript.late_result', vars: { task: event.data.task_id } },
       );
     case 'agent_spawned':
       return {

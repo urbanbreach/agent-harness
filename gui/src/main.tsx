@@ -74,7 +74,7 @@ function FpsCounter() {
                 : colors.danger,
       }}
     >
-      {fps} FPS
+      {t('shell.fps', { count: fps })}
     </text>
   );
 }
@@ -157,7 +157,7 @@ function Application() {
     queueMicrotask(() => runAction('composer.focus'));
   };
   const addProject = (path: string) => {
-    store.addProject({ id: path, cwd: path, name: basename(path) || 'Project' });
+    store.addProject({ id: path, cwd: path, name: basename(path) || t('shell.project') });
     focusComposer();
   };
   const openProject = () => {

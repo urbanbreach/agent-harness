@@ -3,6 +3,7 @@ import type { Methods } from '../../backend/protocol';
 import { getAppStore } from '../../store';
 import { Button, Switch, useToast } from '../../ui';
 import { SettingsCard, SettingsRow } from './index';
+import { t } from '../../i18n';
 
 export function WorktreesPage({ cwd }: { cwd: string }) {
   const backend = getAppStore().backend;
@@ -35,7 +36,7 @@ export function WorktreesPage({ cwd }: { cwd: string }) {
     try {
       await backend.call('worktrees.remove', { cwd, slug, keepBranch });
       setArmed(undefined);
-      showToast('Worktree removed', 'success');
+      showToast(t('settings.worktree_removed'), 'success');
       await refresh();
     } catch (error) {
       setError(String(error));
@@ -46,26 +47,29 @@ export function WorktreesPage({ cwd }: { cwd: string }) {
   return (
     <>
       <SettingsCard>
-        <SettingsRow title="Managed worktrees" description={report?.repository_root ?? cwd}>
+        <SettingsRow
+          title={t('settings.managed_worktrees')}
+          description={report?.repository_root ?? cwd}
+        >
           <Button disabled={busy} onClick={() => void refresh()}>
-            {busy ? 'Loading…' : 'Refresh'}
+            {busy ? t('settings.loading') : t('settings.refresh')}
           </Button>
         </SettingsRow>
         <SettingsRow
-          title="Keep branch when removing"
-          description="Removal refuses worktrees with uncommitted changes. Your main checkout is never removed."
+          title={t('settings.keep_branch')}
+          description={t('settings.keep_branch_description')}
           last
         >
-          <Switch label="Keep branch when removing" checked={keepBranch} onChange={setKeepBranch} />
+          <Switch label={t('settings.keep_branch')} checked={keepBranch} onChange={setKeepBranch} />
         </SettingsRow>
       </SettingsCard>
       <SettingsCard>
-        {error && <SettingsRow title="Worktree operation failed" description={error} last />}
+        {error && <SettingsRow title={t('settings.worktree_failed')} description={error} last />}
         {report?.worktrees.map((worktree, index, entries) => (
           <SettingsRow
             key={worktree.path}
             title={worktree.slug ?? worktree.branch ?? worktree.path}
-            description={`${worktree.path} · ${worktree.branch ?? 'Detached HEAD'}`}
+            description={`${worktree.path} · ${worktree.branch ?? t('settings.detached_head')}`}
             last={index === entries.length - 1}
           >
             <Button
@@ -75,15 +79,17 @@ export function WorktreesPage({ cwd }: { cwd: string }) {
                 if (worktree.slug) void remove(worktree.slug);
               }}
             >
-              {armed === worktree.slug ? 'Confirm remove' : 'Remove'}
+              {armed === worktree.slug ? t('settings.confirm_remove') : t('settings.remove')}
             </Button>
-            {armed === worktree.slug && <Button onClick={() => setArmed(undefined)}>Cancel</Button>}
+            {armed === worktree.slug && (
+              <Button onClick={() => setArmed(undefined)}>{t('settings.cancel')}</Button>
+            )}
           </SettingsRow>
         ))}
         {report && report.worktrees.length === 0 && (
           <SettingsRow
-            title="No managed worktrees"
-            description="Start a new task in a worktree to create an isolated checkout."
+            title={t('settings.no_worktrees')}
+            description={t('settings.no_worktrees_description')}
             last
           />
         )}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { t, useLocale } from '../../i18n';
 import { useGpuix, type KeyEvent, type PublicInstance } from '@gpuix/react';
 import { listTree, readText, writeText, type TreeEntry } from '../../workspace/files';
 import { useTheme, CODE_FONT_FAMILY as MONO_FONT } from '../../theme';
@@ -42,6 +43,7 @@ export function FilesView({
   state: FilesState;
   onChange: () => void;
 }) {
+  useLocale();
   const { colors, codeFontSize, sp } = useTheme();
   const { renderer } = useGpuix();
   const { showToast } = useToast();
@@ -69,7 +71,9 @@ export function FilesView({
   const [drag, setDrag] = useState<{ x: number; width: number }>();
   const [width, setWidth] = useState(684);
   const buffer = state.selected ? state.buffers.get(state.selected) : undefined;
-  const text = buffer?.text ?? '';
+  const text = buffer?.error
+    ? t('files.unable_to_edit', { error: buffer.error })
+    : (buffer?.text ?? '');
   const search = useMemo(() => searchText(text, query, options), [text, query, options]);
   const runs = useMemo(
     () => highlightCode(text, state.selected?.split('.').pop(), colors.is_dark),
@@ -113,7 +117,7 @@ export function FilesView({
       })
       .catch((error) => {
         next.error = String(error);
-        next.text = `Unable to edit this file: ${error}`;
+        next.text = t('files.unable_to_edit', { error: String(error) });
         next.loaded = true;
         onChange();
       });
@@ -214,7 +218,9 @@ export function FilesView({
               {state.selected}
             </text>
             {markdown && (
-              <Tooltip content={preview ? 'Edit source' : 'Preview markdown'}>
+              <Tooltip
+                content={preview ? t('files.edit_markdown_source') : t('files.preview_markdown')}
+              >
                 <IconButton
                   name={preview ? 'pencil' : 'eye'}
                   size={12}
@@ -293,8 +299,8 @@ export function FilesView({
                     }}
                     value={query}
                     onChange={(event) => setQuery(event.value ?? '')}
-                    placeholder="Find"
-                    aria-label="Find in file"
+                    placeholder={t('input.find')}
+                    aria-label={t('panel.find_in_file')}
                     onFocus={() => setQueryFocused(true)}
                     onBlur={() => setQueryFocused(false)}
                     theme={{
@@ -327,7 +333,7 @@ export function FilesView({
                   {(['caseSensitive', 'wholeWord', 'regex'] as const).map((field, i) => (
                     <Tooltip
                       key={field}
-                      content={['Match case', 'Whole word', 'Regular expression'][i]}
+                      content={[t('panel.match_case'), t('panel.whole_word'), t('panel.regex')][i]}
                     >
                       <IconButton
                         name={(['case-sensitive', 'whole-word', 'regex'] as const)[i]!}
@@ -358,10 +364,13 @@ export function FilesView({
                   {!query
                     ? ''
                     : search.error
-                      ? 'Bad pattern'
+                      ? t('find.bad_pattern')
                       : search.matches.length
-                        ? `${Math.min(activeMatch + 1, search.matches.length)} of ${search.matches.length}${search.capped ? '+' : ''}`
-                        : 'No results'}
+                        ? t('find.result_count', {
+                            current: Math.min(activeMatch + 1, search.matches.length),
+                            total: `${search.matches.length}${search.capped ? '+' : ''}`,
+                          })
+                        : t('find.no_results')}
                 </text>
                 <div
                   style={{
@@ -398,7 +407,7 @@ export function FilesView({
                   <TextField
                     value={replacement}
                     onChange={setReplacement}
-                    placeholder="Replace"
+                    placeholder={t('input.replace')}
                     style={{
                       width: findWidth,
                       flexShrink: 0,
@@ -511,7 +520,7 @@ export function FilesView({
                     })
                     .catch((error) => {
                       buffer.error = String(error);
-                      buffer.text = `Unable to edit this file: ${error}`;
+                      buffer.text = t('files.unable_to_edit', { error: String(error) });
                       onChange();
                     });
                 }
@@ -590,7 +599,7 @@ export function FilesView({
               color: colors.text_secondary,
             }}
           >
-            {cwd.split('/').filter(Boolean).pop() ?? 'workspace'}
+            {cwd.split('/').filter(Boolean).pop() ?? t('workspace.workspace')}
           </text>
         </Toolbar>
         <div

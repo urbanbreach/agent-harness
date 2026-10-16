@@ -1,3 +1,4 @@
+import { t, useLocale } from '../../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { useGpuix, type EventPayload, type PublicInstance } from '@gpuix/react';
 import { Markdown } from '../../markdown';
@@ -30,7 +31,7 @@ function waitForUpdate(sessionId: string, accept: (update: Update) => boolean): 
     const update = notification.params.update;
     if (update.kind === 'exited') {
       finish();
-      reject(new Error(update.error ?? 'Session ended'));
+      reject(new Error(update.error ?? t('transcript.session_ended')));
     } else if (accept(update)) {
       finish();
       resolveUpdate(update);
@@ -38,7 +39,7 @@ function waitForUpdate(sessionId: string, accept: (update: Update) => boolean): 
   });
   const timer = setTimeout(() => {
     stop();
-    reject(new Error('The session did not respond'));
+    reject(new Error(t('transcript.session_timeout')));
   }, 30000);
   function finish() {
     clearTimeout(timer);
@@ -49,7 +50,7 @@ function waitForUpdate(sessionId: string, accept: (update: Update) => boolean): 
 
 export function CopyButton({
   text,
-  label = 'Copy message',
+  label = t('transcript.copy_message'),
   small = false,
 }: {
   text: string;
@@ -61,7 +62,7 @@ export function CopyButton({
   const timer = useRef<Timer | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   return (
-    <Tooltip content={copied ? 'Copied' : label}>
+    <Tooltip content={copied ? t('clipboard.copyDone') : label}>
       <IconButton
         name={copied ? 'check' : 'copy'}
         size={small ? 11 : 14}
@@ -93,6 +94,7 @@ export function ResponseFooter({
   visible: boolean;
 }) {
   const { colors, sp } = useTheme();
+  const locale = useLocale();
   const { renderer } = useGpuix();
   const preferences = usePreferences();
   const [busy, setBusy] = useState(false);
@@ -129,26 +131,26 @@ export function ResponseFooter({
     if (view.turns.at(-1)?.id !== turn.id) return;
     return registerAction({
       id: 'session.fork',
-      label: 'Fork task',
+      label: t('transcript.fork'),
       enabled: () => eligible && !busy,
       run: () => void fork(),
     });
-  }, [sessionId, turn.id, view.turns.length, eligible, busy]);
+  }, [sessionId, turn.id, view.turns.length, eligible, busy, locale]);
   useEffect(
     () =>
       registerAction({
         id: `session.fork:${turn.id}`,
-        label: 'Fork task',
+        label: t('transcript.fork'),
         enabled: () => eligible && !busy,
         run: () => void fork(),
       }),
-    [sessionId, turn.id, eligible, busy],
+    [sessionId, turn.id, eligible, busy, locale],
   );
   const snapshot = view.snapshots.find((item) => turn.requestIds.includes(item.request_id));
   const items: MenuItem[] = [
     {
       id: 'copy',
-      label: 'Copy Message',
+      label: t('transcript.copy_message_menu'),
       onSelect: () => {
         if (renderer) nativeRenderer(renderer).writeClipboardText(text);
       },
@@ -157,7 +159,7 @@ export function ResponseFooter({
       ? [
           {
             id: 'fork',
-            label: busy ? 'Forking Task…' : 'Fork Task',
+            label: t(busy ? 'transcript.forking_menu' : 'transcript.fork_menu'),
             icon: 'fork' as const,
             disabled: busy,
             onSelect: () => void fork(),
@@ -168,7 +170,7 @@ export function ResponseFooter({
       ? [
           {
             id: 'undo',
-            label: 'Undo file changes',
+            label: t('transcript.undo_files'),
             icon: 'rewind' as const,
             onSelect: () => {
               void getAppStore()
@@ -196,11 +198,11 @@ export function ResponseFooter({
         }}
       >
         <CopyButton text={text} />
-        <Tooltip content={busy ? 'Forking task…' : 'Fork task'}>
+        <Tooltip content={t(busy ? 'transcript.forking' : 'transcript.fork')}>
           <IconButton
             name={busy ? 'loader-circle' : 'fork'}
             size={14}
-            label="Fork task"
+            label={t('transcript.fork')}
             disabled={!eligible || busy}
             onClick={() => void fork()}
             style={{ width: 27, height: 27, borderRadius: 8 }}
@@ -327,14 +329,14 @@ export function UserMessage({
       .join('\n\n');
     return [
       ...(selected
-        ? [{ id: 'selection', label: 'Copy Selection', onSelect: () => copy(selected) }]
+        ? [{ id: 'selection', label: t('clipboard.selection'), onSelect: () => copy(selected) }]
         : []),
-      { id: 'copy', label: 'Copy Message', onSelect: () => copy(entry.text) },
+      { id: 'copy', label: t('transcript.copy_message_menu'), onSelect: () => copy(entry.text) },
       ...(!canEdit
         ? [
             {
               id: 'composer',
-              label: 'Copy to Composer',
+              label: t('transcript.copy_composer'),
               onSelect: () => {
                 const store = getAppStore();
                 store.setDraft(
@@ -350,13 +352,13 @@ export function UserMessage({
             },
           ]
         : []),
-      ...(code ? [{ id: 'code', label: 'Copy Code', onSelect: () => copy(code) }] : []),
+      ...(code ? [{ id: 'code', label: t('clipboard.code'), onSelect: () => copy(code) }] : []),
       ...(canEdit
         ? [
             { id: 'separator', type: 'separator' as const },
             {
               id: 'rewind',
-              label: 'Revert to Here',
+              label: t('transcript.revert_menu'),
               icon: 'rewind' as const,
               onSelect: () => {
                 setValue(entry.text);
@@ -454,7 +456,9 @@ export function UserMessage({
                 borderColor: colors.border,
               }}
             >
-              <text style={{ color: colors.text_secondary, fontSize: sp(12.5) }}>Cancel</text>
+              <text style={{ color: colors.text_secondary, fontSize: sp(12.5) }}>
+                {t('transcript.cancel')}
+              </text>
             </Button>
             <Button
               disabled={busy || !value.trim()}
@@ -463,7 +467,7 @@ export function UserMessage({
               style={{ height: 26, paddingLeft: 11, paddingRight: 11, borderRadius: 7 }}
             >
               <text style={{ color: colors.on_inverse, fontSize: sp(12.5) }}>
-                {busy ? 'Sending…' : 'Send'}
+                {t(busy ? 'transcript.sending' : 'transcript.send')}
               </text>
             </Button>
           </div>
@@ -552,11 +556,11 @@ export function UserMessage({
         )}
         <CopyButton text={entry.text} />
         {canEdit && (
-          <Tooltip content="Revert to here">
+          <Tooltip content={t('transcript.revert')}>
             <IconButton
               name="rewind"
               size={14}
-              label="Revert to here"
+              label={t('transcript.revert')}
               onClick={() => {
                 setValue(entry.text);
                 setEditing(true);
@@ -601,15 +605,15 @@ export function AssistantMessage({
     const snapshot = view.snapshots.find((item) => turn?.requestIds.includes(item.request_id));
     return [
       ...(selected
-        ? [{ id: 'selection', label: 'Copy Selection', onSelect: () => copy(selected) }]
+        ? [{ id: 'selection', label: t('clipboard.selection'), onSelect: () => copy(selected) }]
         : []),
-      { id: 'copy', label: 'Copy Message', onSelect: () => copy(text) },
-      ...(code ? [{ id: 'code', label: 'Copy Code', onSelect: () => copy(code) }] : []),
+      { id: 'copy', label: t('transcript.copy_message_menu'), onSelect: () => copy(text) },
+      ...(code ? [{ id: 'code', label: t('clipboard.code'), onSelect: () => copy(code) }] : []),
       ...(canFork
         ? [
             {
               id: 'fork',
-              label: 'Fork Task',
+              label: t('transcript.fork_menu'),
               icon: 'fork' as const,
               onSelect: () => {
                 runAction(`session.fork:${turnId}`);
@@ -621,7 +625,7 @@ export function AssistantMessage({
         ? [
             {
               id: 'undo',
-              label: 'Undo file changes',
+              label: t('transcript.undo_files'),
               icon: 'rewind' as const,
               onSelect: () => {
                 void getAppStore().sendIntent(sessionId, {

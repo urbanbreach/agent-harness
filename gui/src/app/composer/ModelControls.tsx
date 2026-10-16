@@ -15,30 +15,36 @@ import { Dropdown, type MenuItem } from '../../ui/menus';
 import { useToast } from '../../ui/overlays';
 import type { IconName } from '../../ui/icon-names';
 import { registerAction, runAction } from '../actions';
+import { t, useLocale, type TranslationKey } from '../../i18n';
 
-const accessChoices: { mode: AccessMode; name: string; description: string; icon: IconName }[] = [
+const accessChoices: {
+  mode: AccessMode;
+  name: TranslationKey;
+  description: TranslationKey;
+  icon: IconName;
+}[] = [
   {
     mode: 'supervised',
-    name: 'Supervised',
-    description: 'Ask before commands and file changes',
+    name: 'mode.supervised',
+    description: 'mode.supervised_description',
     icon: 'lock',
   },
   {
     mode: 'autoEdits',
-    name: 'Auto-accept edits',
-    description: 'Auto-approve edits, ask before other actions',
+    name: 'mode.auto_accept_edits',
+    description: 'mode.auto_accept_edits_description',
     icon: 'pencil',
   },
   {
     mode: 'auto',
-    name: 'Auto',
-    description: 'An AI reviewer approves routine actions; risky ones still ask',
+    name: 'mode.auto',
+    description: 'mode.auto_description',
     icon: 'sparkle',
   },
   {
     mode: 'full',
-    name: 'Full access',
-    description: 'Allow commands and edits without prompts',
+    name: 'mode.full_access',
+    description: 'mode.full_access_description',
     icon: 'lock-open',
   },
 ];
@@ -73,6 +79,7 @@ export function ModelControls({
   accessMode: AccessMode;
   onAccessMode: (mode: AccessMode) => void;
 }) {
+  const locale = useLocale();
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const { showToast } = useToast();
@@ -147,7 +154,7 @@ export function ModelControls({
     try {
       await getAppStore().loadModels(cwd, refresh);
     } catch (error) {
-      showToast(`Could not load models: ${String(error)}`);
+      showToast(t('composer.load_models_error', { error: String(error) }));
     } finally {
       setLoading(false);
     }
@@ -177,10 +184,10 @@ export function ModelControls({
     () =>
       registerAction({
         id: 'composer.profilePicker',
-        label: 'Agents',
+        label: t('composer.agents'),
         run: () => setProfileOpen(true),
       }),
-    [],
+    [locale],
   );
   useEffect(() => {
     if (!open) return;
@@ -258,7 +265,7 @@ export function ModelControls({
       ) === index,
   );
   if (choices.length) {
-    traitItems.push({ id: 'reasoning', type: 'caption', label: 'Reasoning' });
+    traitItems.push({ id: 'reasoning', type: 'caption', label: t('models.reasoning') });
     for (const entry of choices)
       traitItems.push({
         id: `variant-${entry.variant ?? entry.reasoningEffort}`,
@@ -285,7 +292,7 @@ export function ModelControls({
                     fontWeight: 400,
                   }}
                 >
-                  Default
+                  {t('common.default')}
                 </text>
               )}
             {entry.variant === current?.variant && <Icon name="check" size={11} />}
@@ -300,7 +307,7 @@ export function ModelControls({
   );
   if (windows.length > 1) {
     if (traitItems.length) traitItems.push({ id: 'window-divider', type: 'separator' });
-    traitItems.push({ id: 'windows', type: 'caption', label: 'Context Window' });
+    traitItems.push({ id: 'windows', type: 'caption', label: t('models.context_window') });
     for (const entry of windows)
       traitItems.push({
         id: `window-${entry.contextWindow}`,
@@ -331,10 +338,10 @@ export function ModelControls({
           }
           label={
             usable.length
-              ? (current?.modelLabel ?? current?.label ?? 'Choose model')
+              ? (current?.modelLabel ?? current?.label ?? t('composer.choose_model'))
               : loading
-                ? 'Loading models…'
-                : 'No providers'
+                ? t('models.loading')
+                : t('models.no_providers')
           }
           style={{
             maxWidth: 250,
@@ -428,7 +435,7 @@ export function ModelControls({
                       <Icon name="bot" size={19} />
                     </div>
                     <text style={{ color: colors.text, fontSize: sp(12.5), fontWeight: 500 }}>
-                      No providers available
+                      {t('models.no_providers_title')}
                     </text>
                     <text
                       style={{
@@ -440,7 +447,7 @@ export function ModelControls({
                         whiteSpace: 'normal',
                       }}
                     >
-                      Install an agent CLI, or switch one back on in Provider settings.
+                      {t('models.no_providers_description')}
                     </text>
                     <Button
                       ref={settings}
@@ -448,7 +455,7 @@ export function ModelControls({
                       onClick={() => {
                         flushSync(() => changeOpen(false));
                         if (!runAction('settings.providers'))
-                          showToast('Provider settings are unavailable');
+                          showToast(t('composer.provider_settings_unavailable'));
                       }}
                       style={{
                         height: 28,
@@ -461,7 +468,9 @@ export function ModelControls({
                       }}
                     >
                       <Icon name="settings" size={11} />
-                      <text style={{ fontSize: sp(12.5) }}>Open Provider Settings</text>
+                      <text style={{ fontSize: sp(12.5) }}>
+                        {t('models.open_provider_settings')}
+                      </text>
                     </Button>
                   </div>
                 ) : (
@@ -485,7 +494,7 @@ export function ModelControls({
                         name="star"
                         size={18}
                         color={tab === 'favorites' ? colors.text : undefined}
-                        label="Favorites"
+                        label={t('composer.favorites')}
                         tabIndex={-1}
                         onClick={() => {
                           setTab('favorites');
@@ -559,8 +568,8 @@ export function ModelControls({
                           icon="search"
                           iconSize={15}
                           neutralFocus
-                          placeholder="Search models…"
-                          aria-label="Search models"
+                          placeholder={t('input.search_models')}
+                          aria-label={t('composer.search_models')}
                           value={query}
                           onChange={(value) => {
                             setQuery(value);
@@ -577,7 +586,7 @@ export function ModelControls({
                       </div>
                       <div
                         role="listbox"
-                        aria-label="Models"
+                        aria-label={t('composer.models')}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
@@ -591,12 +600,12 @@ export function ModelControls({
                           <div style={{ ...row, flexGrow: 1, justifyContent: 'center' }}>
                             <text style={{ color: colors.text_ghost, fontSize: sp(12.5) }}>
                               {loading
-                                ? 'Loading models…'
+                                ? t('models.loading')
                                 : terms.length
-                                  ? 'No models found'
+                                  ? t('models.none_found')
                                   : tab === 'favorites'
-                                    ? 'Star a model to keep it here'
-                                    : 'No models reported by this provider'}
+                                    ? t('models.favorite_hint')
+                                    : t('models.none_reported')}
                             </text>
                           </div>
                         )}
@@ -687,7 +696,10 @@ export function ModelControls({
                                 name={starred ? 'star-filled' : 'star'}
                                 size={14}
                                 color={starred ? colors.favorite : colors.text_ghost}
-                                label={`${starred ? 'Unstar' : 'Star'} ${entry.modelLabel ?? entry.label}`}
+                                label={t(
+                                  starred ? 'composer.unstar_model' : 'composer.star_model',
+                                  { name: entry.modelLabel ?? entry.label },
+                                )}
                                 onClick={() => toggleFavorite(entry)}
                                 style={{
                                   width: 28,
@@ -712,7 +724,7 @@ export function ModelControls({
         <Dropdown
           menuSide="top"
           chevron={false}
-          label={`${current?.variantLabel ?? current?.reasoningEffort ?? current?.variant ?? 'Model traits'}${windows.length > 1 && current?.contextWindow !== windows[0]?.contextWindow ? ` · ${current?.contextWindow! / 1000}K` : ''}`}
+          label={`${current?.variantLabel ?? current?.reasoningEffort ?? current?.variant ?? t('composer.model_traits')}${windows.length > 1 && current?.contextWindow !== windows[0]?.contextWindow ? ` · ${current?.contextWindow! / 1000}K` : ''}`}
           items={traitItems}
           menuStyle={{ minWidth: 214, position: 'relative', left: 1 }}
           menuItemStyle={{ minHeight: 26, fontSize: sp(12.5), lineHeight: sp(16), fontWeight: 400 }}
@@ -733,7 +745,7 @@ export function ModelControls({
           menuSide="top"
           chevron={false}
           icon="bot"
-          label={selection?.profile ?? current?.profile ?? 'Profile'}
+          label={selection?.profile ?? current?.profile ?? t('composer.profile')}
           menuStyle={{ minWidth: 364, maxWidth: 364 }}
           items={catalog!.profiles.map((profile) => ({
             id: profile,
@@ -761,7 +773,7 @@ export function ModelControls({
                     {profile}
                   </text>
                   <text style={{ color: colors.text_tertiary, lineHeight: sp(14) }}>
-                    No description.
+                    {t('agent_preset.no_description')}
                   </text>
                 </div>
                 {profile === (selection?.profile ?? current?.profile) && (
@@ -776,13 +788,13 @@ export function ModelControls({
         menuSide="top"
         chevron={false}
         icon={mode.icon}
-        label={mode.name}
+        label={t(mode.name)}
         menuStyle={{ minWidth: 312, maxWidth: 320, position: 'relative', left: 1 }}
         menuItemStyle={{ lineHeight: sp(16) }}
         items={accessChoices.map((choice) => ({
           id: choice.mode,
           selected: accessMode === choice.mode,
-          label: choice.name,
+          label: t(choice.name),
           onSelect: () => onAccessMode(choice.mode),
           content: (
             <div style={{ ...row, width: 288, paddingTop: 3, paddingBottom: 4, gap: 10 }}>
@@ -807,7 +819,7 @@ export function ModelControls({
                     fontWeight: accessMode === choice.mode ? 600 : 500,
                   }}
                 >
-                  {choice.name}
+                  {t(choice.name)}
                 </text>
                 <text
                   style={{
@@ -817,7 +829,7 @@ export function ModelControls({
                     whiteSpace: 'normal',
                   }}
                 >
-                  {choice.description}
+                  {t(choice.description)}
                 </text>
               </div>
               {accessMode === choice.mode && <Icon name="check" size={11} />}

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from '../../theme';
 import { Button, Icon, Tooltip, ellipsis, row } from '../../ui/controls';
-import { t } from '../../i18n';
+import { t, useLocale } from '../../i18n';
 import { registerAction, runAction } from '../actions';
 import { openPanelReviewTurn } from '../panel/index';
 import { useTurnCheckpoint } from './checkpoints';
 
 export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnId: string }) {
+  const locale = useLocale();
   const checkpoint = useTurnCheckpoint(sessionId, turnId);
   const { colors, sp } = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -15,12 +16,12 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
     setExpanded(false);
     return registerAction({
       id: actionId,
-      label: 'transcript.review_changes',
+      label: t('transcript.review_changes'),
       icon: 'file-diff',
       enabled: () => checkpoint?.state === 'ready',
       run: () => openPanelReviewTurn(sessionId, turnId),
     });
-  }, [actionId, checkpoint, sessionId, turnId]);
+  }, [actionId, checkpoint, sessionId, turnId, locale]);
   if (checkpoint?.state !== 'ready' || !checkpoint.files.length) return null;
   const count = checkpoint.files.length;
   const files = checkpoint.files.slice(0, expanded ? 12 : 3);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { t, useLocale } from '../../i18n';
 import { useGpuix, type PublicInstance } from '@gpuix/react';
 import { Button, Dialog, Icon, Spinner, ellipsis, row, useToast } from '../../ui';
 import { useTheme } from '../../theme';
@@ -41,6 +42,7 @@ export function CommitDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const { showToast } = useToast();
@@ -97,10 +99,10 @@ export function CommitDialog({
     setError(undefined);
     const status =
       action === 'push'
-        ? 'Pushing…'
+        ? t('commit.pushing')
         : action === 'both'
-          ? 'Committing and pushing…'
-          : 'Committing…';
+          ? t('commit.committing_and_pushing')
+          : t('commit.committing');
     updateOperation(status);
     const workspace = cwd;
     try {
@@ -109,7 +111,7 @@ export function CommitDialog({
         let subject = normalizeCommitSubject(message);
         if (!subject) {
           setGenerating(true);
-          updateOperation('Generating commit message…');
+          updateOperation(t('commit.generating_message'));
           const context = await collectReviewDiff(
             workspace,
             include ? 'uncommitted' : 'staged',
@@ -122,7 +124,7 @@ export function CommitDialog({
             prompt: `Branch: ${state.branch}\nFiles: ${context.files.map((file) => file.path).join(', ')}\nChanges: +${context.additions} -${context.deletions}\n\n${new TextDecoder().decode(new TextEncoder().encode(context.patch).subarray(0, 96 * 1024))}`,
           });
           subject = normalizeCommitSubject(result.text);
-          if (!subject) throw new Error('The agent returned an empty commit message');
+          if (!subject) throw new Error(t('panel.empty_commit_message'));
           if (latest.current.cwd === workspace) setMessage(subject);
           setGenerating(false);
           updateOperation(status);
@@ -134,16 +136,16 @@ export function CommitDialog({
           signal: AbortSignal.timeout(120_000),
         });
         if (result.pushError) {
-          showToast('Committed changes', 'success');
-          throw new Error(`Committed changes, but push failed: ${result.pushError}`);
+          showToast(t('commit.committed'), 'success');
+          throw new Error(t('panel.push_failed', { error: result.pushError }));
         }
       }
       showToast(
         action === 'push'
-          ? 'Pushed changes'
+          ? t('commit.pushed')
           : action === 'both'
-            ? 'Committed and pushed changes'
-            : 'Committed changes',
+            ? t('commit.committed_and_pushed')
+            : t('commit.committed'),
         'success',
       );
       if (latest.current.cwd === workspace && latest.current.open) dismiss();
@@ -174,7 +176,7 @@ export function CommitDialog({
     <Dialog
       open={open}
       onClose={dismiss}
-      title="Commit or push"
+      title={t('environment.commit_or_push')}
       scrimColor={`rgba(0,0,0,${colors.is_dark ? '.34' : '.16'})`}
       style={{
         width: 420,
@@ -210,11 +212,11 @@ export function CommitDialog({
         <textarea
           ref={input}
           autoFocus
-          aria-label="Commit message"
+          aria-label={t('commit.message')}
           value={message}
           onChange={(event) => setMessage(event.value ?? '')}
           readOnly={Boolean(pending)}
-          placeholder="Commit message (leave blank to generate)…"
+          placeholder={t('commit.message_placeholder')}
           theme={{
             appearance: colors.is_dark ? 'dark' : 'light',
             text: colors.text,
@@ -239,8 +241,8 @@ export function CommitDialog({
         <div style={{ paddingLeft: 7, paddingRight: 9 }}>
           <Button
             role="checkbox"
-            aria-label="Include unstaged changes"
-            aria-valuetext={include ? 'Checked' : 'Unchecked'}
+            aria-label={t('commit.include_unstaged')}
+            aria-valuetext={include ? t('panel.checked') : t('panel.unchecked')}
             disabled={Boolean(pending) || !state?.hasUnstaged}
             onClick={() => {
               setInclude(!include);
@@ -275,7 +277,7 @@ export function CommitDialog({
                 color: state?.hasUnstaged ? colors.text : colors.text_ghost,
               }}
             >
-              Include unstaged changes
+              {t('commit.include_unstaged')}
             </text>
             <text style={{ fontSize: sp(13.5), fontWeight: 500, color: colors.success }}>
               {`+${totals.additions.toLocaleString()}`}
@@ -307,22 +309,22 @@ export function CommitDialog({
             [
               {
                 id: 'commit',
-                label: 'Commit',
-                busy: 'Committing…',
+                label: t('commit.commit'),
+                busy: t('commit.committing'),
                 icon: 'git-commit-horizontal',
                 enabled: canCommit,
               },
               {
                 id: 'both',
-                label: 'Commit and push',
-                busy: 'Committing and pushing…',
+                label: t('commit.commit_and_push'),
+                busy: t('commit.committing_and_pushing'),
                 icon: 'cloud-upload',
                 enabled: canCommit,
               },
               {
                 id: 'push',
-                label: 'Push',
-                busy: 'Pushing…',
+                label: t('commit.push'),
+                busy: t('commit.pushing'),
                 icon: 'cloud-upload',
                 enabled: Boolean(state?.canPush),
               },
@@ -365,7 +367,7 @@ export function CommitDialog({
               >
                 {pending === action.id
                   ? generating
-                    ? 'Generating commit message…'
+                    ? t('commit.generating_message')
                     : action.busy
                   : action.label}
               </text>

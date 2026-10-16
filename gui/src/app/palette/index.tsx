@@ -3,9 +3,9 @@ import { DismissableLayer, useGpuix, useWindowSize, type PublicInstance } from '
 import { getAppStore, useStore } from '../../store';
 import { useTheme } from '../../theme';
 import { Button, Icon, TextField, useToast, type IconName } from '../../ui';
-import { english, t, type TranslationKey } from '../../i18n';
+import { english, t, useLocale, type TranslationKey } from '../../i18n';
 import { listActions, registerAction, runAction, subscribeActions } from '../actions';
-import { settingsPages } from '../settings';
+import { settingsPages, settingsPageLabel, settingsPageKeywords } from '../settings';
 import { matchScore } from './search';
 import { NestedPalette, type PalettePage } from './nested';
 import type { Draft } from '../../store/store';
@@ -33,7 +33,7 @@ function PaletteExcerpt({
   query: string;
 }) {
   const { colors, sp } = useTheme();
-  const prefix = role === 'user' ? 'You: ' : 'Agent: ';
+  const prefix = `${role === 'user' ? t('command_palette.you') : t('command_palette.agent')}: `;
   const runs: Run[] = [
     {
       start: 0,
@@ -66,11 +66,12 @@ function PaletteExcerpt({
 }
 export function CommandPalette({ open, onClose }: { open: boolean; onClose(): void }) {
   const requestedPage = useRef<PalettePage>('root');
+  const locale = useLocale();
   useEffect(() => {
     const store = getAppStore();
     const removeStash = registerAction({
       id: 'composer.stashDraft',
-      label: 'Stash draft',
+      label: t('settings.palette_stash_draft'),
       icon: 'file-text',
       enabled: () => Boolean(store.getDraft(store.getSnapshot().selection)?.text),
       run: () => {
@@ -84,7 +85,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
     });
     const removeRestore = registerAction({
       id: 'composer.restoreStash',
-      label: 'Restore stashed draft',
+      label: t('settings.palette_restore_stash'),
       icon: 'file-text',
       enabled: () =>
         Array.isArray(store.getSnapshot().preferences.stashedDrafts) &&
@@ -103,14 +104,14 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
         id: `session.${page}`,
         label:
           page === 'rewind'
-            ? 'Rewind conversation…'
+            ? t('settings.palette_rewind_action')
             : page === 'resume'
-              ? 'Resume…'
+              ? t('command_palette.resume')
               : page === 'tree'
-                ? 'Session tree'
+                ? t('settings.palette_session_tree')
                 : page === 'history'
-                  ? 'Prompt history…'
-                  : 'Stashed drafts…',
+                  ? t('settings.palette_prompt_history_action')
+                  : t('settings.palette_stashed_drafts_action'),
         run: () => {
           requestedPage.current = page;
           runAction('shell.openPalette');
@@ -122,7 +123,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
       removeRestore();
       removePages.forEach((remove) => remove());
     };
-  }, []);
+  }, [locale]);
   return open ? (
     <OpenPalette
       initialPage={requestedPage.current}
@@ -134,6 +135,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
   ) : null;
 }
 function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: PalettePage }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const window = useWindowSize();
@@ -239,11 +241,11 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
     id: action.id,
     label:
       action.id === 'shell.newTask'
-        ? 'New task'
+        ? t('command_palette.new_task')
         : action.id === 'shell.openProject'
-          ? 'Open project…'
+          ? t('command_palette.open_project')
           : action.id === 'composer.modelPicker'
-            ? 'Choose model…'
+            ? t('command_palette.choose_model')
             : action.label in english
               ? t(action.label as TranslationKey)
               : action.label,
@@ -257,20 +259,22 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
             ? 'bot'
             : 'command'),
     shortcut: action.shortcut,
-    section: suggested.includes(action.id) ? 'Suggested' : 'Commands',
+    section: suggested.includes(action.id)
+      ? t('command_palette.suggested')
+      : t('command_palette.commands'),
     run: () => execute(() => runAction(action.id)),
   }));
   if (state.selectedTask)
     rows.push({
       id: 'copyTaskId',
-      label: 'Copy Task ID',
+      label: t('command_palette.copy_task_id'),
       icon: 'copy',
-      section: 'Commands',
+      section: t('command_palette.commands'),
       run: () =>
         execute(() => {
           if (!renderer) return;
           writeClipboardText(renderer, state.selectedTask!);
-          showToast('Task ID copied', 'success');
+          showToast(t('command_palette.task_id_copied'), 'success');
         }),
     });
   const selectedSession = Object.values(state.sessions)
@@ -279,31 +283,31 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
   if (selectedSession) {
     rows.push({
       id: 'copyTranscript',
-      label: 'Copy transcript',
+      label: t('settings.palette_copy_transcript'),
       icon: 'copy',
-      section: 'Commands',
+      section: t('command_palette.commands'),
       run: () =>
         execute(() => {
           const transcript =
             state.views[selectedSession.runId]?.entries
               .flatMap((entry) =>
                 entry.kind === 'user'
-                  ? [`## You\n\n${entry.text}`]
+                  ? [`## ${t('command_palette.you')}\n\n${entry.text}`]
                   : entry.kind === 'text'
-                    ? [`## Agent\n\n${entry.text}`]
+                    ? [`## ${t('command_palette.agent')}\n\n${entry.text}`]
                     : [],
               )
               .join('\n\n') ?? '';
           if (!renderer) return;
           writeClipboardText(renderer, transcript);
-          showToast('Transcript copied', 'success');
+          showToast(t('settings.palette_transcript_copied'), 'success');
         }),
     });
     rows.push({
       id: 'diagnosticArchive',
-      label: 'Create diagnostic archive',
+      label: t('settings.palette_create_diagnostic_archive'),
       icon: 'file-text',
-      section: 'Commands',
+      section: t('command_palette.commands'),
       run: () =>
         execute(() => {
           void renderer
@@ -312,7 +316,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               if (!paths?.[0]) return;
               const dest = `${paths[0]}/${selectedSession.runId}-diagnostics.zip`;
               await store.backend.call('sessions.trace', { runDir: selectedSession.runDir, dest });
-              showToast(`Diagnostic archive saved to ${dest}`, 'success');
+              showToast(t('settings.palette_diagnostic_archive_saved', { dest }), 'success');
             })
             .catch((error) => showToast(String(error)));
         }),
@@ -334,42 +338,33 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
   );
   rows.splice(1, 0, {
     id: 'resume',
-    label: 'Resume…',
+    label: t('command_palette.resume'),
     icon: 'rotate-cw',
-    section: 'Suggested',
+    section: t('command_palette.suggested'),
     run: () => nested('resume'),
   });
   for (const [id, label, icon] of [
-    ['rewind', 'Rewind conversation…', 'rotate-ccw'],
-    ['tree', 'Session tree', 'git-branch'],
-    ['history', 'Prompt history…', 'history'],
-    ['stash', 'Stashed drafts…', 'file-text'],
-    ['news', "What's new", 'file-text'],
+    ['rewind', t('settings.palette_rewind_action'), 'rotate-ccw'],
+    ['tree', t('settings.palette_session_tree'), 'git-branch'],
+    ['history', t('settings.palette_prompt_history_action'), 'history'],
+    ['stash', t('settings.palette_stashed_drafts_action'), 'file-text'],
+    ['news', t('settings.palette_whats_new'), 'file-text'],
   ] as const)
-    rows.push({ id, label, icon, section: 'Commands', run: () => nested(id) });
+    rows.push({ id, label, icon, section: t('command_palette.commands'), run: () => nested(id) });
   rows.push({
     id: 'help',
-    label: 'Help',
+    label: t('settings.palette_help'),
     icon: 'circle-help',
-    section: 'Commands',
+    section: t('command_palette.commands'),
     run: () => execute(() => runAction('settings.help')),
   });
-  for (const [id, label, icon] of settingsPages)
+  for (const [id, , icon] of settingsPages)
     rows.push({
       id: `settings.${id}`,
-      label,
+      label: settingsPageLabel(id),
       icon,
-      searchTerms:
-        id === 'appearance'
-          ? 'theme language font size light dark system'
-          : id === 'general'
-            ? 'math reasoning message times timestamps'
-            : id === 'providers'
-              ? 'authentication sign in accounts API key'
-              : id === 'usage'
-                ? 'tokens cost context subscription'
-                : undefined,
-      section: 'Settings',
+      searchTerms: settingsPageKeywords(id),
+      section: t('command_palette.settings'),
       run: () => execute(() => runAction(`settings.${id}`)),
     });
   if (query.trim()) {
@@ -383,14 +378,17 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
       .sort((a, b) => b.score - a.score || a.order - b.order)
       .map((item) => ({
         ...item.row,
-        section: item.row.section === 'Suggested' ? 'Commands' : item.row.section,
+        section:
+          item.row.section === t('command_palette.suggested')
+            ? t('command_palette.commands')
+            : item.row.section,
       }));
     const tasks: PaletteRow[] = Object.values(state.sessions)
       .flat()
       .map((task, order) => {
         const hit = hits.find((hit) => hit.runDir === task.runDir);
         const project = state.projects.find((project) => project.cwd === task.cwd);
-        const label = task.catalog.run_name ?? 'New task';
+        const label = task.catalog.run_name ?? t('command_palette.new_task');
         return {
           task,
           hit,
@@ -399,7 +397,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
           order,
           score: matchScore(
             query,
-            `${label} ${project?.name ?? ''} ${task.cwd} ${task.catalog.provider_model ?? ''} task conversation`,
+            `${label} ${project?.name ?? ''} ${task.cwd} ${task.catalog.provider_model ?? ''} ${t('settings.palette_task_keywords')}`,
           ),
         };
       })
@@ -419,13 +417,13 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
         icon: 'message-square',
         detail: [
           project?.name ?? task.cwd,
-          task.runId === state.selectedTask ? 'Current' : undefined,
+          task.runId === state.selectedTask ? t('command_palette.current') : undefined,
         ]
           .filter(Boolean)
           .join(' · '),
         excerpt: hit?.snippet,
         role: hit?.role,
-        section: 'Tasks',
+        section: t('command_palette.tasks'),
         run: () =>
           execute(() => {
             runAction('settings.close');
@@ -436,9 +434,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
           }),
       }));
     rows = [
-      ...rows.filter((row) => row.section !== 'Settings'),
+      ...rows.filter((row) => row.section !== t('command_palette.settings')),
       ...tasks,
-      ...rows.filter((row) => row.section === 'Settings'),
+      ...rows.filter((row) => row.section === t('command_palette.settings')),
     ];
   }
   const previousRows = useRef<PaletteRow[]>([]);
@@ -530,10 +528,10 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               onSubmit={() => displayed[active]?.run()}
               placeholder={
                 page === 'root'
-                  ? 'Search tasks or run a command…'
+                  ? t('command_palette.placeholder')
                   : page === 'resume'
-                    ? 'Search terminal sessions…'
-                    : 'Search…'
+                    ? t('command_palette.resume_placeholder')
+                    : t('settings.palette_search')
               }
               style={{
                 flexShrink: 0,
@@ -706,10 +704,10 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                 >
                   <Icon name={pending ? 'loader-circle' : 'search'} size={18} />
                   <div style={{ fontSize: sp(13), color: colors.text_secondary }}>
-                    {pending ? 'Searching…' : 'No matching tasks or commands'}
+                    {pending ? t('settings.palette_searching') : t('command_palette.no_results')}
                   </div>
                   <div style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
-                    Try a task title, message, project, setting, or command
+                    {t('command_palette.no_results_hint')}
                   </div>
                 </div>
               )}

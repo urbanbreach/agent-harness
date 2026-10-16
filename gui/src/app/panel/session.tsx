@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { t, useLocale } from '../../i18n';
 import type { SessionInfo, PlanEntry } from '../../backend/protocol';
 import { getAppStore, useSessionView } from '../../store';
 import { useTheme } from '../../theme';
@@ -44,6 +45,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 export function SessionSurface({ sessionId }: { sessionId: string | null }) {
+  useLocale();
   const [info, setInfo] = useState<SessionInfo>();
   const [error, setError] = useState<string>();
   const view = useSessionView(sessionId ?? undefined);
@@ -92,9 +94,9 @@ export function SessionSurface({ sessionId }: { sessionId: string | null }) {
       clearInterval(timer);
     };
   }, [sessionId]);
-  if (!sessionId) return <EmptyMessage title="No session selected" />;
-  if (error) return <EmptyMessage title="Session unavailable" description={error} />;
-  if (!info) return <EmptyMessage title="Loading session…" />;
+  if (!sessionId) return <EmptyMessage title={t('panel.no_session')} />;
+  if (error) return <EmptyMessage title={t('panel.session_unavailable')} description={error} />;
+  if (!info) return <EmptyMessage title={t('panel.loading_session')} />;
   return (
     <div
       style={{
@@ -106,32 +108,32 @@ export function SessionSurface({ sessionId }: { sessionId: string | null }) {
         padding: 20,
       }}
     >
-      <Section title="MCP servers">
+      <Section title={t('panel.mcp_servers')}>
         {info.mcp.length ? (
           info.mcp.map((server) => (
             <Detail
               key={server.name}
               label={server.name}
-              value={server.enabled ? server.status : 'Disabled'}
+              value={server.enabled ? server.status : t('panel.disabled')}
             />
           ))
         ) : (
-          <Detail label="No MCP servers" value="" />
+          <Detail label={t('panel.no_mcp_servers')} value="" />
         )}
         <text style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
           {info.integrationStatusReason}
         </text>
       </Section>
-      <Section title="LSP servers">
+      <Section title={t('panel.lsp_servers')}>
         {info.lsp.length ? (
           info.lsp.map((server) => (
             <Detail key={server.name} label={server.name} value={server.status} />
           ))
         ) : (
-          <Detail label="No LSP servers" value="" />
+          <Detail label={t('panel.no_lsp_servers')} value="" />
         )}
       </Section>
-      <Section title="Modified files">
+      <Section title={t('panel.modified_files')}>
         {modified.size ? (
           [...modified].map(([path, counts]) => (
             <Detail
@@ -139,20 +141,20 @@ export function SessionSurface({ sessionId }: { sessionId: string | null }) {
               label={path}
               value={
                 counts.additions === undefined && counts.deletions === undefined
-                  ? 'Modified'
+                  ? t('panel.modified')
                   : `+${counts.additions ?? 0} −${counts.deletions ?? 0}`
               }
             />
           ))
         ) : (
-          <Detail label="No modified files" value="" />
+          <Detail label={t('panel.no_modified_files')} value="" />
         )}
       </Section>
-      <Section title="Runtime">
-        <Detail label="Model" value={info.model ?? 'Not selected'} />
-        <Detail label="Provider" value={info.provider ?? 'Not selected'} />
-        <Detail label="Profile" value={info.profile} />
-        <Detail label="Sandbox" value={info.sandbox.status} />
+      <Section title={t('panel.runtime')}>
+        <Detail label={t('panel.model')} value={info.model ?? t('panel.not_selected')} />
+        <Detail label={t('panel.provider')} value={info.provider ?? t('panel.not_selected')} />
+        <Detail label={t('panel.profile')} value={info.profile} />
+        <Detail label={t('panel.sandbox')} value={info.sandbox.status} />
         <text style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
           {info.sandbox.reason}
         </text>
@@ -161,10 +163,13 @@ export function SessionSurface({ sessionId }: { sessionId: string | null }) {
   );
 }
 export function TodosSurface({ sessionId }: { sessionId: string | null }) {
+  useLocale();
   const view = useSessionView(sessionId ?? undefined);
   const { colors, sp } = useTheme();
   if (!view?.todos.length)
-    return <EmptyMessage title="No todos" description="The session checklist will appear here" />;
+    return (
+      <EmptyMessage title={t('panel.no_todos')} description={t('panel.todos_empty_description')} />
+    );
   return (
     <div
       style={{
@@ -224,6 +229,7 @@ export function TodosSurface({ sessionId }: { sessionId: string | null }) {
   );
 }
 export function PlanSurface({ cwd }: { cwd: string }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const [plans, setPlans] = useState<PlanEntry[]>([]);
   const [selected, setSelected] = useState<string>();
@@ -266,9 +272,11 @@ export function PlanSurface({ cwd }: { cwd: string }) {
       active = false;
     };
   }, [cwd, selected]);
-  if (error) return <EmptyMessage title="Plan unavailable" description={error} />;
+  if (error) return <EmptyMessage title={t('panel.plan_unavailable')} description={error} />;
   if (!selected)
-    return <EmptyMessage title="No plan" description="Workspace plans will appear here" />;
+    return (
+      <EmptyMessage title={t('panel.no_plan')} description={t('panel.plans_empty_description')} />
+    );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
       <Toolbar>
@@ -310,7 +318,7 @@ export function PlanSurface({ cwd }: { cwd: string }) {
         }}
       >
         {content === undefined ? (
-          <text style={{ color: colors.text_tertiary }}>Loading plan…</text>
+          <text style={{ color: colors.text_tertiary }}>{t('panel.loading_plan')}</text>
         ) : (
           <Markdown source={content} />
         )}

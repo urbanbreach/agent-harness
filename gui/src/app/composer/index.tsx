@@ -32,6 +32,7 @@ import {
 import { importPath, maxAttachmentBytes } from './attachments';
 import { canSteerDraft, prepareDraft, setQueuedDrafts, startQueueDelivery } from './queue-store';
 import { recordPromptDisplay } from './prompt-display';
+import { t, useLocale } from '../../i18n';
 
 export type ComposerTarget =
   | { kind: 'task'; sessionId: string; cwd: string }
@@ -56,6 +57,7 @@ function selectionFor(target: ComposerTarget): Selection {
 }
 const emptyDraft: Draft = { text: '' };
 export function Composer({ target }: { target: ComposerTarget }) {
+  const locale = useLocale();
   const store = getAppStore();
   const selection = selectionFor(target);
   const key = JSON.stringify(selection);
@@ -277,10 +279,10 @@ export function Composer({ target }: { target: ComposerTarget }) {
         id: `session.${kind}`,
         label:
           kind === 'compact'
-            ? 'Compact conversation'
+            ? t('composer.compact_conversation')
             : kind === 'handoff'
-              ? 'Prepare handoff'
-              : 'Prune conversation context',
+              ? t('composer.prepare_handoff')
+              : t('composer.prune_context'),
         enabled: () => !!sessionId,
         run: () => {
           if (!sessionId) return;
@@ -299,7 +301,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
       }),
     );
     return () => unregister.forEach((remove) => remove());
-  }, [sessionId]);
+  }, [sessionId, locale]);
   async function localCommand(text: string): Promise<boolean> {
     const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
     if (!match) return false;
@@ -307,10 +309,10 @@ export function Composer({ target }: { target: ComposerTarget }) {
     const args = match[2]?.trim();
     const command = commands?.find((entry) => entry.name.replace(/^\//, '') === name);
     if (command && (command.scope !== 'builtin' || command.template !== undefined)) return false;
-    if (terminalCommands[name]) throw new Error(`/${name} is only available in the terminal`);
+    if (terminalCommands[name]) throw new Error(t('composer.terminal_only', { name }));
     if (!appCommands.includes(name) && command?.scope !== 'builtin') return false;
     if (name === 'rename' && args) {
-      if (!sessionId) throw new Error('Open a task before renaming it');
+      if (!sessionId) throw new Error(t('composer.open_task_to_rename'));
       await store.sendIntent(sessionId, { kind: 'updateTitle', title: args });
       return true;
     }
@@ -320,7 +322,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
           (value) => value.toLowerCase() === args.toLowerCase(),
         ),
       );
-      if (!entry) throw new Error(`Unknown model: ${args}`);
+      if (!entry) throw new Error(t('composer.unknown_model', { name: args }));
       const value = { profile: entry.profile, model: entry.model, variant: entry.variant };
       update({ selection: value });
       if (sessionId) await store.sendIntent(sessionId, { kind: 'switchModel', selection: value });
@@ -353,7 +355,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
           )
           .join('\n\n') ?? '';
       native.writeClipboardText(markdown);
-      showToast('Transcript copied', 'success');
+      showToast(t('composer.transcript_copied'), 'success');
       return true;
     }
     if (name === 'claude-account' && args) {
@@ -364,7 +366,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
     }
     if (name === 'new' || name === 'clear') {
       update({ text: args ?? '' });
-      if (!runAction('task.new')) throw new Error('New task is unavailable here');
+      if (!runAction('task.new')) throw new Error(t('composer.new_task_unavailable'));
       return true;
     }
     const actions: Record<string, string> = {
@@ -404,7 +406,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
     try {
       if (!runAction(actions[name] ?? `session.${name}`)) {
         if (commandDraft) store.setDraft(selection, commandDraft);
-        throw new Error(`The ${name} command is unavailable here`);
+        throw new Error(t('composer.command_unavailable', { name }));
       }
     } finally {
       maintenanceArguments.current = undefined;
@@ -441,7 +443,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
         });
         current = { ...current, text: expanded.text, invocation: current.text.trim() };
       }
-      if (!providerAvailable) throw new Error('Choose an available model before sending a prompt');
+      if (!providerAvailable) throw new Error(t('composer.choose_available_model'));
       const shouldSteer = (steer || view?.status === 'background') && canSteerDraft(current);
       if ((busy && !shouldSteer) || (!steer && queue.length > 0)) {
         saveQueue([...queue, { id: crypto.randomUUID(), draft: current }]);
@@ -535,7 +537,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
     const image = native.readClipboardImage();
     if (!image) return false;
     if (image.data.length > maxAttachmentBytes) {
-      showToast('Attachments must be smaller than 32 MB');
+      showToast(t('composer.attachment_size_error'));
       return true;
     }
     const dataBase64 = image.data.toString('base64');
@@ -668,7 +670,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
           }}
         >
           <text style={{ fontSize: sp(12.5), color: colors.text_secondary }}>
-            {view.meta.resume_disabled_reason ?? 'This session is read-only and cannot be resumed.'}
+            {view.meta.resume_disabled_reason ?? t('composer.read_only')}
           </text>
         </div>
       </div>
@@ -749,10 +751,10 @@ export function Composer({ target }: { target: ComposerTarget }) {
           )}
           <textarea
             ref={editor}
-            aria-label="Message"
+            aria-label={t('composer.message')}
             autoFocus
             value={draft.text}
-            placeholder="Do anything…"
+            placeholder={t('input.do_anything')}
             ghostText={ghost?.text === draft.text ? ghost.suffix : undefined}
             minRows={1}
             maxRows={Math.ceil(300 / sp(22))}
@@ -854,7 +856,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
             />
             <div style={{ flexGrow: 1 }} />
             {preparing ? (
-              <Tooltip content="Preparing task…">
+              <Tooltip content={t('composer.preparing_task')}>
                 <div
                   style={{
                     width: 26,
@@ -871,9 +873,9 @@ export function Composer({ target }: { target: ComposerTarget }) {
             ) : (
               <>
                 {busy && (
-                  <Tooltip content={stopArmed ? 'Press Escape again to stop' : 'Stop'}>
+                  <Tooltip content={t(stopArmed ? 'composer.stop_confirm' : 'composer.stop')}>
                     <Button
-                      aria-label="Stop"
+                      aria-label={t('composer.stop')}
                       onClick={() => {
                         if (sessionId) void store.interruptSession(sessionId).catch(fail);
                       }}
@@ -899,14 +901,14 @@ export function Composer({ target }: { target: ComposerTarget }) {
                   <Tooltip
                     content={
                       !canSubmit
-                        ? 'Install or switch on a provider to send'
+                        ? t('composer.no_providers')
                         : busy
-                          ? 'Queue as follow-up (⏎)'
-                          : 'Send'
+                          ? t('composer.queue_followup')
+                          : t('composer.send')
                     }
                   >
                     <Button
-                      aria-label={busy ? 'Queue as follow-up' : 'Send'}
+                      aria-label={t(busy ? 'composer.queue_followup_label' : 'composer.send')}
                       disabled={!sendable || !canSubmit}
                       onClick={() => void submit()}
                       style={{
@@ -940,26 +942,26 @@ export function Composer({ target }: { target: ComposerTarget }) {
               items={[
                 {
                   id: 'cut',
-                  label: 'Cut',
+                  label: t('action.cut'),
                   disabled: selectionRange.current.start === selectionRange.current.end,
                   onSelect: () => command('cut'),
                 },
                 {
                   id: 'copy',
-                  label: 'Copy',
+                  label: t('action.copy'),
                   disabled: selectionRange.current.start === selectionRange.current.end,
                   onSelect: () => command('copy'),
                 },
                 {
                   id: 'paste',
-                  label: 'Paste',
+                  label: t('action.paste'),
                   disabled: !native.readClipboardText(),
                   onSelect: () => command('paste'),
                 },
                 { id: 'divider', type: 'separator' },
                 {
                   id: 'all',
-                  label: 'Select All',
+                  label: t('action.selectAll'),
                   disabled:
                     !draft.text ||
                     (selectionRange.current.start === 0 &&
@@ -975,6 +977,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
   );
 }
 export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
+  const locale = useLocale();
   const store = getAppStore();
   const projects = useStore((state) => state.projects);
   const selection = selectionFor(target);
@@ -989,13 +992,13 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
     () =>
       registerAction({
         id: 'worktree.open',
-        label: 'Choose worktree',
+        label: t('composer.choose_worktree'),
         run: () => {
           if (sessionId) runAction('task.new');
           setWorktreeOpen(true);
         },
       }),
-    [sessionId],
+    [sessionId, locale],
   );
   return (
     <div
@@ -1049,7 +1052,7 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
         <Dropdown
           open={worktreeOpen}
           onOpenChange={setWorktreeOpen}
-          label={draft.worktree ? 'New worktree' : 'Local'}
+          label={t(draft.worktree ? 'composer.new_worktree' : 'composer.local')}
           icon="laptop"
           chevron={false}
           disabled={!!sessionId}
@@ -1057,13 +1060,13 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
           items={[
             {
               id: 'local',
-              label: 'Local',
+              label: t('composer.local'),
               selected: !draft.worktree,
               onSelect: () => store.setDraft(selection, { ...draft, worktree: undefined }),
             },
             {
               id: 'worktree',
-              label: 'New worktree',
+              label: t('composer.new_worktree'),
               selected: !!draft.worktree,
               onSelect: () => store.setDraft(selection, { ...draft, worktree: {} }),
             },

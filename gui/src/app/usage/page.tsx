@@ -8,6 +8,7 @@ import { Button, Dropdown, Icon, Segmented, Spinner, TextField, Tooltip, useToas
 import { ellipsis, row } from '../../ui/controls';
 import { Pulse } from './pulse';
 import { groupProjects, monthRows } from './summaries';
+import { t, useLocale, type TranslationKey } from '../../i18n';
 
 type Snapshot = Methods['usage.history']['result'];
 type Aggregate = Snapshot['totals'];
@@ -27,34 +28,44 @@ const providerFamily = (provider: string) =>
       : provider;
 const providerColor = (provider: string, colors: ThemeColors) =>
   baseProviderColor(providerFamily(provider), colors);
-const compact = (value: number) =>
-  Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
-const money = (value: number) =>
-  Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
-  }).format(value);
+function useUsageFormats() {
+  const locale = useLocale();
+  return useMemo(() => {
+    const compact = Intl.NumberFormat(locale, {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format;
+    const money = (value: number) =>
+      Intl.NumberFormat(locale === 'en' ? 'en-US' : locale, {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
+      }).format(value);
+    const dollars = (aggregate: Aggregate) =>
+      `${money(aggregate.knownCostUsd)}${aggregate.unpricedRecords ? '+' : ''}`;
+    return { compact, money, dollars };
+  }, [locale]);
+}
 const share = (part: number, total: number) =>
   `${(total > 0 ? (part / total) * 100 : 0).toFixed(1)}%`;
-const dollars = (aggregate: Aggregate) =>
-  `${money(aggregate.knownCostUsd)}${aggregate.unpricedRecords ? '+' : ''}`;
 const metricValue = (aggregate: Aggregate, metric: Metric) =>
   metric === 'cost' ? aggregate.knownCostUsd : aggregate.totalTokens;
 const iso = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const parseDay = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`);
-const shortDay = (value: string) =>
-  parseDay(value).toLocaleDateString('en', { month: 'short', day: 'numeric' });
-const ranges = [
-  { id: '7', label: 'Last 7 days' },
-  { id: '30', label: 'Last 30 days' },
-  { id: '90', label: 'Last 90 days' },
-  { id: 'this', label: 'This month' },
-  { id: 'last', label: 'Last month' },
+const shortDay = (value: string, locale: string) =>
+  parseDay(value).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+const ranges: { id: string; key: TranslationKey }[] = [
+  { id: '7', key: 'usage.last_7_days' },
+  { id: '30', key: 'usage.last_30_days' },
+  { id: '90', key: 'usage.last_90_days' },
+  { id: 'this', key: 'usage.this_month' },
+  { id: 'last', key: 'usage.last_month' },
 ];
 
 export function UsagePage({ cwd }: { cwd?: string }) {
+  const locale = useLocale();
+  const { compact, money, dollars } = useUsageFormats();
   const { colors, sp } = useTheme();
   const { showToast } = useToast();
   const registeredProjects = useProjects();
@@ -98,7 +109,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
         }
       })
       .catch((reason) => {
-        if (active) showToast(`Usage refresh failed: ${String(reason)}`);
+        if (active) showToast(t('usage.refresh_failed', { error: String(reason) }));
       })
       .finally(() => {
         if (active) setPending(false);
@@ -124,7 +135,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
     : [];
   const groupedProjects = useMemo(
     () => groupProjects(data?.byProject ?? [], registeredProjects),
-    [data, registeredProjects],
+    [data, registeredProjects, locale],
   );
   const projects = groupedProjects.filter((p) =>
     `${p.key} ${p.project ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
@@ -147,29 +158,37 @@ export function UsagePage({ cwd }: { cwd?: string }) {
   const sections = total
     ? [
         [
-          'Processed tokens',
+          t('usage.processed_tokens'),
           compact(total.totalTokens),
-          `${compact(total.totalTokens / Math.max(1, data!.byDay.filter((d) => d.totalTokens > 0).length))} per active day`,
+          t('usage.per_active_day', {
+            count: compact(
+              total.totalTokens / Math.max(1, data!.byDay.filter((d) => d.totalTokens > 0).length),
+            ),
+          }),
         ],
         [
-          'Cached input',
+          t('usage.cached_input'),
           compact(total.cachedInputTokens),
-          `${share(total.cachedInputTokens, total.cachedInputTokens + total.inputTokens)} of observed input`,
+          t('usage.observed_input_share', {
+            share: share(total.cachedInputTokens, total.cachedInputTokens + total.inputTokens),
+          }),
         ],
         [
-          'Uncached input',
+          t('usage.uncached_input'),
           compact(total.inputTokens),
-          `${compact(total.cacheWriteTokens)} cache writes`,
+          t('usage.cache_writes', { count: compact(total.cacheWriteTokens) }),
         ],
         [
-          'Output',
+          t('usage.output'),
           compact(total.outputTokens),
-          `includes ${compact(total.reasoningTokens)} reasoning`,
+          t('usage.includes_reasoning', { count: compact(total.reasoningTokens) }),
         ],
         [
-          'Cache savings',
-          data!.cacheSavingsUsd == null ? 'Unavailable' : money(data!.cacheSavingsUsd),
-          'vs full input rates',
+          t('usage.cache_savings'),
+          data!.cacheSavingsUsd == null
+            ? t('settings.usage_unavailable_value')
+            : money(data!.cacheSavingsUsd),
+          t('usage.vs_full_input_rates'),
         ],
       ]
     : [];
@@ -193,25 +212,40 @@ export function UsagePage({ cwd }: { cwd?: string }) {
     >
       <div style={{ ...row, gap: 10 }}>
         <text style={{ ...text, ...ellipsis, flexGrow: 1 }}>
-          {displayed
-            ? `${view === 'monthly' ? parseDay(displayed.from).toLocaleDateString('en', { month: 'short', year: 'numeric' }) : shortDay(displayed.from)} to ${view === 'monthly' ? parseDay(displayed.to).toLocaleDateString('en', { month: 'short', year: 'numeric' }) : shortDay(displayed.to)}`
-            : `${shortDay(window.from)} to ${shortDay(window.to)}`}
+          {t('usage.range', {
+            start: displayed
+              ? view === 'monthly'
+                ? parseDay(displayed.from).toLocaleDateString(locale, {
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : shortDay(displayed.from, locale)
+              : shortDay(window.from, locale),
+            end: displayed
+              ? view === 'monthly'
+                ? parseDay(displayed.to).toLocaleDateString(locale, {
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : shortDay(displayed.to, locale)
+              : shortDay(window.to, locale),
+          })}
         </text>
         <Segmented
-          label="Usage view"
+          label={t('settings.usage_view')}
           value={view}
           onChange={setView}
           options={[
-            { value: 'daily', label: 'Daily' },
-            { value: 'monthly', label: 'Monthly' },
-            { value: 'projects', label: 'Projects' },
+            { value: 'daily', label: t('usage.daily') },
+            { value: 'monthly', label: t('usage.monthly') },
+            { value: 'projects', label: t('usage.projects') },
           ]}
           style={segmentStyle}
           itemStyle={itemStyle}
         />
         {view !== 'monthly' && (
           <Dropdown
-            label={ranges.find((r) => r.id === range)!.label}
+            label={t(ranges.find((r) => r.id === range)!.key)}
             outlined
             style={{
               width: 124,
@@ -221,16 +255,15 @@ export function UsagePage({ cwd }: { cwd?: string }) {
             }}
             items={ranges.map((r) => ({
               ...r,
+              label: t(r.key),
               selected: r.id === range,
               onSelect: () => setRange(r.id),
             }))}
           />
         )}
-        <Tooltip
-          content={pending ? 'Scanning provider transcripts…' : 'Rescan provider transcripts'}
-        >
+        <Tooltip content={t(pending ? 'usage.scanning' : 'usage.rescan')}>
           <Button
-            aria-label="Rescan provider transcripts"
+            aria-label={t('usage.rescan')}
             disabled={pending}
             onClick={() => setRefresh((v) => v + 1)}
             style={{ height: 28, width: 30, borderRadius: 7, borderColor: colors.border_strong }}
@@ -250,18 +283,13 @@ export function UsagePage({ cwd }: { cwd?: string }) {
             gap: 3,
           }}
         >
-          {[
-            ...data.errors,
-            ...(!data.ratesAvailable
-              ? [
-                  'Model rates are unavailable, so costs read as unpriced until the rate table loads',
-                ]
-              : []),
-          ].map((error, i) => (
-            <text key={i} style={{ ...text, whiteSpace: 'normal' }}>
-              {error}
-            </text>
-          ))}
+          {[...data.errors, ...(!data.ratesAvailable ? [t('usage.rates_unavailable')] : [])].map(
+            (error, i) => (
+              <text key={i} style={{ ...text, whiteSpace: 'normal' }}>
+                {error}
+              </text>
+            ),
+          )}
         </div>
       ) : null}
       {!data || !total ? (
@@ -280,15 +308,15 @@ export function UsagePage({ cwd }: { cwd?: string }) {
             <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <text style={{ ...text, color: colors.text_tertiary }}>
-                  {metric === 'cost' ? 'RAW TOKEN COST' : 'PROCESSED TOKENS'}
+                  {t(metric === 'cost' ? 'usage.raw_token_cost' : 'usage.processed_tokens_upper')}
                 </text>
                 <text style={{ fontSize: sp(30), fontWeight: 500 }}>
                   {metric === 'cost' ? `${dollars(total)}*` : compact(total.totalTokens)}
                 </text>
                 <text style={{ ...text, color: colors.text_tertiary }}>
                   {metric === 'cost'
-                    ? '* if billed at full API rate'
-                    : `Input, cache reads and output across ${total.sessions} sessions`}
+                    ? t('usage.full_api_rate_note')
+                    : t('usage.sessions_summary', { count: total.sessions })}
                 </text>
               </div>
               {[...data.byProvider]
@@ -311,12 +339,18 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                     />
                     <text style={{ ...text, color: colors.text_tertiary }}>
                       {metric === 'cost'
-                        ? `${share(p.knownCostUsd, total.knownCostUsd)} of cost · ${compact(p.totalTokens)} tokens`
-                        : `${share(p.totalTokens, total.totalTokens)} of tokens · ${dollars(p)}`}
+                        ? t('usage.cost_share', {
+                            share: share(p.knownCostUsd, total.knownCostUsd),
+                            tokens: compact(p.totalTokens),
+                          })
+                        : t('usage.token_share', {
+                            share: share(p.totalTokens, total.totalTokens),
+                            cost: dollars(p),
+                          })}
                     </text>
                   </div>
                 ))}
-              {!data.byProvider.length && <text style={text}>No activity in this window</text>}
+              {!data.byProvider.length && <text style={text}>{t('usage.no_activity_window')}</text>}
             </div>
             <div
               style={{
@@ -329,15 +363,15 @@ export function UsagePage({ cwd }: { cwd?: string }) {
             >
               <div style={{ ...row, gap: 12 }}>
                 <text style={{ ...text, color: colors.text, fontWeight: 500, flexGrow: 1 }}>
-                  {metric === 'cost' ? 'Daily cost' : 'Daily processed tokens'}
+                  {t(metric === 'cost' ? 'usage.daily_cost' : 'usage.daily_processed_tokens')}
                 </text>
                 <Segmented
-                  label="Chart metric"
+                  label={t('settings.usage_chart_metric')}
                   value={metric}
                   onChange={(v) => setMetric(v as Metric)}
                   options={[
-                    { value: 'cost', label: 'COST' },
-                    { value: 'tokens', label: 'TOKENS' },
+                    { value: 'cost', label: t('usage.cost_upper') },
+                    { value: 'tokens', label: t('usage.tokens_upper') },
                   ]}
                   style={segmentStyle}
                   itemStyle={{ ...itemStyle, height: 22, paddingLeft: 9, paddingRight: 9 }}
@@ -399,15 +433,15 @@ export function UsagePage({ cwd }: { cwd?: string }) {
             <div style={{ flexGrow: 1, minWidth: 320 }}>
               <div style={{ ...row, marginBottom: 10 }}>
                 <text style={{ ...text, color: colors.text, fontWeight: 500, flexGrow: 1 }}>
-                  Breakdown
+                  {t('usage.breakdown')}
                 </text>
                 <Segmented
-                  label="Breakdown grouping"
+                  label={t('settings.usage_breakdown_grouping')}
                   value={breakdown}
                   onChange={setBreakdown}
                   options={[
-                    { value: 'model', label: 'MODEL' },
-                    { value: 'day', label: 'DAY' },
+                    { value: 'model', label: t('usage.model_upper') },
+                    { value: 'day', label: t('usage.day_upper') },
                   ]}
                   style={segmentStyle}
                   itemStyle={{ ...itemStyle, height: 22 }}
@@ -416,8 +450,13 @@ export function UsagePage({ cwd }: { cwd?: string }) {
               <TableRow
                 cells={
                   breakdown === 'model'
-                    ? ['Model', 'Cost', 'Share', 'Tokens']
-                    : ['Day', ...providers.map((p) => labels[p] ?? p), 'Total', 'Tokens']
+                    ? [t('usage.model'), t('usage.cost'), t('usage.share'), t('usage.tokens')]
+                    : [
+                        t('usage.day'),
+                        ...providers.map((p) => labels[p] ?? p),
+                        t('usage.total'),
+                        t('usage.tokens'),
+                      ]
                 }
                 heading
               />
@@ -439,8 +478,8 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                           compact(a.totalTokens),
                         ]
                       : [
-                          shortDay(a.key),
-                          ...providers.map((p) => dollarsForProvider(a, p)),
+                          shortDay(a.key, locale),
+                          ...providers.map((p) => dollarsForProvider(a, p, money)),
                           dollars(a),
                           compact(a.totalTokens),
                         ]
@@ -449,21 +488,26 @@ export function UsagePage({ cwd }: { cwd?: string }) {
               ))}
               {!sortedModels.length && (
                 <text style={{ ...text, marginTop: 26, textAlign: 'center' }}>
-                  No activity in this window
+                  {t('usage.no_activity_window')}
                 </text>
               )}
             </div>
             <div style={{ width: 240 }}>
               <text style={{ ...text, color: colors.text, fontWeight: 500, marginBottom: 10 }}>
-                Cost quality
+                {t('usage.cost_quality')}
               </text>
               {[
-                ['Provider reported', share(data.quality.providerReportedRecords, total.records)],
-                ['Model priced', share(data.quality.modelPricedRecords, total.records)],
-                ['Unpriced', share(data.quality.unpricedRecords, total.records)],
                 [
-                  'Cache savings',
-                  data.cacheSavingsUsd == null ? 'Unavailable' : money(data.cacheSavingsUsd),
+                  t('usage.provider_reported'),
+                  share(data.quality.providerReportedRecords, total.records),
+                ],
+                [t('usage.model_priced'), share(data.quality.modelPricedRecords, total.records)],
+                [t('usage.unpriced'), share(data.quality.unpricedRecords, total.records)],
+                [
+                  t('usage.cache_savings'),
+                  data.cacheSavingsUsd == null
+                    ? t('settings.usage_unavailable_value')
+                    : money(data.cacheSavingsUsd),
                 ],
               ].map(([label, value]) => (
                 <div
@@ -512,17 +556,17 @@ export function UsagePage({ cwd }: { cwd?: string }) {
           >
             <div style={{ flexGrow: 1, minWidth: 0, gap: 3 }}>
               <text style={{ fontSize: sp(13.5), fontWeight: 500 }}>
-                {view === 'monthly' ? 'Last 12 months' : 'By project'}
+                {t(view === 'monthly' ? 'usage.last_12_months' : 'usage.by_project')}
               </text>
               <text style={{ ...text, ...ellipsis }}>
-                {`${compact(total.totalTokens)} tokens · ${total.sessions} sessions${view === 'projects' ? ` · ${query.trim() ? `${projects.length} of ${groupedProjects.length} shown` : `${projects.length} projects`}` : ''}`}
+                {`${t('usage.tokens_and_sessions', { tokens: compact(total.totalTokens), sessions: t('usage.session_many', { count: total.sessions }) })}${view === 'projects' ? ` · ${query.trim() ? t('usage.projects_shown', { shown: projects.length, projects: groupedProjects.length }) : t('usage.project_many', { count: projects.length })}` : ''}`}
               </text>
             </div>
             {view === 'projects' ? (
               <TextField
                 value={query}
                 onChange={setQuery}
-                placeholder="Filter projects…"
+                placeholder={t('usage.filter_projects')}
                 icon="search"
                 style={{ width: 240 }}
               />
@@ -550,17 +594,17 @@ export function UsagePage({ cwd }: { cwd?: string }) {
           ) : (
             <text style={{ ...text, padding: 24 }}>
               {view === 'monthly'
-                ? 'No activity in the last 12 months'
+                ? t('usage.no_activity_12_months')
                 : query.trim()
-                  ? 'No projects match the filter'
-                  : 'No activity in this window'}
+                  ? t('usage.no_projects_match')
+                  : t('usage.no_activity_window')}
             </text>
           )}
         </div>
       )}
       {data && (
         <text style={{ ...text, color: colors.text_tertiary, marginTop: 14 }}>
-          {`Scanned ${data.scan.scanned} transcripts (${data.scan.skipped} outside the window) · ${data.scan.records} usage records · ${(data.scan.elapsedMs / 1000).toFixed(1)}s · ${data.timeZone} dates`}
+          {`${t('usage.scan_summary', { scanned: data.scan.scanned, skipped: data.scan.skipped, records: data.scan.records, seconds: (data.scan.elapsedMs / 1000).toFixed(1) })} · ${t('settings.usage_timezone_dates', { timeZone: data.timeZone })}`}
         </text>
       )}
     </div>
@@ -582,7 +626,11 @@ function ProviderMark({ provider }: { provider: string }) {
     />
   );
 }
-function dollarsForProvider(aggregate: Aggregate, provider: string) {
+function dollarsForProvider(
+  aggregate: Aggregate,
+  provider: string,
+  money: (value: number) => string,
+) {
   const matching = aggregate.providers.filter((p) => providerFamily(p.key) === provider);
   return `${money(matching.reduce((sum, p) => sum + p.knownCostUsd, 0))}${matching.some((p) => p.unpricedRecords > 0) ? '+' : ''}`;
 }
@@ -662,6 +710,7 @@ function TableRow({ cells, heading = false }: { cells: string[]; heading?: boole
 }
 function ModelMenu({ models }: { models: Aggregate[] }) {
   const { colors, sp } = useTheme();
+  const { dollars } = useUsageFormats();
   const sorted = [...models].sort(
     (a, b) => b.knownCostUsd - a.knownCostUsd || b.totalTokens - a.totalTokens,
   );
@@ -672,14 +721,21 @@ function ModelMenu({ models }: { models: Aggregate[] }) {
         .slice(0, 2)
         .map((m) => m.model ?? m.key)
         .join(' · ')}${sorted.length > 2 ? ` · +${sorted.length - 2}` : ''}`}
-      aria-label={`Show ${sorted.length} models with spend details`}
+      aria-label={t('usage.show_models', {
+        models: t('usage.model_many', { count: sorted.length }),
+      })}
       style={{ maxWidth: 300, height: 22, paddingLeft: 6, paddingRight: 6, borderRadius: 5 }}
       menuStyle={{ width: 288, maxHeight: 320 }}
       items={[
         {
           id: 'caption',
           type: 'caption',
-          label: `${sorted.length} models${total > 0 ? ' · by spend' : ''}`,
+          label:
+            total > 0
+              ? t('usage.models_by_spend', {
+                  models: t('usage.model_many', { count: sorted.length }),
+                })
+              : t('usage.model_many', { count: sorted.length }),
         },
         ...sorted.map((m, i) => ({
           id: `${m.key}-${i}`,
@@ -769,6 +825,8 @@ function LoadingUsage({ list }: { list: boolean }) {
 
 function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
   const { colors, sp } = useTheme();
+  const locale = useLocale();
+  const { compact, money } = useUsageFormats();
   const { renderer } = useGpuix();
   const plot = useRef<PublicInstance>(null);
   const providers = useMemo(
@@ -830,7 +888,11 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
     <div
       tabIndex={0}
       role="group"
-      aria-label={`Daily ${metric} by provider. Use Left and Right to inspect dates.`}
+      aria-label={t('settings.usage_chart_accessibility', {
+        metric: t(
+          metric === 'cost' ? 'settings.usage_cost_metric' : 'settings.usage_tokens_metric',
+        ),
+      })}
       onKeyDown={(e) => {
         const key = e.key;
         if (!['left', 'right', 'home', 'end', 'escape'].includes(key ?? '')) return;
@@ -927,7 +989,7 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
               }}
             >
               <text style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
-                {shortDay(active.key)}
+                {shortDay(active.key, locale)}
               </text>
               {providers.map((p, i) => (
                 <div key={p} style={{ ...row, gap: 10 }}>
@@ -949,7 +1011,7 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
                   marginTop: 2,
                 }}
               >
-                <text style={{ flexGrow: 1, fontSize: sp(12.5) }}>Total</text>
+                <text style={{ flexGrow: 1, fontSize: sp(12.5) }}>{t('usage.total')}</text>
                 <text style={{ fontSize: sp(12.5) }}>
                   {metric === 'cost'
                     ? money(active.values.reduce((a, b) => a + b, 0))
@@ -963,7 +1025,7 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
       <div style={{ ...row, justifyContent: 'space-between', paddingLeft: 64, marginTop: 8 }}>
         {[0, Math.floor(days.length / 2), days.length - 1].map((i, n) => (
           <text key={n} style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
-            {days[i] ? shortDay(days[i]!.key) : ''}
+            {days[i] ? shortDay(days[i]!.key, locale) : ''}
           </text>
         ))}
       </div>
@@ -987,9 +1049,11 @@ function HistoryRow({
   home?: string;
 }) {
   const { colors, sp } = useTheme();
+  const locale = useLocale();
+  const { compact, dollars } = useUsageFormats();
   const text = { fontSize: sp(12.5), color: colors.text_tertiary };
   const title = monthly
-    ? parseDay(`${a.key.slice(0, 7)}-01`).toLocaleDateString('en', {
+    ? parseDay(`${a.key.slice(0, 7)}-01`).toLocaleDateString(locale, {
         month: 'long',
         year: 'numeric',
       })
@@ -1018,7 +1082,7 @@ function HistoryRow({
       <div style={{ ...row, gap: 8 }}>
         <text style={{ ...ellipsis, fontSize: sp(13), fontWeight: 500 }}>{title}</text>
         {monthly && a.key.slice(0, 7) === iso(new Date()).slice(0, 7) && (
-          <text style={{ ...text, color: colors.text_ghost }}>so far</text>
+          <text style={{ ...text, color: colors.text_ghost }}>{t('usage.so_far')}</text>
         )}
         {!monthly && path && (
           <text style={{ ...text, ...ellipsis, color: colors.text_ghost }}>{path}</text>
@@ -1030,7 +1094,7 @@ function HistoryRow({
         <>
           <div style={{ ...row, gap: 12 }}>
             <text style={{ ...text, ...ellipsis, flexGrow: 1 }}>
-              {`${!monthly && data.totals.knownCostUsd > 0 && a.knownCostUsd > 0 ? `${share(a.knownCostUsd, data.totals.knownCostUsd)} of cost · ` : ''}${compact(a.totalTokens)} tokens · ${a.sessions} sessions${monthly ? ` · ${activeDays} active days` : a.lastActive ? ` · last active ${shortDay(a.lastActive)}` : ''}`}
+              {`${!monthly && data.totals.knownCostUsd > 0 && a.knownCostUsd > 0 ? `${t('usage.percent_of_cost', { share: share(a.knownCostUsd, data.totals.knownCostUsd) })} · ` : ''}${t('usage.tokens_and_sessions', { tokens: compact(a.totalTokens), sessions: t('usage.session_many', { count: a.sessions }) })}${monthly ? ` · ${t('usage.active_day_many', { count: activeDays })}` : a.lastActive ? ` · ${t('usage.last_active', { date: shortDay(a.lastActive, locale) })}` : ''}`}
             </text>
             {monthly && <MonthChart month={a.key} data={data} />}
           </div>
@@ -1049,7 +1113,7 @@ function HistoryRow({
           </div>
         </>
       ) : (
-        <text style={text}>No activity</text>
+        <text style={text}>{t('usage.no_activity')}</text>
       )}
     </div>
   );

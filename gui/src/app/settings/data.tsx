@@ -6,6 +6,7 @@ import { Button, Switch, TextField, useToast } from '../../ui';
 import { Markdown } from '../../markdown';
 import { SettingsCard, SettingsRow } from './index';
 import { MaintenanceActions } from './maintenance';
+import { t } from '../../i18n';
 
 export function DataPage({ page, cwd }: { page: string; cwd: string }) {
   const { colors, sp } = useTheme();
@@ -53,15 +54,17 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
   }, [page, cwd]);
   if (loading)
     return (
-      <div style={{ marginTop: 18, fontSize: sp(12.5), color: colors.text_tertiary }}>Loading…</div>
+      <div style={{ marginTop: 18, fontSize: sp(12.5), color: colors.text_tertiary }}>
+        {t('settings.loading')}
+      </div>
     );
   if (page === 'tools')
     return (
       <>
         <SettingsCard>
           <SettingsRow
-            title="Tools & MCP"
-            description="Changes apply to newly started sessions."
+            title={t('settings.tools')}
+            description={t('settings.new_sessions_description')}
             style={{ minHeight: 74, paddingTop: 11.5, paddingBottom: 12.5 }}
             last
           />
@@ -102,7 +105,7 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
       <>
         <TextField
           icon="search"
-          placeholder="Search memory…"
+          placeholder={t('settings.search_memory')}
           value={query}
           onChange={setQuery}
           style={{ marginTop: 15 }}
@@ -118,7 +121,7 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
                   }}
                   style={{ padding: 8 }}
                 >
-                  View
+                  {t('settings.view')}
                 </Button>
                 <Button
                   variant={armed === entry.key ? 'danger' : 'ghost'}
@@ -137,12 +140,12 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
                   }}
                   style={{ padding: 8 }}
                 >
-                  {armed === entry.key ? 'Confirm delete' : 'Delete'}
+                  {armed === entry.key ? t('settings.confirm_delete') : t('settings.delete')}
                 </Button>
               </SettingsRow>
             ))
           ) : (
-            <SettingsRow title="No memory entries" last />
+            <SettingsRow title={t('settings.no_memory')} last />
           )}
         </SettingsCard>
         {current && (
@@ -157,8 +160,8 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
     <>
       <SettingsCard>
         <SettingsRow
-          title="Local configuration diagnostics"
-          description="No network probes were run. Configuration readiness does not prove provider execution or sandbox enforcement."
+          title={t('settings.local_diagnostics')}
+          description={t('settings.local_diagnostics_description')}
           last
         />
         {doctor?.checks.map((check, index, group) => (
@@ -180,7 +183,10 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
         ))}
       </SettingsCard>
       <SettingsCard>
-        <SettingsRow title="Config sources" description={sources?.primaryPath ?? undefined} />
+        <SettingsRow
+          title={t('settings.config_sources')}
+          description={sources?.primaryPath ?? undefined}
+        />
         {sources?.layers.map((layer, index, group) => (
           <SettingsRow
             key={`${layer.kind}:${layer.path}`}

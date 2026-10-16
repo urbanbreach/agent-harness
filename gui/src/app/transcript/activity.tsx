@@ -1,3 +1,6 @@
+import { t, getLocale, useLocale } from '../../i18n';
+import { duration } from './rows';
+import { presentTool, taskStateLabel } from '../../model/tools';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useGpuix, type PublicInstance, type StyleDesc } from '@gpuix/react';
 import type {
@@ -38,19 +41,9 @@ function thoughtTitle(entry: TextEntry) {
     1,
     Math.ceil(((entry.endedMs ?? entry.startedMs) - entry.startedMs) / 1000),
   );
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const unit = (n: number, label: string) => `${n} ${label}${n === 1 ? '' : 's'}`;
-  const duration = hours
-    ? [unit(hours, 'hour'), minutes % 60 ? unit(minutes % 60, 'minute') : '']
-        .filter(Boolean)
-        .join(' ')
-    : minutes
-      ? [unit(minutes, 'minute'), seconds % 60 ? unit(seconds % 60, 'second') : '']
-          .filter(Boolean)
-          .join(' ')
-      : unit(seconds, 'second');
-  return entry.streaming ? 'Thinking' : `Thought for ${duration}`;
+  return entry.streaming
+    ? t('transcript.thinking')
+    : t('transcript.thought_for', { duration: duration(seconds * 1000) });
 }
 
 /** A nested viewport follows independently of the transcript, including thumb drags. */
@@ -160,18 +153,28 @@ function CopySection({
           style={{
             flexGrow: 1,
             color: colors.text_secondary,
-            fontFamily: label === 'Command' || command ? CODE_FONT_FAMILY : undefined,
+            fontFamily: label === t('transcript.command') || command ? CODE_FONT_FAMILY : undefined,
             fontWeight: 500,
-            fontSize: label === 'Command' || command ? codeFontSize : sp(12.5),
+            fontSize: label === t('transcript.command') || command ? codeFontSize : sp(12.5),
           }}
         >
           {label}
         </text>
         {content.trim() && (
-          <Tooltip content={copied ? 'Copied' : `Copy ${label.toLowerCase()}`}>
+          <Tooltip
+            content={
+              copied
+                ? t('clipboard.copyDone')
+                : t('transcript.copy_section', { label: label.toLowerCase() })
+            }
+          >
             <IconButton
               name={copied ? 'check' : 'copy'}
-              label={copied ? 'Copied' : `Copy ${label.toLowerCase()}`}
+              label={
+                copied
+                  ? t('clipboard.copyDone')
+                  : t('transcript.copy_section', { label: label.toLowerCase() })
+              }
               size={11}
               color={colors.text_ghost}
               style={{ width: 20, height: 20, borderRadius: 5 }}
@@ -306,7 +309,7 @@ function Pulse() {
   return (
     <div
       role="status"
-      aria-label="In progress"
+      aria-label={t('transcript.in_progress')}
       style={{
         width: 5,
         height: 5,
@@ -340,7 +343,7 @@ function Reasoning({ entry, live }: { entry: TextEntry; live: boolean }) {
   }, [entry.text, active]);
   return (
     <ActivityCard
-      action="Think"
+      action={t('transcript.think')}
       icon="sparkle"
       detail={thoughtTitle(entry)}
       running={active}
@@ -365,8 +368,8 @@ function outputText(output?: ToolOutput): string {
     case 'command':
       return [
         output.text || [output.stdout, output.stderr].filter(Boolean).join('\n'),
-        output.exitCode === undefined ? '' : `Exit code: ${output.exitCode}`,
-        output.truncated ? '… output truncated' : '',
+        output.exitCode === undefined ? '' : t('transcript.exit_code', { code: output.exitCode }),
+        output.truncated ? t('transcript.output_truncated') : '',
       ]
         .filter(Boolean)
         .join('\n\n');
@@ -386,7 +389,7 @@ function outputText(output?: ToolOutput): string {
               ].join('\n'),
             )
             .join('\n\n'),
-        output.truncated ? '… output truncated' : '',
+        output.truncated ? t('transcript.output_truncated') : '',
       ]
         .filter(Boolean)
         .join('\n\n');
@@ -598,8 +601,9 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
       ))}
       {patches.hidden > 0 && (
         <text style={{ padding: 8, color: colors.text_tertiary, fontSize: sp(12.5) }}>
-          {patches.hidden} more {patches.hidden === 1 ? 'line' : 'lines'} · open Review to read the
-          whole change
+          {t(patches.hidden === 1 ? 'transcript.more_line' : 'transcript.more_lines', {
+            count: patches.hidden,
+          })}
         </text>
       )}
       {files
@@ -610,8 +614,8 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
             style={{ padding: 8, color: colors.text_tertiary, fontSize: sp(12.5) }}
           >
             {file.artifact
-              ? `Diff stored in ${file.artifact}`
-              : `No inline diff available for ${file.path}`}
+              ? t('transcript.diff_stored', { path: file.artifact })
+              : t('transcript.no_diff', { path: file.path })}
           </text>
         ))}
     </DetailViewport>
@@ -639,10 +643,10 @@ function DiffCounts({ files }: { files: ToolDiffFile[] }) {
 
 function OpenFile({ path }: { path: string }) {
   return (
-    <Tooltip content="Open file">
+    <Tooltip content={t('transcript.open_file')}>
       <IconButton
         name="file-bottom-left-arrow"
-        label={`Open file ${path}`}
+        label={t('transcript.open_file_path', { path })}
         size={12}
         style={{ width: 20, height: 20, borderRadius: 5, marginLeft: 6, marginRight: 10 }}
         onClick={() => openPanelFile(path)}
@@ -689,7 +693,7 @@ function ToolImages({ tool }: { tool: ToolActivity }) {
           <div
             key={image.id}
             role="img"
-            aria-label="Image output unavailable"
+            aria-label={t('transcript.image_unavailable')}
             style={{
               ...row,
               width: 300,
@@ -711,7 +715,12 @@ function ToolImages({ tool }: { tool: ToolActivity }) {
 
 function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView; live: boolean }) {
   const { colors, sp } = useTheme();
-  const presentation = tool.presentation;
+  useLocale();
+  const presentation = presentTool(tool.toolId, tool.args, tool.output ?? tool.outputSummary, {
+    ...tool.metadata,
+    status: tool.status,
+    output_summary: tool.outputSummary,
+  });
   const output = presentation.output;
   const files = output?.kind === 'diff' ? output.files : [];
   const hasDiff = files.some((file) => Boolean(filePatch(file)));
@@ -745,7 +754,7 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
     ? 'terminal'
     : ['edit', 'write'].includes(presentation.kind)
       ? 'pencil'
-      : presentation.action === 'Read'
+      : presentation.kind === 'read' || presentation.kind === 'skill'
         ? 'file'
         : ['search', 'web'].includes(presentation.kind)
           ? 'search'
@@ -759,7 +768,7 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
       ? result.split('\n').find((line) => line.trim()) || presentation.detail
       : presentation.detail ||
         presentation.target ||
-        (images ? 'Image output' : presentation.title);
+        (images ? t('transcript.image_output') : presentation.title);
   return (
     <ActivityCard
       action={presentation.action}
@@ -771,9 +780,11 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
         <>
           {tool.status === 'succeeded' && <DiffCounts files={files} />}
           {background && (
-            <Tooltip content="Inspect background work">
+            <Tooltip content={t('transcript.inspect_background')}>
               <Button
-                aria-label={`Inspect background work: ${background.summary || background.id}`}
+                aria-label={t('transcript.inspect_background_task', {
+                  task: background.summary || background.id,
+                })}
                 onClick={() => runAction(`transcript.background:${background.id}`)}
                 style={{
                   height: 20,
@@ -790,7 +801,7 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
                       : colors.text_secondary,
                 }}
               >
-                <text>{background.state.replace(/_/g, ' ')}</text>
+                <text>{taskStateLabel(background.state, true)}</text>
               </Button>
             </Tooltip>
           )}
@@ -813,21 +824,24 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
             >
               {server && (
                 <div style={{ ...row, gap: 8, fontSize: sp(12.5) }}>
-                  <text style={{ color: colors.text_tertiary }}>MCP server:</text>
+                  <text style={{ color: colors.text_tertiary }}>{t('transcript.mcp_server')}</text>
                   <text style={{ color: colors.text_secondary }}>{server}</text>
                 </div>
               )}
               {server && (
                 <div style={{ ...row, gap: 8, fontSize: sp(12.5) }}>
-                  <text style={{ color: colors.text_tertiary }}>Tool:</text>
+                  <text style={{ color: colors.text_tertiary }}>{t('transcript.tool_label')}</text>
                   <text style={{ color: colors.text_secondary, userSelect: 'text' }}>
                     {nativeName}
                   </text>
                 </div>
               )}
-              <CopySection label={command ? 'Command' : 'Arguments'} content={args} />
               <CopySection
-                label="Output"
+                label={t(command ? 'transcript.command' : 'transcript.arguments')}
+                content={args}
+              />
+              <CopySection
+                label={t('transcript.output')}
                 content={result}
                 command={command}
                 live={live && !complete(tool)}
@@ -863,21 +877,21 @@ function ContextCard({ entry }: { entry: CompactionEntry }) {
   const failed = event.event_type === 'compaction_failed';
   const running = event.event_type === 'compaction_requested';
   const title = failed
-    ? 'Context compaction failed'
+    ? t('transcript.compaction_failed')
     : running
-      ? 'Compacting context'
+      ? t('transcript.compacting')
       : event.event_type === 'context_pruned'
-        ? 'Pruned context'
+        ? t('transcript.pruned')
         : event.event_type === 'branch_summary'
-          ? 'Branch summary'
-          : 'Compacted context';
+          ? t('transcript.branch_summary')
+          : t('transcript.compacted');
   const before = typeof data.tokens_before === 'number' ? data.tokens_before : undefined;
   const after = typeof data.tokens_after === 'number' ? data.tokens_after : undefined;
   return (
     <ActivityCard
       icon="history"
-      action="Context"
-      detail={`${title}${entry.superseded ? ' · superseded' : ''}`}
+      action={t('transcript.context')}
+      detail={`${title}${entry.superseded ? t('transcript.superseded') : ''}`}
       failed={failed}
       running={running}
     >
@@ -885,7 +899,10 @@ function ContextCard({ entry }: { entry: CompactionEntry }) {
         <div style={{ ...column, padding: 12, gap: 8 }}>
           {before !== undefined && after !== undefined && (
             <text style={{ color: colors.text_secondary, fontSize: sp(12.5) }}>
-              {`${before.toLocaleString()} → ${after.toLocaleString()} tokens`}
+              {t('transcript.tokens', {
+                before: before.toLocaleString(getLocale()),
+                after: after.toLocaleString(getLocale()),
+              })}
             </text>
           )}
           {summary && <Markdown source={summary} context="compact" />}
@@ -912,49 +929,66 @@ export function ActivityGroup({
   live: boolean;
 }) {
   const { colors, sp } = useTheme();
+  useLocale();
   const [override, setOverride] = useState<boolean>();
   const open = override ?? live;
   const latest = entries[entries.length - 1];
-  const counts = new Map<string, number>();
+  const counts = new Map<
+    | 'thought'
+    | 'command'
+    | 'read'
+    | 'edit'
+    | 'search'
+    | 'list'
+    | 'web'
+    | 'plan'
+    | 'compaction'
+    | 'notice'
+    | 'tool',
+    number
+  >();
   for (const entry of entries) {
     const kind =
       entry.kind === 'tool' ? view.tools[entry.toolCallId]?.presentation.kind : entry.kind;
     const noun =
       kind === 'reasoning'
         ? 'thought'
-        : kind === 'command'
-          ? 'command'
-          : kind === 'read'
-            ? 'file read'
-            : kind === 'edit' || kind === 'write'
-              ? 'file edit'
-              : kind === 'search'
-                ? 'file search'
-                : kind === 'list'
-                  ? 'file listing'
-                  : kind === 'web'
-                    ? 'search'
-                    : kind === 'plan' || kind === 'todo'
-                      ? 'plan step'
-                      : kind === 'compaction'
-                        ? 'context update'
-                        : kind === 'notice'
-                          ? 'notice'
-                          : 'tool call';
+        : kind === 'command' ||
+            kind === 'read' ||
+            kind === 'search' ||
+            kind === 'list' ||
+            kind === 'web' ||
+            kind === 'compaction' ||
+            kind === 'notice'
+          ? kind
+          : kind === 'edit' || kind === 'write'
+            ? 'edit'
+            : kind === 'plan' || kind === 'todo'
+              ? 'plan'
+              : 'tool';
     counts.set(noun, (counts.get(noun) ?? 0) + 1);
   }
   const summary = [...counts]
-    .map(
-      ([noun, count]) =>
-        `${count} ${noun}${count === 1 ? '' : noun === 'search' || noun === 'file search' ? 'es' : 's'}`,
-    )
+    .map(([noun, count]) => t(`transcript.${noun}_${count === 1 ? 'one' : 'other'}`, { count }))
     .join(' · ');
+  const latestTool = latest?.kind === 'tool' ? view.tools[latest.toolCallId] : undefined;
   const title =
     live && latest?.kind === 'reasoning'
       ? thoughtTitle(latest)
       : live && latest?.kind === 'tool'
-        ? view.tools[latest.toolCallId]?.presentation.title || 'Working'
-        : `${live ? 'Running' : 'Ran'} ${summary}`;
+        ? latestTool
+          ? presentTool(
+              latestTool.toolId,
+              latestTool.args,
+              latestTool.output ?? latestTool.outputSummary,
+              {
+                ...latestTool.metadata,
+                status: latestTool.status,
+                output_summary: latestTool.outputSummary,
+              },
+            ).title
+          : t('transcript.working')
+        : t(live ? 'transcript.running' : 'transcript.ran', { activities: summary });
   if (!entries.length) return null;
   return (
     <div style={column}>
@@ -1025,7 +1059,9 @@ export function ActivityGroup({
                 }}
               >
                 <Icon name={entry.level === 'info' ? 'info' : 'triangle-alert'} size={12} />
-                <text style={{ fontSize: sp(12.5), userSelect: 'text' }}>{entry.message}</text>
+                <text style={{ fontSize: sp(12.5), userSelect: 'text' }}>
+                  {entry.localized ? t(entry.localized.key, entry.localized.vars) : entry.message}
+                </text>
               </div>
             ) : entry.kind === 'text' ? (
               <Markdown key={entry.id} source={entry.text} context="compact" />

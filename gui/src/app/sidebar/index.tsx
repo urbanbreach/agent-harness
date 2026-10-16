@@ -20,9 +20,10 @@ import {
 import { row, ellipsis, bare } from '../../ui/controls';
 import { nativeRenderer } from '../../native';
 import { useTheme } from '../../theme';
-import { dateBucket, dateBuckets, sidebarTimestamp, taskTime } from './model';
+import { bucketLabels, dateBucket, dateBuckets, sidebarTimestamp, taskTime } from './model';
 import { registerAction, runAction } from '../actions';
 import { copySessionSnapshots } from '../../workspace/checkpoints';
+import { t } from '../../i18n';
 
 export interface SidebarProps {
   header?: ReactNode;
@@ -117,7 +118,12 @@ export function Sidebar(props: SidebarProps) {
       const key = project?.id ?? 'projectless';
       let group = byProject.get(key);
       if (!group) {
-        group = { key: `project:${key}`, label: project?.name ?? 'No project', project, tasks: [] };
+        group = {
+          key: `project:${key}`,
+          label: project?.name ?? t('project.no_project_name'),
+          project,
+          tasks: [],
+        };
         byProject.set(key, group);
       }
       group.tasks.push(task);
@@ -137,7 +143,7 @@ export function Sidebar(props: SidebarProps) {
           (task) => !['Today', 'Yesterday'].includes(dateBucket(sidebarTimestamp(task), now)),
         );
       if (matches.length || emptyRecentBucket)
-        groups.push({ key: `updated:${label}`, label, tasks: matches });
+        groups.push({ key: `updated:${label}`, label: t(bucketLabels[label]), tasks: matches });
     }
   }
   if (!groups.length) {
@@ -149,7 +155,10 @@ export function Sidebar(props: SidebarProps) {
       : state.projects.find((item) => !isScratch(item.cwd));
     groups.push({
       key: grouping === 'project' ? `project:${project?.id ?? 'projectless'}` : 'updated:Today',
-      label: grouping === 'project' ? (project?.name ?? 'No project') : 'Today',
+      label:
+        grouping === 'project'
+          ? (project?.name ?? t('project.no_project_name'))
+          : t('sidebar.today'),
       project: grouping === 'project' ? project : undefined,
       tasks: [],
     });
@@ -212,29 +221,29 @@ export function Sidebar(props: SidebarProps) {
   const optionItems: MenuItem[] = [
     {
       id: 'grouping',
-      label: 'Grouping',
-      value: grouping === 'project' ? 'Project' : 'Updated',
-      items: ['Project', 'Updated'].map((label) => ({
-        id: label,
-        label,
-        selected: grouping === label.toLowerCase(),
-        onSelect: () => setOption('sidebarGrouping', label.toLowerCase()),
+      label: t('sidebar.grouping'),
+      value: t(grouping === 'project' ? 'sidebar.grouping_project' : 'sidebar.grouping_updated'),
+      items: (['project', 'updated'] as const).map((value) => ({
+        id: value,
+        label: t(value === 'project' ? 'sidebar.grouping_project' : 'sidebar.grouping_updated'),
+        selected: grouping === value,
+        onSelect: () => setOption('sidebarGrouping', value),
       })),
     },
     {
       id: 'ordering',
-      label: 'Ordering',
-      value: oldest ? 'Oldest first' : 'Newest first',
+      label: t('sidebar.ordering'),
+      value: t(oldest ? 'sidebar.ordering_oldest' : 'sidebar.ordering_newest'),
       items: [
         {
           id: 'newest',
-          label: 'Newest first',
+          label: t('sidebar.ordering_newest'),
           selected: !oldest,
           onSelect: () => setOption('sidebarOrdering', 'newest'),
         },
         {
           id: 'oldest',
-          label: 'Oldest first',
+          label: t('sidebar.ordering_oldest'),
           selected: oldest,
           onSelect: () => setOption('sidebarOrdering', 'oldest'),
         },
@@ -295,7 +304,7 @@ export function Sidebar(props: SidebarProps) {
         dest: exportTarget.dest.trim(),
       });
       closeExport();
-      showToast(`Exported Markdown to ${result.dest}`, 'success');
+      showToast(t('shell.exported_markdown', { path: result.dest }), 'success');
     } finally {
       setExporting(false);
     }
@@ -313,9 +322,10 @@ export function Sidebar(props: SidebarProps) {
           return;
         const update = notification.params.update;
         if (update.kind === 'forked') resolve(update);
-        else if (update.kind === 'exited') reject(new Error(update.error ?? 'Session ended'));
+        else if (update.kind === 'exited')
+          reject(new Error(update.error ?? t('shell.session_ended')));
       });
-      timer = setTimeout(() => reject(new Error('The session did not respond')), 30000);
+      timer = setTimeout(() => reject(new Error(t('shell.session_no_response'))), 30000);
     });
     try {
       const [result] = await Promise.all([
@@ -375,32 +385,36 @@ export function Sidebar(props: SidebarProps) {
     return [
       {
         id: 'rename',
-        label: 'Rename',
+        label: t('sidebar.rename'),
         onSelect: () => {
           if (!selected || !runAction('session.rename')) beginRename(task);
         },
       },
       {
         id: 'pin',
-        label: isPinned(task) ? 'Unpin' : 'Pin',
+        label: t(isPinned(task) ? 'shell.unpin' : 'shell.pin'),
         onSelect: () => run(store.pinTask(task.runId, !isPinned(task))),
       },
       {
         id: 'duplicate',
-        label: 'Duplicate',
+        label: t('shell.duplicate'),
         onSelect: () => {
           if (!selected || !runAction('session.clone')) run(duplicateTask(task));
         },
       },
       {
         id: 'export',
-        label: 'Export Markdown…',
+        label: t('action.exportMarkdown'),
         onSelect: () => {
           if (!selected || !runAction('session.export')) run(exportMarkdown(task));
         },
       },
       { id: 'separator', type: 'separator' },
-      { id: 'remove', label: 'Remove', onSelect: () => run(store.removeTask(task.runId)) },
+      {
+        id: 'remove',
+        label: t('sidebar.remove'),
+        onSelect: () => run(store.removeTask(task.runId)),
+      },
     ];
   }
   const [context, setContext] = useState<{
@@ -421,7 +435,7 @@ export function Sidebar(props: SidebarProps) {
   };
   return (
     <div
-      aria-label="Sidebar"
+      aria-label={t('shell.sidebar')}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -436,25 +450,25 @@ export function Sidebar(props: SidebarProps) {
           <IconButton
             name="panel-left"
             size={14}
-            label="Toggle sidebar"
+            label={t('shell.toggle_sidebar')}
             onClick={props.onToggleSidebar}
             style={{ width: 26, height: 26 }}
           />
           <div style={{ ...row, gap: 2, marginLeft: 6 }}>
-            <Tooltip content="Back">
+            <Tooltip content={t('navigation.back')}>
               <IconButton
                 name="arrow-left"
-                label="Back"
+                label={t('navigation.back')}
                 size={14}
                 disabled={!props.canGoBack}
                 onClick={() => props.onHistory?.('back')}
                 style={{ width: 26, height: 26, opacity: props.canGoBack ? 1 : 0.35 }}
               />
             </Tooltip>
-            <Tooltip content="Forward">
+            <Tooltip content={t('navigation.forward')}>
               <IconButton
                 name="arrow-right"
-                label="Forward"
+                label={t('navigation.forward')}
                 size={14}
                 disabled={!props.canGoForward}
                 onClick={() => props.onHistory?.('forward')}
@@ -469,7 +483,7 @@ export function Sidebar(props: SidebarProps) {
           <div style={{ ...row, width: 20, justifyContent: 'center' }}>
             <Icon name="compose" size={14} color={colors.text_secondary} />
           </div>
-          <text style={{ ...ellipsis, fontSize: sp(13) }}>New Task</text>
+          <text style={{ ...ellipsis, fontSize: sp(13) }}>{t('action.newTask')}</text>
         </Button>
       </div>
       <div
@@ -508,7 +522,7 @@ export function Sidebar(props: SidebarProps) {
                     <div style={{ ...row, width: 20, justifyContent: 'center' }}>
                       <Icon name="search" size={14} color={colors.text_secondary} />
                     </div>
-                    <text style={{ fontSize: sp(13) }}>Search</text>
+                    <text style={{ fontSize: sp(13) }}>{t('navigation.search')}</text>
                   </Button>
                 </div>
               );
@@ -546,7 +560,7 @@ export function Sidebar(props: SidebarProps) {
                       borderBottomLeftRadius: 4,
                     }}
                   />
-                  <text>Show more</text>
+                  <text>{t('sidebar.show_more')}</text>
                 </Button>
               );
             if (entry.kind === 'header') {
@@ -626,10 +640,10 @@ export function Sidebar(props: SidebarProps) {
                     </text>
                   </Button>
                   {grouping === 'project' && (
-                    <Tooltip content="New Task">
+                    <Tooltip content={t('action.newTask')}>
                       <IconButton
                         name="compose"
-                        label={`New task in ${group.label}`}
+                        label={t('shell.new_task_in', { project: group.label })}
                         size={14}
                         color={colors.text_secondary}
                         onFocus={() => setFocusGroup(group.key)}
@@ -647,11 +661,11 @@ export function Sidebar(props: SidebarProps) {
                   {entry.first && (
                     <>
                       <div style={{ position: 'relative' }}>
-                        <Tooltip content="Sidebar options">
+                        <Tooltip content={t('navigation.options')}>
                           <IconButton
                             ref={optionTrigger}
                             name="list-filter"
-                            label="Sidebar options"
+                            label={t('navigation.options')}
                             size={14}
                             color={colors.text_secondary}
                             onClick={() => setOptions(!options)}
@@ -670,10 +684,10 @@ export function Sidebar(props: SidebarProps) {
                           />
                         )}
                       </div>
-                      <Tooltip content="New project">
+                      <Tooltip content={t('navigation.newProject')}>
                         <IconButton
                           name="folder-new"
-                          label="New project"
+                          label={t('navigation.newProject')}
                           size={14}
                           color={colors.text_secondary}
                           onClick={props.onOpenProject}
@@ -703,8 +717,8 @@ export function Sidebar(props: SidebarProps) {
                     ? undefined
                     : branch
                   : scratch
-                    ? 'No project'
-                    : (project?.name ?? 'Unknown project');
+                    ? t('project.no_project_name')
+                    : (project?.name ?? t('shell.unknown_project'));
             const editing = rename?.id === task.runId;
             function openContext(x?: number, y?: number) {
               const ref = taskRefs.current.get(task.runId);
@@ -863,7 +877,7 @@ export function Sidebar(props: SidebarProps) {
                       />
                     )}
                     {status === 'working' ? (
-                      <Spinner size={12} color={colors.accent} label="Working" />
+                      <Spinner size={12} color={colors.accent} label={t('shell.working')} />
                     ) : status !== 'idle' ? (
                       <Icon
                         name={
@@ -956,10 +970,10 @@ export function Sidebar(props: SidebarProps) {
         />
       </div>
       <div style={{ ...row, height: 40, paddingLeft: 10, paddingRight: 10, flexShrink: 0 }}>
-        <Tooltip content="Settings">
+        <Tooltip content={t('navigation.settings')}>
           <IconButton
             name="settings"
-            label="Settings"
+            label={t('navigation.settings')}
             size={14}
             onClick={props.onOpenSettings}
             style={{ width: 26, height: 26 }}
@@ -977,20 +991,18 @@ export function Sidebar(props: SidebarProps) {
       {exportTarget && (
         <Dialog
           open
-          title="Export Markdown"
+          title={t('shell.export_markdown')}
           style={{ padding: 20, gap: 16 }}
           onClose={() => {
             if (!exporting) closeExport();
           }}
         >
           <text style={{ color: colors.text, fontSize: sp(18), fontWeight: 600 }}>
-            Export Markdown
+            {t('shell.export_markdown')}
           </text>
-          <text style={{ color: colors.text_secondary }}>
-            Save this conversation to a Markdown file.
-          </text>
+          <text style={{ color: colors.text_secondary }}>{t('shell.export_description')}</text>
           <TextField
-            aria-label="Export file path"
+            aria-label={t('shell.export_file_path')}
             value={exportTarget?.dest ?? ''}
             onChange={(dest) =>
               setExportTarget((current) => (current ? { ...current, dest } : current))
@@ -1000,17 +1012,17 @@ export function Sidebar(props: SidebarProps) {
           <div style={{ ...row, gap: 8, justifyContent: 'flex-end' }}>
             {renderer?.promptForPaths && (
               <Button disabled={exporting} onClick={() => run(browseExportFolder())}>
-                Browse folder…
+                {t('shell.browse_folder')}
               </Button>
             )}
             <Button disabled={exporting} onClick={closeExport}>
-              Cancel
+              {t('shell.cancel')}
             </Button>
             <Button
               disabled={exporting || !exportTarget?.dest.trim()}
               onClick={() => run(saveExport())}
             >
-              {exporting ? 'Saving…' : 'Save Markdown'}
+              {t(exporting ? 'shell.saving' : 'shell.save_markdown')}
             </Button>
           </div>
         </Dialog>

@@ -34,8 +34,8 @@ export function HelpPage({ cwd }: { cwd: string }) {
     <>
       <SettingsCard>
         <SettingsRow
-          title="Keyboard shortcuts"
-          description="Application commands and their current shortcuts."
+          title={t('settings.keyboard_shortcuts')}
+          description={t('settings.keyboard_shortcuts_description')}
         />
         {shortcuts.map((action, index) => (
           <SettingsRow
@@ -55,24 +55,24 @@ export function HelpPage({ cwd }: { cwd: string }) {
       </SettingsCard>
       <SettingsCard>
         <SettingsRow
-          title="Composer shortcuts"
-          description="Enter sends, or queues a follow-up while a turn is running. Shift+Enter inserts a newline."
+          title={t('settings.composer_shortcuts')}
+          description={t('settings.composer_shortcuts_description')}
         />
         <SettingsRow
-          title="Steer a running turn"
-          description="Ctrl+Enter sends the current draft as steering input. With an empty draft, it steers the first queued follow-up."
+          title={t('settings.steer_turn')}
+          description={t('settings.steer_turn_description')}
         />
         <SettingsRow
-          title="Suggestions and editing"
-          description="Up/Down selects a suggestion; Tab or Enter accepts it. Tab or Right accepts an inline completion. Escape dismisses suggestions. Shift+F10 opens the edit menu."
+          title={t('settings.suggestions_editing')}
+          description={t('settings.suggestions_editing_description')}
         />
         <SettingsRow
-          title="Attachments"
-          description="Ctrl+V pastes clipboard images or files. Backspace in an empty composer removes the last attachment."
+          title={t('settings.attachments')}
+          description={t('settings.attachments_description')}
         />
         <SettingsRow
-          title="Slash commands"
-          description="Type / in the composer to find a command. Project and user commands expand before sending."
+          title={t('settings.slash_commands')}
+          description={t('settings.slash_commands_description')}
         />
         {commands.map((command, index) => (
           <SettingsRow
@@ -82,7 +82,9 @@ export function HelpPage({ cwd }: { cwd: string }) {
             last={index === commands.length - 1}
           />
         ))}
-        {error && <SettingsRow title="Could not load slash commands" description={error} last />}
+        {error && (
+          <SettingsRow title={t('settings.load_commands_failed')} description={error} last />
+        )}
       </SettingsCard>
     </>
   );

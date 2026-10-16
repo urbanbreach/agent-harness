@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { t, useLocale } from '../../i18n';
 import { useGpuix, type PublicInstance } from '@gpuix/react';
 import {
   Button,
@@ -56,6 +57,7 @@ export function notifyGitChanges() {
 }
 
 export function GitChangesChip({ cwd, onOpen }: { cwd: string; onOpen: () => void }) {
+  useLocale();
   const { colors, sp } = useTheme();
   const [counts, setCounts] = useState({ additions: 0, deletions: 0 });
   useEffect(() => {
@@ -81,9 +83,9 @@ export function GitChangesChip({ cwd, onOpen }: { cwd: string; onOpen: () => voi
   }, [cwd]);
   if (!counts.additions && !counts.deletions) return null;
   return (
-    <Tooltip content="Changes">
+    <Tooltip content={t('environment.changes')}>
       <Button
-        aria-label="Changes"
+        aria-label={t('environment.changes')}
         onClick={() => {
           openUncommittedReview(cwd);
           onOpen();
@@ -130,12 +132,12 @@ export function GitChangesChip({ cwd, onOpen }: { cwd: string; onOpen: () => voi
 
 type DocumentRow = { file: ReviewFile; line?: DiffLine };
 const labels = {
-  uncommitted: 'Uncommitted',
-  unstaged: 'Unstaged',
-  staged: 'Staged',
-  committed: 'Committed',
-  branch: 'Branch',
-};
+  uncommitted: 'diff.source_uncommitted',
+  unstaged: 'diff.source_unstaged',
+  staged: 'diff.source_staged',
+  committed: 'diff.source_committed',
+  branch: 'diff.source_branch',
+} as const;
 type ExpandedContext = Record<string, Record<string, { above: number; below: number }>>;
 interface SavedReview {
   source: ReviewSource;
@@ -153,6 +155,7 @@ export function Review(props: { cwd: string; sessionId: string | null }) {
   return <ReviewBody key={`${props.cwd}\0${props.sessionId ?? ''}`} {...props} />;
 }
 function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null }) {
+  useLocale();
   const { colors, sp, codeFontSize } = useTheme();
   const { renderer } = useGpuix();
   const { showToast } = useToast();
@@ -260,7 +263,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
         const message = failure instanceof Error ? failure.message : String(failure);
         if (snapshotRef.current) {
           setSource(snapshotRef.current.source);
-          showToast(`Could not refresh changes: ${message}`);
+          showToast(t('diff.refresh_failed', { error: message }));
         } else setError(message);
       } finally {
         if (serial === request.current) setLoading(false);
@@ -302,7 +305,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
           .then((checkpoint) => {
             if (!active || request.current !== expected) return;
             if (!checkpoint || checkpoint.state !== 'ready')
-              throw new Error('The turn checkpoint is unavailable');
+              throw new Error(t('panel.checkpoint_unavailable'));
             const chosen: ReviewSource = {
               kind: 'lastTurn',
               session: selection.sessionId,
@@ -428,7 +431,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
   const items: MenuItem[] = [
     {
       id: 'last',
-      label: 'Last Turn',
+      label: t('diff.source_last_turn'),
       disabled: latest === undefined,
       selected: typeof source === 'object' && source.turn === latest,
       onSelect: () => {
@@ -439,14 +442,14 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
     { id: 'first-separator', type: 'separator' },
     ...(['uncommitted', 'unstaged', 'staged'] as const).map((id) => ({
       id,
-      label: labels[id],
+      label: t(labels[id]),
       selected: source === id,
       onSelect: () => choose(id),
     })),
     { id: 'second-separator', type: 'separator' },
     ...(['committed', 'branch'] as const).map((id) => ({
       id,
-      label: labels[id],
+      label: t(labels[id]),
       selected: source === id,
       onSelect: () => choose(id),
     })),
@@ -548,7 +551,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
               <>
                 <IconButton
                   name="chevron-up"
-                  label="Show 100 lines above · Shift-click for all"
+                  label={t('diff.expand_context_above')}
                   size={11}
                   style={{ height: 16, width: gutter }}
                   onKeyDown={(event) => {
@@ -564,7 +567,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 />
                 <IconButton
                   name="chevron-down"
-                  label="Show 100 lines below · Shift-click for all"
+                  label={t('diff.expand_context_below')}
                   size={11}
                   style={{
                     height: 16,
@@ -589,7 +592,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 name={
                   line.leading ? 'chevron-up' : line.trailing ? 'chevron-down' : 'chevrons-up-down'
                 }
-                label="Expand unmodified lines · Shift-click for all"
+                label={t('diff.expand_context')}
                 size={11}
                 style={{ width: gutter, height: 32 }}
                 onKeyDown={(event) => {
@@ -608,7 +611,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
             )}
           </div>
           <Button
-            aria-label="Expand unmodified lines · Shift-click for all"
+            aria-label={t('diff.expand_context')}
             onClick={(event) =>
               reveal(
                 line.leading ? 'below' : line.trailing ? 'above' : 'both',
@@ -629,7 +632,9 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
               justifyContent: 'flex-start',
             }}
           >
-            <text style={{ fontSize: 12.5, color: colors.text_tertiary }}>{line.text}</text>
+            <text style={{ fontSize: 12.5, color: colors.text_tertiary }}>
+              {t('diff.unmodified_lines', { count: line.text })}
+            </text>
           </Button>
         </div>
       );
@@ -749,10 +754,10 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
           <MenuChip
             label={
               typeof source === 'string'
-                ? labels[source]
+                ? t(labels[source])
                 : source.turn === latest
-                  ? 'Last Turn'
-                  : `Turn ${source.turn}`
+                  ? t('diff.source_last_turn')
+                  : t('diff.source_turn', { turn: source.turn })
             }
             open={menu}
             onClick={() => setMenu(!menu)}
@@ -768,13 +773,13 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
         </text>
         {snapshot?.truncated && (
           <text style={{ ...ellipsis, fontSize: sp(12), color: colors.warning }}>
-            Large diff · showing first 50,000 lines
+            {t('diff.truncated')}
           </text>
         )}
         <div style={{ flexGrow: 1 }} />
-        <Tooltip content="Refresh changes">
+        <Tooltip content={t('diff.refresh')}>
           <Button
-            aria-label="Refresh changes"
+            aria-label={t('diff.refresh')}
             onClick={() => void refresh(source)}
             style={{ height: 28, width: 28, borderRadius: 7 }}
           >
@@ -796,7 +801,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
           }}
         >
           <text style={{ fontSize: sp(13), fontWeight: 500, color: colors.text }}>
-            {!snapshot ? (error ? 'Changes unavailable' : 'Loading changes…') : 'No changes'}
+            {!snapshot ? (error ? t('diff.unavailable') : t('diff.loading')) : t('diff.no_changes')}
           </text>
           <text
             style={{
@@ -808,8 +813,8 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
             }}
           >
             {!snapshot
-              ? (error ?? 'Capturing a consistent Git snapshot for review')
-              : 'This source has no file changes to review'}
+              ? (error ?? t('diff.loading_description'))
+              : t('diff.no_changes_description')}
           </text>
         </div>
       ) : (
@@ -924,7 +929,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
           >
             <div
               role="separator"
-              aria-label="Resize diff file tree"
+              aria-label={t('diff.resize_tree')}
               onMouseDown={(event) => {
                 if (event.button === 0) drag.current = { x: event.x ?? 0, width: treeWidth };
               }}
@@ -977,8 +982,8 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
             >
               <TextField
                 icon="search"
-                placeholder="Filter files…"
-                aria-label="Filter files"
+                placeholder={t('diff.filter_files')}
+                aria-label={t('panel.filter_files_label')}
                 value={query}
                 onChange={(value) => {
                   setQuery(value);
@@ -992,7 +997,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 onLayout={(event) => setTreeViewport(event.height ?? 0)}
                 onScrollChange={(event) => setTreeOffset(Math.max(0, -(event.scrollY ?? 0)))}
                 role="tree"
-                aria-label="Changed files"
+                aria-label={t('diff.changed_files')}
                 tabIndex={0}
                 onFocus={() => setTreeFocused(true)}
                 onBlur={() => setTreeFocused(false)}

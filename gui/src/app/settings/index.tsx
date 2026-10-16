@@ -3,13 +3,12 @@ import { useWindowSize, type StyleDesc } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import { Button, Dropdown, Icon, Switch, TextField } from '../../ui';
 import { getAppStore, usePreferences, useSelectedProject } from '../../store';
-import { useLanguage } from '../../i18n';
+import { english, t, useLanguage, useLocale, type TranslationKey } from '../../i18n';
 import { SkillsPage } from '../skills';
 import { UsagePage } from '../usage';
 import { ProvidersPage } from './providers';
 import { RuntimePage } from './runtime';
 import { DataPage } from './data';
-import { useSettingsText } from './strings';
 import { HelpPage } from './help';
 import { WorktreesPage } from './worktrees';
 
@@ -27,6 +26,14 @@ export const settingsPages = [
   ['diagnostics', 'Diagnostics', 'alert'],
   ['help', 'Help', 'file-text'],
 ] as const;
+
+export function settingsPageLabel(id: string) {
+  return t(`settings.${id}` as TranslationKey);
+}
+export function settingsPageKeywords(id: string) {
+  const key = `settings.${id}_keywords` as TranslationKey;
+  return `${settingsPages.find(([page]) => page === id)?.[1] ?? ''} ${settingsPageLabel(id)} ${english[key] ?? ''} ${t(key)}`;
+}
 
 export function SettingsCard({ children, style }: { children: ReactNode; style?: StyleDesc }) {
   const { colors } = useTheme();
@@ -60,7 +67,7 @@ export function SettingsRow({
   style?: StyleDesc;
 }) {
   const { colors, sp } = useTheme();
-  const text = useSettingsText();
+  useLocale();
   return (
     <div
       style={{
@@ -80,7 +87,7 @@ export function SettingsRow({
     >
       {leading}
       <div style={{ flexGrow: 1, minWidth: 0 }}>
-        <div style={{ fontSize: sp(13.5), fontWeight: 500, color: colors.text }}>{text(title)}</div>
+        <div style={{ fontSize: sp(13.5), fontWeight: 500, color: colors.text }}>{title}</div>
         {description && (
           <div
             style={{
@@ -90,7 +97,7 @@ export function SettingsRow({
               marginTop: 5,
             }}
           >
-            {text(description)}
+            {description}
           </div>
         )}
       </div>
@@ -104,23 +111,19 @@ function General() {
     <>
       <SettingsCard>
         <SettingsRow
-          title="Local by default"
-          description="Projects, conversations, and settings are stored on this computer"
+          title={t('settings.local_by_default')}
+          description={t('settings.local_by_default_description')}
           style={{ minHeight: 74, paddingTop: 11.5, paddingBottom: 12.5 }}
           last
         />
       </SettingsCard>
       {[
-        [
-          'renderMath',
-          'Render math expressions',
-          'Show formatted math in Markdown. Turn off to show LaTeX source.',
-        ],
-        ['showReasoning', 'Show reasoning', 'Show the agent’s reasoning in the conversation.'],
+        ['renderMath', t('settings.render_math'), t('settings.render_math_description')],
+        ['showReasoning', t('settings.show_reasoning'), t('settings.show_reasoning_description')],
         [
           'showMessageTimes',
-          'Show message times',
-          'Display timestamps beside conversation messages.',
+          t('settings.show_message_times'),
+          t('settings.show_message_times_description'),
         ],
       ].map(([key, title, description]) => (
         <SettingsCard key={key}>
@@ -141,37 +144,37 @@ function Appearance() {
   const language = useLanguage();
   const sizes = [11, 12, 13, 14, 15, 16, 18, 20];
   const languages = [
-    ['system', 'System'],
+    ['system', t('language.system')],
     ['en', 'English'],
     ['zh-CN', '简体中文'],
     ['ja', '日本語'],
   ] as const;
   return (
     <SettingsCard>
-      <SettingsRow title="Theme" description="Choose between system, light, or dark themes">
+      <SettingsRow title={t('settings.theme')} description={t('settings.theme_description')}>
         <Dropdown
           outlined
           label={
             theme.preference === 'system'
-              ? 'System'
+              ? t('settings.theme_system')
               : theme.preference === 'light'
-                ? 'Light'
-                : 'Dark'
+                ? t('settings.theme_light')
+                : t('settings.theme_dark')
           }
           style={{ width: 116, justifyContent: 'space-between' }}
           items={(['system', 'light', 'dark'] as const).map((value) => ({
             id: value,
-            label: value[0]!.toUpperCase() + value.slice(1),
+            label: t(`settings.theme_${value}`),
             selected: theme.preference === value,
             onSelect: () => theme.setPreference(value),
           }))}
         />
       </SettingsRow>
-      <SettingsRow title="Language" description="Choose the language used throughout Harness">
+      <SettingsRow title={t('language.title')} description={t('language.description')}>
         <Dropdown
           outlined
           style={{ width: 116, justifyContent: 'space-between' }}
-          label={languages.find(([value]) => value === language)?.[1] ?? 'System'}
+          label={languages.find(([value]) => value === language)?.[1] ?? t('language.system')}
           items={languages.map(([value, label]) => ({
             id: value,
             label,
@@ -180,7 +183,10 @@ function Appearance() {
           }))}
         />
       </SettingsRow>
-      <SettingsRow title="UI font size" description="Text size across the interface and messages">
+      <SettingsRow
+        title={t('settings.ui_font_size')}
+        description={t('settings.ui_font_size_description')}
+      >
         <Dropdown
           outlined
           style={{ width: 116, justifyContent: 'space-between' }}
@@ -194,8 +200,8 @@ function Appearance() {
         />
       </SettingsRow>
       <SettingsRow
-        title="Code font size"
-        description="Text size in the file editor, diffs, code blocks, and tool output"
+        title={t('settings.code_font_size')}
+        description={t('settings.code_font_size_description')}
         last
       >
         <Dropdown
@@ -221,17 +227,17 @@ export function SettingsPage({
   onClose(): void;
 }) {
   const { colors, sp } = useTheme();
-  const text = useSettingsText();
+  useLocale();
   const window = useWindowSize();
   const project = useSelectedProject();
   const [current, setCurrent] = useState(page);
   const [query, setQuery] = useState('');
   useEffect(() => setCurrent(page), [page]);
-  const visible = settingsPages.filter(([, label]) =>
-    label.toLowerCase().includes(query.trim().toLowerCase()),
+  const visible = settingsPages.filter(([id]) =>
+    settingsPageKeywords(id).toLowerCase().includes(query.trim().toLowerCase()),
   );
   const cwd = project?.cwd ?? getAppStore().getSnapshot().initialized?.defaultCwd ?? '.';
-  const title = settingsPages.find(([id]) => id === current)?.[1] ?? 'General';
+  const title = settingsPageLabel(settingsPages.find(([id]) => id === current)?.[0] ?? 'general');
   return (
     <div
       style={{
@@ -267,11 +273,11 @@ export function SettingsPage({
           }}
         >
           <Icon name="arrow-left" size={15} />
-          {text('Back')}
+          {t('settings.back')}
         </Button>
         <TextField
           icon="search"
-          placeholder={text('Search Settings')}
+          placeholder={t('settings.search')}
           value={query}
           onChange={setQuery}
           style={{ marginTop: 8 }}
@@ -290,7 +296,7 @@ export function SettingsPage({
           }}
         />
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 18, gap: 3 }}>
-          {visible.map(([id, label, icon]) => (
+          {visible.map(([id, , icon]) => (
             <Button
               key={id}
               onClick={() => setCurrent(id)}
@@ -306,7 +312,7 @@ export function SettingsPage({
               }}
             >
               <Icon name={icon} size={15} />
-              {text(label)}
+              {settingsPageLabel(id)}
             </Button>
           ))}
         </div>
@@ -351,7 +357,7 @@ export function SettingsPage({
             <div
               style={{ width: '100%', maxWidth: current === 'usage' ? 1024 : 760, paddingTop: 2 }}
             >
-              <div style={{ fontSize: sp(18), fontWeight: 500 }}>{text(title)}</div>
+              <div style={{ fontSize: sp(18), fontWeight: 500 }}>{title}</div>
               {current === 'general' ? (
                 <General />
               ) : current === 'appearance' ? (

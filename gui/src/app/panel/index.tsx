@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { t, useLocale } from '../../i18n';
 import type { PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import {
@@ -38,15 +39,40 @@ const states = new Map<string, PanelState>();
 let serial = 0;
 let activeKey = '';
 const listeners = new Set<() => void>();
-const surfaceInfo: Record<PanelKind, { label: string; icon: IconName; description: string }> = {
-  browser: { label: 'Browser', icon: 'globe', description: 'Open a local app or URL' },
-  terminal: { label: 'Terminal', icon: 'terminal', description: 'Start a shell in this workspace' },
-  files: { label: 'Files', icon: 'folder', description: 'Browse and read workspace files' },
-  review: { label: 'Review', icon: 'file-diff', description: 'Review file changes' },
-  session: { label: 'Session', icon: 'info', description: 'Servers, modified files and runtime' },
-  todos: { label: 'Todos', icon: 'list', description: 'Track the latest task checklist' },
-  plan: { label: 'Plan', icon: 'file', description: 'Read workspace plans' },
-};
+function getSurfaceInfo(): Record<
+  PanelKind,
+  { label: string; icon: IconName; description: string }
+> {
+  return {
+    browser: {
+      label: t('right_panel.browser'),
+      icon: 'globe',
+      description: t('right_panel.browser_description'),
+    },
+    terminal: {
+      label: t('right_panel.terminal'),
+      icon: 'terminal',
+      description: t('right_panel.terminal_description'),
+    },
+    files: {
+      label: t('right_panel.files'),
+      icon: 'folder',
+      description: t('right_panel.files_description'),
+    },
+    review: {
+      label: t('right_panel.diff'),
+      icon: 'file-diff',
+      description: t('right_panel.diff_description'),
+    },
+    session: {
+      label: t('panel.session'),
+      icon: 'info',
+      description: t('panel.session_description'),
+    },
+    todos: { label: t('panel.todos'), icon: 'list', description: t('panel.todos_description') },
+    plan: { label: t('panel.plan'), icon: 'file', description: t('panel.plan_description') },
+  };
+}
 function currentState() {
   let state = states.get(activeKey);
   if (!state) {
@@ -126,6 +152,8 @@ export function RightPanel({
   sessionId: string | null;
   headerTrailing?: ReactNode;
 }) {
+  const locale = useLocale();
+  const surfaceInfo = getSurfaceInfo();
   const { colors, sp } = useTheme();
   const { showToast } = useToast();
   const [, update] = useState(0);
@@ -154,20 +182,20 @@ export function RightPanel({
     const cleanup = [
       registerAction({
         id: 'panel.close',
-        label: 'Close panel tab',
+        label: t('panel.close_tab'),
         enabled: () => currentState().active !== undefined,
         run: closeActivePanelTab,
       }),
       registerAction({
         id: 'panel.save',
-        label: 'Save file',
+        label: t('panel.save_file'),
         run: () => {
           void saveActivePanelFile().catch((error) => showToast(String(error)));
         },
       }),
       registerAction({
         id: 'git.commit',
-        label: 'Commit or push',
+        label: t('environment.commit_or_push'),
         run: () => {
           runAction('shell.showRightPanel');
           setCommit(true);
@@ -182,7 +210,7 @@ export function RightPanel({
       ),
     ];
     return () => cleanup.forEach((remove) => remove());
-  }, [showToast]);
+  }, [showToast, locale]);
   const changed = () => {
     notify();
   };
@@ -258,7 +286,7 @@ export function RightPanel({
                       {path?.split('/').pop() ?? info.label}
                     </text>
                     {dirty && (
-                      <Tooltip content="Unsaved changes — Ctrl+S to save">
+                      <Tooltip content={t('files.unsaved_changes', { shortcut: 'Ctrl+S' })}>
                         <div
                           style={{
                             width: 7,
@@ -334,7 +362,7 @@ export function RightPanel({
         <IconButton
           name="panel-right"
           size={14}
-          label="Hide right panel"
+          label={t('right_panel.hide')}
           style={{ width: 26, height: 26 }}
           onClick={() => runAction('shell.hideRightPanel')}
         />
@@ -356,10 +384,10 @@ export function RightPanel({
           }}
         >
           <text style={{ color: colors.text, fontSize: sp(13), fontWeight: 500 }}>
-            Open a surface
+            {t('right_panel.open_surface')}
           </text>
           <text style={{ color: colors.text_tertiary, fontSize: sp(12.5), marginTop: 5 }}>
-            Choose what to show in the right panel
+            {t('right_panel.choose_surface')}
           </text>
           <div
             style={{

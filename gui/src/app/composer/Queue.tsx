@@ -1,3 +1,4 @@
+import { t, useLocale } from '../../i18n';
 import { useTheme } from '../../theme';
 import { Button, Dropdown, Icon, IconButton, Tooltip } from '../../ui';
 import type { Draft } from '../../store/store';
@@ -17,6 +18,7 @@ export function Queue({
   onRemove: (id: string) => void;
   onSteer: (item: FollowUp) => void;
 }) {
+  useLocale();
   const { colors, sp } = useTheme();
   if (!items.length) return null;
   return (
@@ -54,7 +56,7 @@ export function Queue({
         >
           <Icon name="queue" size={12} />
           <div style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
-            <Tooltip content="Edit in composer">
+            <Tooltip content={t('composer.edit_in_composer')}>
               <Button
                 onClick={() => onEdit(item)}
                 style={{
@@ -88,10 +90,10 @@ export function Queue({
               </Button>
             </Tooltip>
           </div>
-          <Tooltip content="Remove from queue">
+          <Tooltip content={t('composer.remove_followup')}>
             <IconButton
               name="trash"
-              label="Remove from queue"
+              label={t('composer.remove_followup')}
               size={12}
               style={{ width: 24, height: 24 }}
               onClick={() => onRemove(item.id)}
@@ -100,26 +102,26 @@ export function Queue({
           <Dropdown
             icon="ellipsis"
             label=""
-            aria-label="Follow-up actions"
+            aria-label={t('composer.queued_message_actions')}
             chevron={false}
             style={{ width: 24, height: 24, paddingLeft: 4, paddingRight: 4 }}
             items={[
               {
                 id: 'edit',
-                label: 'Edit in composer',
+                label: t('composer.edit_in_composer'),
                 icon: 'pencil',
                 onSelect: () => onEdit(item),
               },
               {
                 id: 'steer',
-                label: 'Steer current turn',
+                label: t('composer.steer_current'),
                 icon: 'corner-down-right',
                 disabled: !canSteerDraft(item.draft),
                 onSelect: () => onSteer(item),
               },
               {
                 id: 'remove',
-                label: 'Remove from queue',
+                label: t('composer.remove_followup'),
                 icon: 'trash',
                 onSelect: () => onRemove(item.id),
               },

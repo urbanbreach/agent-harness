@@ -1,5 +1,6 @@
 import type { UsageAggregate, UsageHistory } from '../../backend/extensions';
 import type { Project } from '../../store';
+import { t } from '../../i18n';
 
 function mergeRows(rows: UsageAggregate[]): UsageAggregate[] {
   const grouped = new Map<string, UsageAggregate>();
@@ -49,7 +50,8 @@ export function groupProjects(rows: UsageAggregate[], projects: Project[]): Usag
       const root = roots.find((root) => root.cwd === row.key);
       return {
         ...row,
-        key: root?.name ?? row.project?.split('/').filter(Boolean).at(-1) ?? 'Other sessions',
+        key:
+          root?.name ?? row.project?.split('/').filter(Boolean).at(-1) ?? t('usage.other_sessions'),
       };
     })
     .sort((a, b) => b.knownCostUsd - a.knownCostUsd || b.totalTokens - a.totalTokens);

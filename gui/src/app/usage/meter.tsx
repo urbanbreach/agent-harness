@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DismissableLayer, useGpuix, type PublicInstance } from '@gpuix/react';
 import type { Methods } from '../../backend/protocol';
 import { getAppStore, useSessionView, useStore } from '../../store';
@@ -8,13 +8,17 @@ import { row, ellipsis } from '../../ui/controls';
 import { openUrl } from '../../workspace/os';
 import { registerAction, runAction } from '../actions';
 import { Pulse } from './pulse';
+import { t, useLocale } from '../../i18n';
 
 type Plan = Methods['usage.subscription']['result'];
-const compact = (n: number) =>
-  Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 const bounded = (n: number) => Math.max(0, Math.min(100, n));
 
 export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: string | null }) {
+  const locale = useLocale();
+  const compact = useMemo(
+    () => Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format,
+    [locale],
+  );
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const view = useSessionView(sessionId ?? undefined);
@@ -58,7 +62,7 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
       .then((result) => {
         if (current === generation.current) {
           if (result.status === 'error') {
-            setError(result.message ?? 'Usage request failed');
+            setError(result.message ?? t('settings.usage_request_failed'));
           } else {
             setPlan(result);
             setError(undefined);
@@ -94,10 +98,10 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
     runAction('composer.focus');
   };
   const tooltip = error
-    ? `Usage refresh failed: ${error}`
+    ? t('usage.refresh_failed', { error })
     : percent === undefined
-      ? 'Usage (Ctrl+U)'
-      : `Context window ${Math.round(percent)}% used (Ctrl+U)`;
+      ? t('usage.shortcut', { shortcut: 'Ctrl+U' })
+      : t('usage.context_used', { percent: Math.round(percent), shortcut: 'Ctrl+U' });
   const circumference = Math.PI * 10.5;
   const ring = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 13 13"><circle cx="6.5" cy="6.5" r="5.25" fill="none" stroke="${colors.border_strong}" stroke-width="2.5"/>${percent === undefined ? '' : `<circle cx="6.5" cy="6.5" r="5.25" fill="none" stroke="${color(percent)}" stroke-width="2.5" stroke-dasharray="${(circumference * Math.max(5, percent)) / 100} ${circumference}" transform="rotate(-90 6.5 6.5)"/>`}</svg>`;
   const accountUrl = /claude|anthropic/i.test(provider)
@@ -169,7 +173,7 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
               ref={card}
               tabIndex={-1}
               role="dialog"
-              aria-label="Usage"
+              aria-label={t('settings.usage')}
               onMouseDownOutside={(e) => {
                 const b = trigger.current && renderer?.getElementBounds?.(trigger.current.id);
                 if (
@@ -207,7 +211,7 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 <div style={{ ...row, gap: 8 }}>
-                  <text style={{ flexGrow: 1 }}>Context window</text>
+                  <text style={{ flexGrow: 1 }}>{t('usage.context_window')}</text>
                   <text style={{ color: colors.text_tertiary }}>
                     {capacity && capacity > 0
                       ? `${compact(Math.min(used, capacity))} / ${compact(capacity)} (${Math.round(percent!)}%)`
@@ -217,7 +221,7 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
                 {bar(percent ?? 0)}
                 {threshold != null && threshold > 0 && (
                   <text style={{ color: colors.text_tertiary }}>
-                    {`Auto-compaction threshold · ${compact(threshold)} tokens`}
+                    {t('settings.usage_compaction_threshold', { count: compact(threshold) })}
                   </text>
                 )}
               </div>
@@ -244,12 +248,14 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
                       <>
                         <div style={{ ...row, gap: 6 }}>
                           <text style={{ ...ellipsis, flexGrow: 1, color: colors.text_tertiary }}>
-                            {`Plan usage limits${plan?.plan ? ` · ${plan.plan}` : ''}`}
+                            {plan?.plan
+                              ? t('usage.plan_limits_named', { plan: plan.plan })
+                              : t('usage.plan_limits')}
                           </text>
                           {accountUrl && (
-                            <Tooltip content="Open account usage settings">
+                            <Tooltip content={t('settings.usage_open_account_settings')}>
                               <Button
-                                aria-label="Open account usage settings"
+                                aria-label={t('settings.usage_open_account_settings')}
                                 onClick={() =>
                                   void openUrl(accountUrl).catch((reason) =>
                                     setError(String(reason)),
@@ -264,7 +270,7 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
                         </div>
                         {plan?.status !== 'available' && error ? (
                           <text style={{ color: colors.text_secondary, whiteSpace: 'normal' }}>
-                            {`Unavailable — ${error}`}
+                            {t('usage.unavailable', { error })}
                           </text>
                         ) : (
                           windows.map((window, i) => (
@@ -275,9 +281,13 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
                               <div style={{ ...row, gap: 8 }}>
                                 <text style={{ ...ellipsis, flexGrow: 1 }}>{window.label}</text>
                                 {window.resetsAt && (
-                                  <Tooltip content={new Date(window.resetsAt).toLocaleString()}>
+                                  <Tooltip
+                                    content={new Date(window.resetsAt).toLocaleString(
+                                      locale === 'en' ? undefined : locale,
+                                    )}
+                                  >
                                     <text style={{ color: colors.text_tertiary }}>
-                                      {resetCaption(window.resetsAt)}
+                                      {resetCaption(window.resetsAt, locale)}
                                     </text>
                                   </Tooltip>
                                 )}
@@ -301,10 +311,14 @@ export function UsageMeter({ sessionId, cwd }: { sessionId: string | null; cwd: 
     </div>
   );
 }
-function resetCaption(value: string) {
+function resetCaption(value: string, locale: string) {
   const remaining = Math.max(0, new Date(value).getTime() - Date.now());
-  if (remaining < 60_000) return 'Resets now';
-  if (remaining < 3_600_000) return `Resets in ${Math.ceil(remaining / 60_000)}m`;
-  if (remaining < 86_400_000) return `Resets in ${Math.ceil(remaining / 3_600_000)}h`;
-  return `Resets ${new Date(value).toLocaleDateString('en', { month: 'short', day: 'numeric' })}`;
+  if (remaining < 60_000) return t('settings.usage_resets_now');
+  if (remaining < 3_600_000)
+    return t('settings.usage_resets_minutes', { count: Math.ceil(remaining / 60_000) });
+  if (remaining < 86_400_000)
+    return t('settings.usage_resets_hours', { count: Math.ceil(remaining / 3_600_000) });
+  return t('usage.resets_date', {
+    date: new Date(value).toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
+  });
 }
