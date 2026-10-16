@@ -1,0 +1,14 @@
+diff --git a/packages/native/src/custom_elements/input.rs b/packages/native/src/custom_elements/input.rs
+--- a/packages/native/src/custom_elements/input.rs
++++ b/packages/native/src/custom_elements/input.rs
+@@ -274,4 +274,10 @@
+         ),
+     ]);
++    if !word_navigation_uses_alt {
++        bindings.extend([
++            KeyBinding::new("shift-alt-left", SelectWordLeft, context),
++            KeyBinding::new("shift-alt-right", SelectWordRight, context),
++        ]);
++    }
+     for prefix in ["cmd", "ctrl"] {
+         bindings.extend([

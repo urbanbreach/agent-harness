@@ -1,0 +1,69 @@
+diff --git a/packages/native/src/renderer.rs b/packages/native/src/renderer.rs
+--- a/packages/native/src/renderer.rs
++++ b/packages/native/src/renderer.rs
+@@ -4041,13 +4041,10 @@
+         let tree_arc = self.tree.clone();
+         let tree = tree_arc.lock().unwrap();
+-        let window_start = self
+-            .virtual_lists
+-            .get(&list_id)
+-            .map(|entry| entry.window_start)
+-            .unwrap_or(0);
+-        let child_matches = tree.elements.get(&list_id).and_then(|list| {
+-            index
+-                .checked_sub(window_start)
+-                .and_then(|offset| list.children.get(offset))
+-        }) == Some(&expected_child_id);
++        // A commit can insert siblings between root render and row layout.
++        // Render this frame's row by identity: replacing a moved, still-mounted
++        // row with a short placeholder can underfill and erase the scroll anchor.
++        let child_matches = tree
++            .elements
++            .get(&expected_child_id)
++            .is_some_and(|child| child.parent == Some(list_id));
+         if !child_matches {
+@@ -7700,6 +7697,44 @@
+     gpui_options
+ }
+ 
++#[cfg(all(test, feature = "test-support"))]
++mod virtual_row_tests {
++    use super::*;
++    use gpui::IntoElement;
++
++    #[gpui::test]
++    fn a_row_shifted_between_root_render_and_layout_keeps_its_real_height(
++        cx: &mut gpui::TestAppContext,
++    ) {
++        let cx = cx.add_empty_window();
++        let mut tree = RetainedTree::new();
++        tree.create_element(1, "virtual-list".to_string());
++        tree.create_element(2, "div".to_string());
++        tree.set_style(2, Arc::new(serde_json::from_value(serde_json::json!({
++            "height": 1000,
++        })).unwrap()));
++        tree.append_child(1, 2);
++        // Root render captured row 2 at index 0 before the next JS commit.
++        tree.create_element(3, "div".to_string());
++        tree.insert_before(1, 3, 2);
++        let tree = Arc::new(Mutex::new(tree));
++        cx.draw(gpui::point(gpui::px(0.), gpui::px(0.)), gpui::size(gpui::px(100.), gpui::px(200.)), |window, cx| {
++            let view = cx.new(|_| GpuixView::new(
++                tree.clone(), None, String::new(), SharedSelection::default(),
++            ));
++            let mut row = view.update(cx, |view, cx| view.build_virtual_child(
++                1, 0, 2, Inherited::root(&Theme::dark()), window, cx,
++            ));
++            let size = row.layout_as_root(
++                gpui::size(gpui::AvailableSpace::Definite(gpui::px(100.)), gpui::AvailableSpace::MinContent),
++                window, cx,
++            );
++            assert_eq!(size.height, gpui::px(1000.), "a mounted row must not become a placeholder when siblings move");
++            gpui::Empty.into_any_element()
++        });
++    }
++}
++
+ #[cfg(test)]
+ mod highlight_cache_tests {
+     use super::*;

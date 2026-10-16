@@ -1,0 +1,79 @@
+diff --git a/packages/native/src/custom_elements/input.rs b/packages/native/src/custom_elements/input.rs
+--- a/packages/native/src/custom_elements/input.rs
++++ b/packages/native/src/custom_elements/input.rs
+@@ -466,3 +466,4 @@
+                     selected_range: cursor..cursor,
+                     selection_reversed: false,
++                    vertical_x: None,
+                     marked_range: None,
+@@ -889,2 +890,3 @@
+     caret_width: Pixels,
++    vertical_x: Option<Pixels>,
+     scroll_bottom_inset: f32,
+@@ -1084,2 +1086,3 @@
+     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
++        self.vertical_x = None;
+         let offset = offset.min(self.content.len());
+@@ -1093,2 +1096,3 @@
+     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
++        self.vertical_x = None;
+         let offset = offset.min(self.content.len());
+@@ -1211,11 +1215,7 @@
+     fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+-        if let Some(offset) = self.vertical_target(-1.0) {
+-            self.move_to(offset, cx);
+-        }
++        self.navigate_vertical(-1.0, false, cx);
+     }
+ 
+     fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+-        if let Some(offset) = self.vertical_target(1.0) {
+-            self.move_to(offset, cx);
+-        }
++        self.navigate_vertical(1.0, false, cx);
+     }
+@@ -1231,14 +1231,11 @@
+     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+-        if let Some(offset) = self.vertical_target(-1.0) {
+-            self.select_to(offset, cx);
+-        }
++        self.navigate_vertical(-1.0, true, cx);
+     }
+ 
+     fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+-        if let Some(offset) = self.vertical_target(1.0) {
+-            self.select_to(offset, cx);
+-        }
++        self.navigate_vertical(1.0, true, cx);
+     }
+ 
+     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
++        self.vertical_x = None;
+         self.selected_range = 0..self.content.len();
+@@ -1425,2 +1422,18 @@
++    fn navigate_vertical(&mut self, direction: f32, extend: bool, cx: &mut Context<Self>) {
++        let Some(current) = self.point_for_index(self.cursor_offset()) else {
++            return;
++        };
++        let desired = self.vertical_x.unwrap_or(current.x);
++        self.vertical_x = Some(desired);
++        if let Some(offset) = self.vertical_target(direction) {
++            if extend {
++                self.select_to(offset, cx);
++            } else {
++                self.move_to(offset, cx);
++            }
++            self.vertical_x = Some(desired);
++        }
++    }
++
+     fn vertical_target(&self, direction: f32) -> Option<usize> {
+         let current = self.point_for_index(self.cursor_offset())?;
+@@ -1434,2 +1448,2 @@
+-        Some(self.index_for_point(point(current.x, px(target_y))))
++        Some(self.index_for_point(point(self.vertical_x.unwrap_or(current.x), px(target_y))))
+     }
+@@ -1849,2 +1863,3 @@
+     ) {
++        self.vertical_x = None;
+         if self.read_only {
