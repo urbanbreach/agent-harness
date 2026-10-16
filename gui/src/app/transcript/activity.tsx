@@ -16,6 +16,7 @@ import { Scrollbar } from '../../ui/scrollbar';
 import { openPanelFile } from '../panel/index';
 import { runAction } from '../actions';
 import { highlightCode } from '../../syntax';
+import type { IconName } from '../../ui';
 
 const column: StyleDesc = {
   display: 'flex',
@@ -161,7 +162,7 @@ function CopySection({
             color: colors.text_secondary,
             fontFamily: label === 'Command' || command ? CODE_FONT_FAMILY : undefined,
             fontWeight: 500,
-            fontSize: sp(12.5),
+            fontSize: label === 'Command' || command ? codeFontSize : sp(12.5),
           }}
         >
           {label}
@@ -205,7 +206,7 @@ function ActivityCard({
 }: {
   action: string;
   detail: string;
-  icon: string;
+  icon: IconName;
   children?: ReactNode;
   defaultOpen?: boolean;
   failed?: boolean;
@@ -242,6 +243,7 @@ function ActivityCard({
             onClick={() => setOverride(!open)}
             style={{
               ...row,
+              borderWidth: 0,
               flexGrow: 1,
               minWidth: 0,
               justifyContent: 'flex-start',
@@ -531,11 +533,11 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
                   ...row,
                   fontFamily: CODE_FONT_FAMILY,
                   fontSize: codeFontSize,
-                  lineHeight: Math.round(codeFontSize * 3) / 2,
+                  lineHeight: Math.round(codeFontSize * 1.5),
                   backgroundColor:
                     line.kind === '+'
                       ? colors.is_dark
-                        ? '#344a37'
+                        ? '#2e4335'
                         : '#d7ecd7'
                       : line.kind === '-'
                         ? colors.is_dark
@@ -553,7 +555,7 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
               >
                 <text
                   style={{
-                    width: 52,
+                    width: 51,
                     paddingRight: 10,
                     textAlign: 'right',
                     color:
@@ -562,6 +564,8 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
                         : line.kind === '-'
                           ? colors.danger
                           : colors.text_tertiary,
+                    borderRightWidth: 1,
+                    borderColor: colors.border,
                   }}
                 >
                   {line.number}
@@ -615,12 +619,12 @@ function DiffCounts({ files }: { files: ToolDiffFile[] }) {
   )
     return null;
   return (
-    <div style={{ ...row, gap: 6, fontSize: sp(12.5), flexShrink: 0 }}>
+    <div style={{ ...row, gap: 8, fontSize: sp(12.5), flexShrink: 0 }}>
       <text style={{ color: colors.success, whiteSpace: 'nowrap' }}>
         {`+${files.reduce((sum, file) => sum + file.additions!, 0)}`}
       </text>
       <text style={{ color: colors.danger, whiteSpace: 'nowrap' }}>
-        {`−${files.reduce((sum, file) => sum + file.deletions!, 0)}`}
+        {`-${files.reduce((sum, file) => sum + file.deletions!, 0)}`}
       </text>
     </div>
   );
@@ -632,8 +636,8 @@ function OpenFile({ path }: { path: string }) {
       <IconButton
         name="file-bottom-left-arrow"
         label={`Open file ${path}`}
-        size={14}
-        style={{ width: 20, height: 20, borderRadius: 5, marginRight: 6 }}
+        size={12}
+        style={{ width: 20, height: 20, borderRadius: 5, marginLeft: 6, marginRight: 10 }}
         onClick={() => openPanelFile(path)}
       />
     </Tooltip>
@@ -826,7 +830,13 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
             </div>
           )}
           {files.length > 0 && (
-            <div style={{ ...column, borderTopWidth: 1, borderColor: colors.border_strong }}>
+            <div
+              style={{
+                ...column,
+                borderTopWidth: !suppressRaw || server ? 1 : 0,
+                borderColor: colors.border_strong,
+              }}
+            >
               <InlineDiff files={files} />
             </div>
           )}
@@ -947,6 +957,7 @@ export function ActivityGroup({
         onClick={() => setOverride(!open)}
         style={{
           ...row,
+          borderWidth: 0,
           justifyContent: 'flex-start',
           width: '100%',
           height: 26,

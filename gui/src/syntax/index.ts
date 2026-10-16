@@ -62,6 +62,7 @@ const scopes: Record<string, Token> = {
   title: 'type',
   class: 'type',
   function: 'type',
+  function_call: 'plain',
   comment: 'comment',
   doctag: 'comment',
   meta: 'meta',
@@ -190,7 +191,18 @@ for (const [language, words] of Object.entries(labels)) {
 const highlighter = hljs.newInstance();
 highlighter.configure({ __emitter: RangeEmitter });
 for (const [name, grammar] of Object.entries(languages)) {
-  highlighter.registerLanguage(name, grammar);
+  highlighter.registerLanguage(name, (api) => {
+    const language = grammar(api);
+    if (name === 'javascript' || name === 'typescript') {
+      // These grammars share a title scope for declarations and invocations.
+      // Preserve named declarations while keeping ordinary calls in code ink.
+      for (const mode of language.contains ?? []) {
+        if (mode !== 'self' && mode.className === 'title.function' && mode.match)
+          mode.className = 'function_call';
+      }
+    }
+    return language;
+  });
 }
 
 // The stock Markdown grammar treats fenced contents as opaque code. Give known

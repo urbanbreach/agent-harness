@@ -24,7 +24,7 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
   if (checkpoint?.state !== 'ready' || !checkpoint.files.length) return null;
   const count = checkpoint.files.length;
   const files = checkpoint.files.slice(0, expanded ? 12 : 3);
-  const textStyle = { fontSize: sp(12.5), lineHeight: sp(18) };
+  const textStyle = { fontSize: sp(12.5), lineHeight: sp(20) };
   return (
     <div
       style={{
@@ -62,13 +62,13 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
         >
           <Icon name="file-diff" size={16} color={colors.text_secondary} />
         </div>
-        <div style={{ minWidth: 0, flexGrow: 1, gap: 0 }}>
+        <div style={{ minWidth: 0, flexGrow: 1, gap: 0, position: 'relative', top: 2 }}>
           <div style={{ ...textStyle, fontWeight: 500, color: colors.text }}>
             {t(count === 1 ? 'transcript.changed_file' : 'transcript.changed_files', { count })}
           </div>
           <div style={{ ...row, ...textStyle, gap: 6 }}>
             <div style={{ color: colors.success }}>{`+${checkpoint.additions}`}</div>
-            <div style={{ color: colors.danger }}>{`−${checkpoint.deletions}`}</div>
+            <div style={{ color: colors.danger }}>{`-${checkpoint.deletions}`}</div>
           </div>
         </div>
         <Button
@@ -107,7 +107,7 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
               <div style={{ color: colors.success, flexShrink: 0 }}>{`+${file.additions}`}</div>
             )}
             {file.deletions !== undefined && (
-              <div style={{ color: colors.danger, flexShrink: 0 }}>{`−${file.deletions}`}</div>
+              <div style={{ color: colors.danger, flexShrink: 0 }}>{`-${file.deletions}`}</div>
             )}
           </div>
         ))}

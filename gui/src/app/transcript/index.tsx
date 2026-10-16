@@ -5,7 +5,7 @@ import { emptySessionView } from '../../model/session';
 import { nativeRenderer } from '../../native';
 import { parseMarkdown, type MarkdownBlock } from '../../markdown';
 import { useTheme } from '../../theme';
-import { Button, Icon, IconButton } from '../../ui';
+import { Button, Icon, IconButton, TextField } from '../../ui';
 import { registerAction } from '../actions';
 import { transcriptRows, duration } from './rows';
 import { ActivityGroup } from './activity';
@@ -406,15 +406,29 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                     style={{ height: 24, width: '100%', gap: 10 }}
                   >
                     <div style={{ height: 1, flexGrow: 1, backgroundColor: colors.border }} />
-                    <text
-                      style={{ color: colors.text_tertiary, fontSize: sp(13.5), fontWeight: '500' }}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 5,
+                        flexShrink: 0,
+                      }}
                     >
-                      {`${row.turn.status === 'interrupted' ? 'You stopped after' : 'Worked for'} ${duration(row.turn.durationMs ?? (row.turn.endedMs ?? row.turn.startedMs) - row.turn.startedMs)}`}
-                    </text>
-                    <Icon
-                      name={expanded.has(row.turn.id) ? 'chevron-down' : 'chevron-right'}
-                      size={11.5}
-                    />
+                      <text
+                        style={{
+                          color: colors.text_tertiary,
+                          fontSize: sp(13.5),
+                          fontWeight: '500',
+                        }}
+                      >
+                        {`${row.turn.status === 'interrupted' ? 'You stopped after' : 'Worked for'} ${duration(row.turn.durationMs ?? (row.turn.endedMs ?? row.turn.startedMs) - row.turn.startedMs)}`}
+                      </text>
+                      <Icon
+                        name={expanded.has(row.turn.id) ? 'chevron-down' : 'chevron-right'}
+                        size={11.5}
+                      />
+                    </div>
                     <div style={{ height: 1, flexGrow: 1, backgroundColor: colors.border }} />
                   </Button>
                 )}
@@ -585,6 +599,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
         <IconButton
           name="arrow-down"
           size={16}
+          color={colors.text}
           label="Scroll to bottom"
           onClick={followTail}
           style={{
@@ -618,11 +633,12 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
             backgroundColor: colors.raised,
           }}
         >
-          <input
+          <TextField
             ref={input}
             value={query}
             placeholder="Find"
-            onChange={(event) => setQuery(event.value ?? '')}
+            onChange={setQuery}
+            interceptedKeys={['enter', 'shift-enter', 'escape']}
             onKeyDown={(event) => {
               if (event.key?.toLowerCase() === 'enter') {
                 event.preventDefault();
@@ -634,13 +650,14 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
             }}
             style={{
               width: Math.max(104, Math.max(260, Math.min(430, width - 24)) - 154),
+              flexShrink: 0,
               color: colors.text,
               fontSize: sp(13),
             }}
           />
           <text
             style={{
-              minWidth: 62,
+              minWidth: 48,
               flexGrow: 1,
               color: query && !matches.length ? colors.danger : colors.text_tertiary,
               fontSize: sp(12.5),

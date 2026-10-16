@@ -158,7 +158,7 @@ export function ResponseFooter({
           {
             id: 'fork',
             label: busy ? 'Forking Task…' : 'Fork Task',
-            icon: 'fork',
+            icon: 'fork' as const,
             disabled: busy,
             onSelect: () => void fork(),
           },
@@ -169,7 +169,7 @@ export function ResponseFooter({
           {
             id: 'undo',
             label: 'Undo file changes',
-            icon: 'rewind',
+            icon: 'rewind' as const,
             onSelect: () => {
               void getAppStore()
                 .sendIntent(sessionId, {
@@ -357,7 +357,7 @@ export function UserMessage({
             {
               id: 'rewind',
               label: 'Revert to Here',
-              icon: 'rewind',
+              icon: 'rewind' as const,
               onSelect: () => {
                 setValue(entry.text);
                 setEditing(true);
@@ -610,7 +610,7 @@ export function AssistantMessage({
             {
               id: 'fork',
               label: 'Fork Task',
-              icon: 'fork',
+              icon: 'fork' as const,
               onSelect: () => {
                 runAction(`session.fork:${turnId}`);
               },
@@ -622,7 +622,7 @@ export function AssistantMessage({
             {
               id: 'undo',
               label: 'Undo file changes',
-              icon: 'rewind',
+              icon: 'rewind' as const,
               onSelect: () => {
                 void getAppStore().sendIntent(sessionId, {
                   kind: 'revertWorkspace',

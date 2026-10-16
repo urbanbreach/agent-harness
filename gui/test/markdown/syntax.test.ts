@@ -18,9 +18,11 @@ test('code colors preserve UTF-16 text, aliases, embedded fences and unfinished 
     },
     {
       language: 'NoDe extra-info',
-      text: 'const face = "😀<&>";\nconst tail = `open\nstill 😀<&>',
+      text: 'function release() { console.log("ready"); }\nconst face = "😀<&>";\nconst tail = `open\nstill 😀<&>',
       samples: [
         ['const', '#9A4B92', '#C98BC0'],
+        ['release', '#2F6690', '#8FB8D9'],
+        ['log', '#666666', '#A3A3A3'],
         ['😀<&>', '#3F7A36', '#94C08A'],
         ['still 😀<&>', '#3F7A36', '#94C08A'],
       ],

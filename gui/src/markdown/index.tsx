@@ -15,6 +15,7 @@ import type { NativeEvent, Run } from '../native';
 import { Button, Tooltip } from '../ui/controls';
 import { Menu } from '../ui/menus';
 import type { MenuItem } from '../ui/menus';
+import type { IconName } from '../ui/icon-names';
 import { t } from '../i18n';
 import { highlightCode } from '../syntax';
 import { parseMarkdown } from './parse';
@@ -69,7 +70,7 @@ const column: StyleDesc = {
 const row: StyleDesc = { display: 'flex', flexDirection: 'row', minWidth: 0 };
 
 /** Markdown ornaments stay fixed-size when UI typography changes. */
-function Icon({ name, size, color }: { name: string; size: number; color: string }) {
+function Icon({ name, size, color }: { name: IconName; size: number; color: string }) {
   return (
     <svg
       src={new URL(`../../assets/icons/${name}.svg`, import.meta.url).pathname}
