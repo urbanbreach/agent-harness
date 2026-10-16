@@ -1,0 +1,41 @@
+{
+  "projects": [
+    { "id": "atlas", "name": "atlas", "cwd": "/tmp/harness-panel-repos/atlas" },
+    { "id": "harbor", "name": "harbor", "cwd": "/tmp/harness-panel-repos/harbor" }
+  ],
+  "sessions": [],
+  "state": {
+    "layout": { "selectedProject": "atlas" },
+    "preferences": { "lastAccessMode": "full" },
+    "ui": { "appearance": { "preference": "dark", "uiFontSize": 14, "codeFontSize": 13 } }
+  },
+  "extensions": {
+    "models.catalog": {
+      "current": {
+        "profile": "default",
+        "provider": "openai",
+        "providerLabel": "OpenAI",
+        "model": "gpt-6.1-sol",
+        "modelLabel": "GPT-6.1-Sol",
+        "variant": "low",
+        "variantLabel": "Low",
+        "label": "GPT-6.1-Sol",
+        "reasoningEffort": "low"
+      },
+      "models": [
+        {
+          "profile": "default",
+          "provider": "openai",
+          "providerLabel": "OpenAI",
+          "model": "gpt-6.1-sol",
+          "modelLabel": "GPT-6.1-Sol",
+          "variant": "low",
+          "variantLabel": "Low",
+          "label": "GPT-6.1-Sol",
+          "reasoningEffort": "low"
+        }
+      ],
+      "profiles": ["default"]
+    }
+  }
+}

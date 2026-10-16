@@ -32,7 +32,7 @@ export interface MenuProps {
   restoreFocusId?: number;
   ignoreOutsideId?: number;
   position?: { x: number; y: number };
-  side?: 'bottom' | 'right';
+  side?: 'top' | 'bottom' | 'right';
   flyout?: boolean;
   onReturn?: () => void;
 }
@@ -267,14 +267,20 @@ export function Menu({
                   fontWeight: item.selected ? 500 : 400,
                 }}
               >
-                {item.icon && <Icon name={item.icon} size={12} />}
-                <text style={{ ...ellipsis, flexGrow: 1 }}>{item.label}</text>
-                {item.value && <text style={{ color: colors.text_tertiary }}>{item.value}</text>}
-                {item.shortcut && (
-                  <text style={{ color: colors.text_tertiary }}>{item.shortcut}</text>
+                {item.content ?? (
+                  <>
+                    {item.icon && <Icon name={item.icon} size={12} />}
+                    <text style={{ ...ellipsis, flexGrow: 1 }}>{item.label}</text>
+                    {item.value && (
+                      <text style={{ color: colors.text_tertiary }}>{item.value}</text>
+                    )}
+                    {item.shortcut && (
+                      <text style={{ color: colors.text_tertiary }}>{item.shortcut}</text>
+                    )}
+                    {item.selected && <Icon name="check" size={11} />}
+                    {item.items && <Icon name="chevron-right" size={10} />}
+                  </>
                 )}
-                {item.selected && <Icon name="check" size={11} />}
-                {item.items && <Icon name="chevron-right" size={10} />}
                 {item.items && submenu === item.id && !flyout && (
                   <Menu
                     items={item.items}
@@ -302,12 +308,14 @@ export interface DropdownProps extends Omit<MenuChipProps, 'onClick' | 'open'> {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   menuStyle?: StyleDesc;
+  menuSide?: MenuProps['side'];
 }
 export function Dropdown({
   items,
   open: controlled,
   onOpenChange,
   menuStyle,
+  menuSide,
   disabled,
   ...props
 }: DropdownProps) {
@@ -331,6 +339,7 @@ export function Dropdown({
         <Menu
           items={items}
           style={menuStyle}
+          side={menuSide}
           restoreFocusId={trigger.current?.id}
           onClose={() => change(false)}
         />

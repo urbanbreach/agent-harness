@@ -1,18 +1,20 @@
 import { useTheme } from '../theme';
 import { Button, Icon } from '../ui';
 import { t } from '../i18n';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 export function Welcome({
   selectedProject,
   onOpenProject,
   onProjectless,
   onProjectSelector,
+  projectSelector,
 }: {
   selectedProject?: { name: string; projectless?: boolean } | null;
   onOpenProject(): void;
   onProjectless(): void;
   onProjectSelector?(): void;
+  projectSelector?: ReactNode;
 }) {
   const { colors, sp } = useTheme();
   const noProject = selectedProject == null;
@@ -129,27 +131,29 @@ export function Welcome({
           </text>
           {!selectedProject.projectless && (
             <>
-              <Button
-                onLayout={(event) => setSelectorWidth(event.width ?? 0)}
-                onClick={onProjectSelector}
-                style={{ position: 'relative', cursor: 'default' }}
-              >
-                <text style={{ color: colors.text, fontSize: sp(20), fontWeight: 500 }}>
-                  {selectedProject.name}
-                </text>
-                {selectorWidth > 0 && (
-                  <svg
-                    source={`<svg xmlns="http://www.w3.org/2000/svg" width="${selectorWidth}" height="1"><path d="M0 .5H${selectorWidth}" stroke="black" stroke-dasharray="1 2"/></svg>`}
-                    style={{
-                      position: 'absolute',
-                      bottom: 0.5,
-                      width: selectorWidth,
-                      height: 1,
-                      color: colors.text_tertiary,
-                    }}
-                  />
-                )}
-              </Button>
+              {projectSelector ?? (
+                <Button
+                  onLayout={(event) => setSelectorWidth(event.width ?? 0)}
+                  onClick={onProjectSelector}
+                  style={{ position: 'relative', cursor: 'default' }}
+                >
+                  <text style={{ color: colors.text, fontSize: sp(20), fontWeight: 500 }}>
+                    {selectedProject.name}
+                  </text>
+                  {selectorWidth > 0 && (
+                    <svg
+                      source={`<svg xmlns="http://www.w3.org/2000/svg" width="${selectorWidth}" height="1"><path d="M0 .5H${selectorWidth}" stroke="black" stroke-dasharray="1 2"/></svg>`}
+                      style={{
+                        position: 'absolute',
+                        bottom: 0.5,
+                        width: selectorWidth,
+                        height: 1,
+                        color: colors.text_tertiary,
+                      }}
+                    />
+                  )}
+                </Button>
+              )}
               <text style={{ color: colors.text, fontSize: sp(20), fontWeight: 500 }}>
                 {t('welcome.question')}
               </text>

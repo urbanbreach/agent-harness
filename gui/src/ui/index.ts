@@ -10,6 +10,8 @@ export {
   Kbd,
   Spinner,
   Tooltip,
+  row,
+  ellipsis,
 } from './controls';
 export type {
   ButtonProps,

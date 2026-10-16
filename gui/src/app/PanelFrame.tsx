@@ -10,6 +10,7 @@ export function Panel({
   onResize,
   onDraggingChange,
   resizing = false,
+  keepMounted = false,
 }: {
   side: 'left' | 'right';
   width: number;
@@ -18,6 +19,7 @@ export function Panel({
   onResize(width: number): void;
   onDraggingChange?(dragging: boolean): void;
   resizing?: boolean;
+  keepMounted?: boolean;
 }) {
   const { colors, reducedMotion } = useTheme();
   const [painted, setPainted] = useState(visible ? width : 0);
@@ -43,7 +45,8 @@ export function Panel({
     }, 16);
     return () => clearInterval(timer);
   }, [visible, width, reducedMotion, resizing, dragging]);
-  if (painted <= 0.01 && !visible) return null;
+  const hidden = painted <= 0.01 && !visible;
+  if (hidden && !keepMounted) return null;
   const down = (event: EventPayload) => {
     if (event.button !== 0) return;
     drag.current = { x: event.x ?? 0, width: current.current };
@@ -53,7 +56,15 @@ export function Panel({
     setHover(true);
   };
   return (
-    <div style={{ width: painted, height: '100%', flexShrink: 0, position: 'relative' }}>
+    <div
+      style={{
+        display: hidden ? 'none' : 'flex',
+        width: painted,
+        height: '100%',
+        flexShrink: 0,
+        position: 'relative',
+      }}
+    >
       <div style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
         <div
           style={{

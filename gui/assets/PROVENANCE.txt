@@ -11,7 +11,9 @@ Stock SVG files are vendored from lucide-static 0.468.0:
 https://registry.npmjs.org/lucide-static/-/lucide-static-0.468.0.tgz
 License and upstream notices are retained in icons/LICENSE.
 Stock aliases: alert = triangle-alert, fork = split, rewind = history,
-sparkle = asterisk. star-filled changes the stock star fill to currentColor.
+sparkle = asterisk, compose = square-pen, folder-new = folder-plus.
+folder.svg is the stock folder glyph. star-filled changes the stock star fill
+to currentColor.
 The sparkle alias enlarges the stock asterisk paths by 1.5 around the viewBox
 center, with inverse stroke scaling to retain the rendered 2-unit stroke.
 These names intentionally select the documented shapes rather than the
@@ -19,8 +21,8 @@ similarly named but differently shaped Lucide glyphs.
 
 Custom artwork
 The appearance, changes, queue, block, stop, stop-filled, terminal-square,
-command, compose, cursor-spark, file-bottom-left-arrow, arrow-left, arrow-right,
-plus, search, folder, folder-open, folder-new, window-maximize,
+command, cursor-spark, file-bottom-left-arrow, arrow-left, arrow-right,
+plus, search, folder-open, window-maximize,
 window-minimize, window-restore, and provider-* SVG files are original vector
 geometry authored for Harness from the clean-room shape descriptions.
 No upstream product SVG source was used for these drawings.

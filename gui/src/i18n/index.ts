@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+
 export const english = {
   'appearance.system': 'System',
   'appearance.light': 'Light',
@@ -30,6 +32,10 @@ export const english = {
   'action.usagePanel': 'Toggle Usage Panel',
   'action.fps': 'Toggle FPS Counter',
   'action.closeWindow': 'Close Window',
+  'action.renameTask': 'Rename task',
+  'action.exportMarkdown': 'Export Markdown…',
+  'action.duplicateTask': 'Duplicate task',
+  'action.collapseSidebarGroups': 'Collapse all sidebar groups',
   'frame.minimize': 'Minimize',
   'frame.maximize': 'Maximize',
   'frame.restore': 'Restore',
@@ -59,13 +65,37 @@ export const english = {
   'navigation.usage': 'Usage',
   'clipboard.code': 'Copy Code',
   'clipboard.copyDone': 'Copied',
+  'transcript.changed_file': 'Changed %{count} file',
+  'transcript.changed_files': 'Changed %{count} files',
+  'transcript.review_changes': 'Review',
+  'transcript.show_more_files': 'Show %{count} more files',
+  'transcript.show_fewer_files': 'Show fewer files',
+  'transcript.showing_first_files': 'Showing first %{count} of %{total}',
   'clipboard.expression': 'Copy Expression',
   'clipboard.selection': 'Copy Selection',
 } as const;
 
 export type TranslationKey = keyof typeof english;
 export type TranslationVariables = Readonly<Record<string, string | number>>;
-export const language = 'en';
+export type Language = 'system' | 'en' | 'zh-CN' | 'ja';
+export let language: Language = 'system';
+const listeners = new Set<() => void>();
+export function setLanguage(value: Language) {
+  if (language === value) return;
+  language = value;
+  listeners.forEach((listener) => listener());
+}
+export function useLanguage(): Language {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    () => language,
+  );
+}
 
 /** Both placeholder syntaxes are authored in the shared English catalog. */
 export function t(key: TranslationKey, vars: TranslationVariables = {}): string {

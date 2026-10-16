@@ -43,6 +43,7 @@ async function checked(command: string[], signal?: AbortSignal): Promise<void> {
 export async function notify(options: {
   title: string;
   body?: string;
+  tag?: string;
   onActivate?: () => void | Promise<void>;
   signal?: AbortSignal;
 }): Promise<{ activationSupported: boolean; activated: boolean }> {
@@ -55,7 +56,8 @@ export async function notify(options: {
     activationSupported =
       help.code === 0 && help.stdout.includes('--action') && help.stdout.includes('--wait');
   }
-  const args = [command];
+  const args = [command, '--app-name=Harness'];
+  if (options.tag) args.push('--hint', `string:x-canonical-private-synchronous:${options.tag}`);
   if (activationSupported) args.push('--action=default=Open', '--wait');
   args.push('--', options.title, options.body ?? '');
   const result = await run(args, options.signal);

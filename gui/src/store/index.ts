@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
 import { createBackend } from '../backend/fixture';
-import { AppStore, type StoreState } from './store';
+import { AppStore, draftKey, type Selection, type StoreState } from './store';
 export { AppStore } from './store';
-export type { StoreState, Project } from './store';
+export type { StoreState, Project, Selection, Draft, DraftAttachment, SubmitDraft } from './store';
+export { draftKey } from './store';
 let activeStore: AppStore | undefined;
 export function setAppStore(store: AppStore) {
   activeStore = store;
@@ -60,4 +61,20 @@ export function useCommands(cwd: string) {
 }
 export function useFiles(cwd: string) {
   return useStore((state) => state.files[cwd]);
+}
+export function useSelection() {
+  return useStore((state) => state.provisionalSelection ?? state.selection);
+}
+export function useDraft(target: Selection) {
+  return useStore((state) => state.drafts[draftKey(target)]);
+}
+export function useSessionStatus(id: string | undefined) {
+  return useStore(() => (id ? getAppStore().sessionStatus(id) : 'idle'));
+}
+export function usePinnedSessions(cwd: string) {
+  return useStore((state) => state.pins[cwd] ?? emptyPins);
+}
+const emptyPins: string[] = [];
+export function useProjectModel(projectId: string | undefined) {
+  return useStore((state) => (projectId ? state.projectModels[projectId] : undefined));
 }

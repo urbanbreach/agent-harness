@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { fitPanels, type PanelLayout } from '../src/state/layout';
+import { restoreWindowGeometry } from '../src/state/window';
 
 test('panel fitting sacrifices the right panel first while preserving preferred widths', () => {
   const preferred: PanelLayout = {
@@ -18,4 +19,20 @@ test('panel fitting sacrifices the right panel first while preserving preferred 
     sidebarVisible: true,
     rightVisible: true,
   });
+});
+
+test('window restoration rejects corrupt rectangles and enforces the native minimum', () => {
+  expect(
+    restoreWindowGeometry({ x: NaN, y: 1, width: 1380, height: 880, maximized: false }),
+  ).toEqual({ width: 1380, height: 880 });
+  expect(
+    restoreWindowGeometry({
+      x: -20,
+      y: 5,
+      width: 400,
+      height: 200,
+      maximized: true,
+      displayId: 'screen-2',
+    }),
+  ).toEqual({ x: -20, y: 5, width: 980, height: 680, maximized: true, displayId: 'screen-2' });
 });
