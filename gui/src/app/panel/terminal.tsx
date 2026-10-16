@@ -469,7 +469,6 @@ export function TerminalView({
         tabIndex={-1}
         role="region"
         aria-label="Terminal"
-        onKeyDown={keys}
         onKeyUp={(e) => {
           if (!e.modifiers?.ctrl) setLink(undefined);
         }}
@@ -478,7 +477,11 @@ export function TerminalView({
           setFocused(false);
           setLink(undefined);
         }}
-        onLayout={(e) => setSize({ width: e.width ?? size.width, height: e.height ?? size.height })}
+        onLayout={(event) => {
+          const width = event.width ?? size.width;
+          const height = event.height ?? size.height;
+          if (width !== size.width || height !== size.height) setSize({ width, height });
+        }}
         onMouseDown={down}
         onMouseMove={move}
         onMouseUp={() => setDragging(false)}
@@ -510,6 +513,34 @@ export function TerminalView({
           ref={input}
           value=""
           aria-label="Terminal input"
+          readOnly
+          onSubmit={() => {
+            if (active && !menu && session.current) {
+              session.current.input('\r');
+              wakeCursor();
+              setSelection(undefined);
+              session.current.screen.scrollTo(session.current.screen.snapshot().scrollback);
+              refresh();
+            }
+          }}
+          interceptedKeys={[
+            'backspace',
+            'tab',
+            'escape',
+            'up',
+            'down',
+            'left',
+            'right',
+            'home',
+            'end',
+            'delete',
+            'pageup',
+            'pagedown',
+            ...Array.from('abcdefghijklmnopqrstuvwxyz', (key) => `ctrl-${key}`),
+            'ctrl-shift-c',
+            'ctrl-shift-v',
+            'ctrl-shift-a',
+          ]}
           onKeyDown={keys}
           tabIndex={0}
           onFocus={() => {
@@ -517,18 +548,6 @@ export function TerminalView({
             wakeCursor();
           }}
           onBlur={() => setFocused(false)}
-          onChange={(e) => {
-            if (!e.value || !session.current || !active) return;
-            session.current.input(e.value);
-            wakeCursor();
-            setSelection(undefined);
-            if (input.current) {
-              native.inputSetSelection(input.current.id, 0, e.value.length);
-              native.inputReplaceSelection(input.current.id, '');
-            }
-            session.current.screen.scrollTo(session.current.screen.snapshot().scrollback);
-            refresh();
-          }}
           style={{ position: 'absolute', left: 10, top: 8, width: 1, height: 18, opacity: 0 }}
         />
         <text
@@ -557,27 +576,44 @@ export function TerminalView({
             {error ?? 'Starting terminal…'}
           </text>
         )}
-        {snapshot?.rows.flatMap((row, y) =>
-          row.runs.flatMap((run) => {
-            let column = run.column;
-            return Array.from(graphemes.segment(run.text), (segment, index) => {
-              const at = column,
-                width = run.widths[index] ?? 1;
+        {snapshot?.rows.map((row, y) => {
+          let text = '';
+          let column = 0;
+          const runs: Run[] = [];
+          const backgrounds: { column: number; width: number; color: string }[] = [];
+          for (const run of row.runs) {
+            if (run.column > column) text += ' '.repeat(run.column - column);
+            column = run.column;
+            for (const [index, segment] of Array.from(graphemes.segment(run.text)).entries()) {
+              const at = column;
+              const width = run.widths[index] ?? 1;
               column += width;
               const selected =
                 ordered &&
                 compare({ row: row.row, column: at + width }, ordered[0]!) > 0 &&
                 compare({ row: row.row, column: at }, ordered[1]!) < 0;
-              const cursor =
+              const filled =
                 snapshot.cursor.visible &&
                 snapshot.cursor.row === y &&
                 snapshot.cursor.column >= at &&
-                snapshot.cursor.column < at + width;
-              const filled = cursor && solid && blink;
+                snapshot.cursor.column < at + width &&
+                solid &&
+                blink;
               const foreground = filled ? colors.terminal : selected ? colors.text : run.foreground;
-              const style: Run = {
-                start: 0,
-                end: segment.segment.length,
+              const background = filled
+                ? colors.text
+                : selected
+                  ? colors.selection
+                  : run.background;
+              if (background) {
+                const previous = backgrounds.at(-1);
+                if (previous?.color === background && previous.column + previous.width === at)
+                  previous.width += width;
+                else backgrounds.push({ column: at, width, color: background });
+              }
+              runs.push({
+                start: text.length,
+                end: text.length + segment.segment.length,
                 color: foreground,
                 fontWeight: run.bold ? 700 : 400,
                 italic: run.italic,
@@ -586,40 +622,48 @@ export function TerminalView({
                     ? { color: foreground, thickness: 1 }
                     : undefined,
                 strikethrough: run.strike ? { color: foreground, thickness: 1 } : undefined,
-              };
-              return (
+              });
+              text += segment.segment;
+            }
+          }
+          return (
+            <div
+              key={row.row}
+              style={{
+                position: 'absolute',
+                top: 8 + y * 18,
+                left: 10,
+                width: snapshot.cols * cellWidth,
+                height: 18,
+                pointerEvents: 'none',
+              }}
+            >
+              {backgrounds.map((background) => (
                 <div
-                  key={`${row.row}:${at}`}
+                  key={background.column}
                   style={{
                     position: 'absolute',
-                    top: 8 + y * 18,
-                    left: 10 + at * cellWidth,
-                    width: width * cellWidth,
+                    left: background.column * cellWidth,
+                    width: background.width * cellWidth,
                     height: 18,
-                    backgroundColor: filled
-                      ? colors.text
-                      : selected
-                        ? colors.selection
-                        : run.background,
-                    pointerEvents: 'none',
+                    backgroundColor: background.color,
                   }}
-                >
-                  <rich-text
-                    text={segment.segment}
-                    runs={[style]}
-                    style={{
-                      fontFamily: 'JetBrains Mono',
-                      fontSize: 12.5,
-                      lineHeight: 18,
-                      whiteSpace: 'nowrap',
-                      color: foreground,
-                    }}
-                  />
-                </div>
-              );
-            });
-          }),
-        )}
+                />
+              ))}
+              <rich-text
+                text={text}
+                runs={runs}
+                style={{
+                  fontFamily: 'JetBrains Mono',
+                  fontSize: 12.5,
+                  lineHeight: 18,
+                  whiteSpace: 'nowrap',
+                  color: colors.text,
+                }}
+              />
+            </div>
+          );
+        })}
         {snapshot?.cursor.visible && !solid && (
           <div
             style={{
