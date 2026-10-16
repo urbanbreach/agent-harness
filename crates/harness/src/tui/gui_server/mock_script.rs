@@ -15,6 +15,13 @@ use tokio_stream::StreamExt;
 #[derive(Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Step {
+    Error {
+        message: String,
+        #[serde(default)]
+        retryable: bool,
+        #[serde(default, rename = "delayMs")]
+        delay_ms: u64,
+    },
     Text {
         text: String,
         #[serde(default, rename = "delayMs")]
@@ -74,6 +81,7 @@ impl Script {
                 }
                 let delay = match step {
                     Step::Text { delay_ms, .. }
+                    | Step::Error { delay_ms, .. }
                     | Step::Reasoning { delay_ms, .. }
                     | Step::Tool { delay_ms, .. }
                     | Step::Stop { delay_ms } => *delay_ms,
@@ -98,6 +106,24 @@ impl Script {
             let mut waits = VecDeque::from([0]);
             for step in turn {
                 let (event, delay) = match step {
+                    Step::Error {
+                        message,
+                        retryable,
+                        delay_ms,
+                    } => (
+                        ProviderStreamEvent::Error {
+                            message: message.clone(),
+                            category: Some(if *retryable {
+                                harness_providers::ProviderErrorCategory::TransportFailure
+                            } else {
+                                harness_providers::ProviderErrorCategory::Other
+                            }),
+                            remediation: None,
+                            retry_after_ms: None,
+                            envelope: None,
+                        },
+                        *delay_ms,
+                    ),
                     Step::Text { text, delay_ms } => {
                         (ProviderStreamEvent::TextDelta(text.clone()), *delay_ms)
                     }
@@ -164,7 +190,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn script_reuses_mock_turn_order_and_delays_tool_delivery() -> Result<(), String> {
-        let script = Script::parse(br#"[[{"kind":"text","text":"Working"},{"kind":"tool","id":"call-1","toolId":"bash","args":{"command":"pwd"},"delayMs":50},{"kind":"stop"}],[{"kind":"reasoning","text":"Finished"},{"kind":"stop"}]]"#)?;
+        let script = Script::parse(br#"[[{"kind":"text","text":"Working"},{"kind":"tool","id":"call-1","toolId":"bash","args":{"command":"pwd"},"delayMs":50},{"kind":"stop"}],[{"kind":"reasoning","text":"Finished"},{"kind":"stop"}],[{"kind":"error","message":"temporary outage","retryable":true},{"kind":"stop"}]]"#)?;
         let provider = script.provider();
         let mut first = provider
             .stream_completion(CompletionRequest::default())
@@ -197,6 +223,16 @@ mod tests {
                 ProviderStreamEvent::Done { .. }
             ]
         ));
+        let third = provider
+            .stream_completion(CompletionRequest::default())
+            .await
+            .collect::<Vec<_>>()
+            .await;
+        assert!(matches!(&third[..], [
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error { category: Some(harness_providers::ProviderErrorCategory::TransportFailure), message, .. },
+            ProviderStreamEvent::Done { .. },
+        ] if message == "temporary outage"));
         assert!(Script::parse(br#"[[{"kind":"stop"},{"kind":"text","text":"late"}]]"#).is_err());
         Ok(())
     }

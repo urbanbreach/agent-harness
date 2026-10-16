@@ -55,6 +55,30 @@ pub(super) async fn dispatch(
                 Ok(json!(foreign_import::import(&source, &root)?))
             }
         }
+        "worktrees.list"
+        | "worktrees.remove"
+        | "diagnostics.rebuildSessionIndex"
+        | "diagnostics.crashScan"
+        | "diagnostics.refreshModelCatalog"
+        | "providers.protocols"
+        | "config.validate"
+        | "config.explain" => {
+            let command = maintenance_command(&method, &params)?;
+            let bytes = cli_output(command, config.as_deref(), &root, deps)?;
+            if matches!(
+                method.as_str(),
+                "config.validate" | "diagnostics.refreshModelCatalog"
+            ) {
+                let message = String::from_utf8(bytes).map_err(|error| error.to_string())?;
+                Ok(if method == "config.validate" {
+                    json!({"valid":true,"message":message.trim()})
+                } else {
+                    json!({"message":message.trim()})
+                })
+            } else {
+                serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+            }
+        }
         "sessions.tree" => {
             let bytes = cli_output(
                 vec!["sessions".into(), "--json".into(), "tree".into()],
@@ -74,6 +98,47 @@ pub(super) async fn dispatch(
         _ => Err(format!("method_not_found: {method}")),
     })
     .await
+}
+
+fn maintenance_command(method: &str, params: &Value) -> Result<Vec<std::ffi::OsString>, String> {
+    let flag = |name: &str| -> Result<bool, String> {
+        match params.get(name) {
+            None => Ok(false),
+            Some(Value::Bool(value)) => Ok(*value),
+            Some(_) => Err(format!("invalid_params: {name} must be a boolean")),
+        }
+    };
+    let mut command: Vec<std::ffi::OsString> = match method {
+        "worktrees.list" => vec!["worktree".into(), "list".into()],
+        "worktrees.remove" => vec!["worktree".into(), "remove".into()],
+        "diagnostics.rebuildSessionIndex" => {
+            vec!["sessions".into(), "--json".into(), "rebuild-index".into()]
+        }
+        "diagnostics.crashScan" => vec!["sessions".into(), "--json".into(), "crash-scan".into()],
+        "diagnostics.refreshModelCatalog" => vec!["models".into(), "refresh".into()],
+        "providers.protocols" => vec!["providers".into(), "protocols".into()],
+        "config.validate" => vec!["config".into(), "validate".into()],
+        "config.explain" => vec![
+            "config".into(),
+            "explain".into(),
+            "--".into(),
+            super::required(params, "path")?.into(),
+        ],
+        _ => return Err(format!("method_not_found: {method}")),
+    };
+    if method == "worktrees.list" && flag("all")? {
+        command.push("--all".into());
+    }
+    if method == "worktrees.remove" {
+        if flag("force")? {
+            command.push("--force".into());
+        }
+        if flag("keepBranch")? {
+            command.push("--keep-branch".into());
+        }
+        command.extend(["--".into(), super::required(params, "slug")?.into()]);
+    }
+    Ok(command)
 }
 
 async fn blocking<T: Send + 'static>(
@@ -102,6 +167,9 @@ fn dependencies(server: &super::Server, cwd: &Path, home: &Path) -> harness::Cli
     let mut deps = harness::CliDeps::real()
         .with_current_dir(cwd.to_owned())
         .with_env("HARNESS_HOME", home.to_string_lossy());
+    if server.mock {
+        deps = deps.with_env("HARNESS_DISABLE_MODELS_FETCH", "1");
+    }
     for (name, value) in [
         (
             "HARNESS_CONFIG",

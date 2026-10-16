@@ -66,6 +66,9 @@ export type SessionRow = {
   runId: string;
   runDir: string;
   cwd: string;
+  projectCwd?: string;
+  branch?: string | null;
+  worktree?: boolean;
   catalog: SessionCatalogEntry;
   createdAt?: string;
   live: boolean;
@@ -184,12 +187,64 @@ export type Command = {
   scope: 'builtin' | 'project' | 'user';
   template?: string;
 };
+export type Worktree = {
+  path: string;
+  branch: string | null;
+  head: string | null;
+  bare: boolean;
+  detached: boolean;
+  harness_managed: boolean;
+  slug: string | null;
+};
+export type WorktreeList = {
+  repository_root: string;
+  managed_count: number;
+  worktrees: Worktree[];
+};
+export type IndexRebuild = {
+  entry_count: number;
+  journals_scanned: number;
+  journals_opened: number;
+  index_path: string;
+  skipped_changing_journals: number;
+};
+export type CrashScan = {
+  scan_root: string;
+  summary: {
+    scanned: number;
+    previous_crash: number;
+    clean: number;
+    stale_writer_lock: number;
+    recovery_marker: number;
+  };
+  reports: {
+    run_dir: string;
+    previous_crash_detected: boolean;
+    stale_writer_lock: boolean;
+    recovery_marker_present: boolean;
+    events_log_present: boolean;
+    recovery_message: string | null;
+    recovery_action: 'resume_with_prompt' | 'reopen_session' | 'open_recovers' | null;
+    notes: string[];
+  }[];
+};
+export type ConfigExplanation = {
+  schema_version: string;
+  path: string;
+  redacted: true;
+  found: boolean;
+  effective: Json;
+  source_path: string | null;
+  primary_path: string | null;
+  layers: { path: string; defines_path: boolean; value: Json }[];
+  source_note: string;
+};
 export type FileEntry = { path: string; dir: boolean };
 export type Provider = {
   id: string;
   label: string;
   description: string;
-  methods: string[];
+  methods: { id: 'api-key' | 'browser' | 'device'; label: string }[];
   connected: boolean;
 };
 export type Setting = {
@@ -271,6 +326,27 @@ export type Methods = {
   'session.intent': Rpc<{ sessionId: string; intent: Intent }, null>;
   'models.catalog': Rpc<{ cwd: string }, ModelCatalog>;
   'commands.list': Rpc<{ cwd: string }, Command[]>;
+  'commands.expand': Rpc<{ cwd: string; name: string; args: string }, { text: string }>;
+  'mcp.resources': Rpc<
+    { cwd: string },
+    { name: string; uri: string; mime: string; description: string | null }[]
+  >;
+  'agents.list': Rpc<{ cwd: string }, { name: string }[]>;
+  'worktrees.list': Rpc<{ cwd: string; all?: boolean }, WorktreeList>;
+  'worktrees.remove': Rpc<
+    { cwd: string; slug: string; force?: boolean; keepBranch?: boolean },
+    { removed: true; slug: string; path: string; branch: string | null; delete_branch: boolean }
+  >;
+  'diagnostics.rebuildSessionIndex': Rpc<{ cwd: string }, IndexRebuild>;
+  'diagnostics.crashScan': Rpc<{ cwd: string }, CrashScan>;
+  'diagnostics.refreshModelCatalog': Rpc<{ cwd: string }, { message: string }>;
+  'providers.protocols': Rpc<
+    { cwd: string },
+    { protocol: string; support: string; apis: string[] }[]
+  >;
+  'config.validate': Rpc<{ cwd: string }, { valid: true; message: string }>;
+  'config.explain': Rpc<{ cwd: string; path: string }, ConfigExplanation>;
+  'auth.command': Rpc<{ cwd: string; args: string[] }, { attempt: number }>;
   'files.index': Rpc<{ cwd: string; limit?: number }, FileEntry[]>;
   'providers.list': Rpc<Record<string, never>, Provider[]>;
   'auth.start': Rpc<{ args: string[]; stdin?: string }, { attempt: number }>;

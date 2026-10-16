@@ -65,6 +65,20 @@ impl LiveCoordinatorConfigWarmup {
             let mut config = demo_coordinator_config(settings);
             if let Some(provider) = &self.mock_provider {
                 config.provider = Arc::clone(provider);
+                // Scripted GUI mocks exercise native execution, not only the terminal demo tools.
+                for profile in config.agent_profiles.values_mut() {
+                    profile.toolset.extend(
+                        [
+                            "eval",
+                            "spawn_subagent",
+                            "get_command_or_subagent_output",
+                            "wait_commands_or_subagents",
+                            "kill_command_or_subagent",
+                            "send_subagent_message",
+                        ]
+                        .map(str::to_owned),
+                    );
+                }
             }
             return Ok(config);
         }

@@ -70,6 +70,9 @@ type SessionRow = {
   runId: string
   runDir: string
   cwd: string
+  projectCwd?: string             // project whose session directory owns this row
+  branch?: string | null         // current Git checkout branch, when discoverable
+  worktree?: boolean             // managed Harness checkout
   catalog: SessionCatalogEntry   // core serde shape
   createdAt?: string
   live: boolean                  // a coordinator is running for it in this server
@@ -130,6 +133,12 @@ type Intent =
 type Attachment = { mime: string; dataBase64: string }
 ```
 
+An `interrupt` must explicitly name the running task ids to cancel. With
+`reason: "user"`, queued input is returned to the editor before those tasks are
+cancelled. An empty `taskIds` array returns queued input but does not stop the
+active turn; clients must collect its running task id rather than a steering
+request id.
+
 ### `session.update` notification
 
 `{ sessionId, update: Update }` where `Update` mirrors the TUI's `LiveUpdate`:
@@ -178,6 +187,13 @@ they already applied.
 - `commands.list { cwd }` → `{ name, description, argumentHint?, scope:
   "builtin" | "project" | "user", template? }[]`.
 - `files.index { cwd, limit? }` → `{ path, dir }[]` (project relative, capped).
+- `commands.expand { cwd, name, args }` → `{ text }`. Resolves the current
+  discovered prompt command and uses core argument expansion, including quoted
+  positional arguments. Built-in UI commands are not prompt templates; unknown
+  names fail with `not_found`.
+- `agents.list { cwd }` → `{ name }[]`. Switchable profiles except the current one.
+- `mcp.resources { cwd }` → `{ name, uri, mime, description: string | null }[]`.
+  Reads launch metadata without activating an MCP connection.
 
 `files.index` defaults to 20,000 rows and caps larger limits there. It respects
 ignore files even outside Git repositories and excludes build/dependency trees.
@@ -192,7 +208,9 @@ type ModelEntry = {
 
 ## Providers and sign-in
 
-- `providers.list {}` → `{ id, label, description, methods: string[], connected: boolean }[]`.
+- `providers.list {}` → `{ id, label, description,
+  methods: { id: "api-key" | "browser" | "device", label: string }[], connected: boolean }[]`.
+  Send the stable method id to the native auth parser, never the display label.
 - `auth.start { args: string[], stdin?: string }` → `{ attempt: number }`. Progress
   arrives as `auth.update { attempt, kind: "notice" | "result", level?, success?, message }`.
 - `auth.input { attempt, line: string | null }` → `null` (`null` cancels).
@@ -432,6 +450,43 @@ Authored fixture results may exercise the UI's available-plan rendering with
 windows:[{label,usedPercent,resetsAt:string|null}]}`.
 These fixtures neither contact providers nor persist real credentials.
 
+## Worktrees and maintenance
+
+These requests require an existing absolute `cwd` and use the same native CLI
+operations as terminal users. They do not run a shell.
+
+- `worktrees.list { cwd, all?: boolean }` → `{ repository_root, managed_count,
+  worktrees: { path, branch, head, bare, detached, harness_managed, slug }[] }`.
+  Only managed worktrees are returned unless `all` is true.
+- `worktrees.remove { cwd, slug, force?: boolean, keepBranch?: boolean }` →
+  `{ removed: true, slug, path, branch, delete_branch }`. Only managed slugs can
+  be removed. Native dirty-checkout and branch deletion safeguards still apply;
+  force and branch retention default to false.
+- `diagnostics.rebuildSessionIndex { cwd }` → `{ entry_count, journals_scanned,
+  journals_opened, index_path, skipped_changing_journals }`. Explicitly replaces
+  the disposable index; it does not rewrite journals.
+- `diagnostics.crashScan { cwd }` → `{ scan_root, summary, reports }`. Uses the
+  native crash inspection serde shapes and does not recover or mutate sessions.
+- `diagnostics.refreshModelCatalog { cwd }` → `{ message }`. Performs the explicit
+  catalog download unless disabled. Mock servers always disable downloads.
+- `providers.protocols { cwd }` → `{ protocol, support, apis: string[] }[]`.
+- `config.validate { cwd }` → `{ valid: true, message }`; invalid config is an RPC
+  error, not a successful validation report.
+- `config.explain { cwd, path }` → the redacted `harness-config-explain-v1` CLI
+  report, including `found`, `effective`, `source_path`, `primary_path`, `layers`,
+  and `source_note`. Reads current layers rather than cached launch values.
+- `auth.command { cwd, args: string[] }` → `{ attempt }`. Uses the existing native
+  auth argument parser and `auth.update` streaming notices/results. For account
+  management, include the account subcommand as the first argument.
+
+Fixtures can supply top-level `providers: Provider[]` (or
+`extensions["providers.list"]`) and `auth: { url, code }`. Auth requests emit a
+clearly marked synthetic device-code notice. When `auth` is configured the
+attempt stays pending until `auth.input`; a null line cancels and any other
+line completes it. Without `auth`, fixture auth completes after a short delay.
+Use an `example.invalid` URL for fake flows. No provider is contacted and no
+credentials are stored.
+
 ## Scripted live mock
 
 `harness gui-server --mock-script /absolute/script.json` implies `--mock`.
@@ -468,6 +523,20 @@ JSON `args`. Tools still cross ordinary coordinator policy and registration
 gates. Use `supervised` access for permission-card checks; `question` calls
 use the native question schema and require user answers. Allowing a scripted
 tool executes it: use harmless commands and an isolated workspace.
+
+Error steps accept `{ "kind": "error", "message": "...", "retryable": true }`
+and optional `delayMs`. Retryable errors use the native transport-failure
+category; others use `other`. The coordinator decides whether to retry, and the
+next scripted turn supplies that response. Every turn still ends in `stop`.
+
+Scripted sessions also expose native evaluation and subagent read/wait/cancel
+operations alongside the terminal demo tools. They still use coordinator
+permissions and cancellation; a mock provider does not sandbox tool execution.
+
+In mock mode `llm.complete` uses a fresh copy of the configured provider script,
+or the default mock provider when no script was supplied. It requires no
+provider credentials or configuration, creates no session, and rejects tool
+calls just like real tool-free completion.
 
 Limits: 1 MiB script, 1–256 provider turns, 1–4096 steps per turn, at most
 60 seconds per step. Invalid scripts fail before the server starts. Exhaustion

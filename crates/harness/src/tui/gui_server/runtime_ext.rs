@@ -22,6 +22,32 @@ pub(super) async fn dispatch(
     params: &Value,
 ) -> Result<Value, String> {
     match method {
+        "llm.complete" if server.mock => {
+            let _settings = settings(server, params).await?;
+            let prompt = super::required(params, "prompt")?;
+            if prompt.trim().is_empty() {
+                return Err("invalid_params: prompt must not be empty".into());
+            }
+            let provider: Arc<dyn Provider> = match &server.mock_script {
+                Some(script) => script.provider(),
+                None => Arc::new(harness_providers::mock::MockProvider::default()),
+            };
+            let text = tokio::time::timeout(
+                std::time::Duration::from_secs(180),
+                collect_completion(
+                    provider.as_ref(),
+                    CompletionRequest {
+                        messages: vec![CompletionMessage::text(MessageRole::User, prompt)],
+                        tools: None,
+                        tool_choice: Some(ToolChoice::None),
+                        ..Default::default()
+                    },
+                ),
+            )
+            .await
+            .map_err(|_| "timeout: completion exceeded 180 seconds".to_string())??;
+            Ok(json!({"text":text,"model":"mock","provider":"mock"}))
+        }
         "llm.complete" => match settings(server, params).await {
             Ok(settings) => tokio::time::timeout(
                 std::time::Duration::from_secs(180),

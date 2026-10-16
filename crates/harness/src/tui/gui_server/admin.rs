@@ -143,6 +143,9 @@ async fn list(server: &Server, params: &Value) -> Result<Value, String> {
         .collect();
     blocking(move || {
         let rows = inspect_session_catalog(&settings.session_dir)?;
+        let worktrees =
+            harness_core::worktree::list_session_worktrees(&cwd, None, &settings.data_dir)
+                .unwrap_or_default();
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             if !row.is_visible_in_operator_history() {
@@ -162,9 +165,14 @@ async fn list(server: &Server, params: &Value) -> Result<Value, String> {
                 "runId": row.catalog.run_id,
                 "runDir": row.run_dir,
                 "cwd": workspace,
+                "projectCwd": cwd,
                 "catalog": row.catalog,
                 "live": live_cwd.is_some(),
             });
+            if let Some(worktree) = worktrees.iter().find(|entry| entry.path == workspace) {
+                value["branch"] = json!(worktree.branch);
+                value["worktree"] = json!(worktree.harness_managed);
+            }
             if let Some(created_at) = created_at {
                 value["createdAt"] = created_at.into();
             }

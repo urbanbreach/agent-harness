@@ -20,11 +20,14 @@ pub(super) async fn handle(
     Some(match method {
         "models.catalog" => models(server, params).await,
         "commands.list" => commands(server, params).await,
+        "commands.expand" => expand(server, params).await,
+        "mcp.resources" | "agents.list" => mentions(server, method, params).await,
         "files.index" => files(server, params).await,
         "providers.list" => providers(server).await,
         "settings.list" => settings_list(server, params).await,
         "settings.write" | "settings.reset" => settings_write(server, method, params).await,
         "auth.start" => auth_start(server, params).await,
+        "auth.command" => auth_start(server, params).await,
         "auth.input" => auth_input(server, params),
         "auth.logout" => auth_logout(server, params).await,
         _ => return None,
@@ -140,6 +143,44 @@ async fn commands(server: &Server, params: &Value) -> Result<Value, String> {
     Ok(Value::Array(rows))
 }
 
+async fn expand(server: &Server, params: &Value) -> Result<Value, String> {
+    let name = string(params, "name")?;
+    let args = string(params, "args")?;
+    let settings = server.settings(&cwd(server, params)?).await?;
+    let discovered = harness_core::commands::discover(
+        &settings.workspace_root,
+        Some(&settings.data_dir),
+        &harness_tui::keybindings::reserved_slash_names(),
+    );
+    let command = discovered
+        .commands
+        .iter()
+        .find(|command| command.name == name)
+        .ok_or("not_found: prompt command not found")?;
+    Ok(json!({"text": command.expand(args)}))
+}
+
+async fn mentions(server: &Server, method: &str, params: &Value) -> Result<Value, String> {
+    let settings = server.settings(&cwd(server, params)?).await?;
+    let metadata = &settings.launch_metadata;
+    if method == "agents.list" {
+        return Ok(json!(metadata
+            .switchable_profiles()
+            .iter()
+            .filter(|name| name.as_str() != metadata.profile())
+            .map(|name| json!({"name": name}))
+            .collect::<Vec<_>>()));
+    }
+    Ok(json!(metadata
+        .mcp_resources()
+        .iter()
+        .map(|resource| json!({
+            "name": resource.name, "uri": resource.uri, "mime": resource.mime,
+            "description": resource.description,
+        }))
+        .collect::<Vec<_>>()))
+}
+
 async fn files(server: &Server, params: &Value) -> Result<Value, String> {
     let root = cwd(server, params)?;
     let limit = match params.get("limit") {
@@ -217,11 +258,14 @@ async fn providers(server: &Server) -> Result<Value, String> {
         let registry = harness_core::auth::plugin::AuthPluginRegistry::with_builtins();
         Ok(Value::Array(super::super::connect_provider_options(settings.config.as_ref(), &registry, Some(&catalog))
             .into_iter().map(|provider| {
-                let methods = provider.methods.iter().map(|method| match method {
-                    harness_core::auth::plugin::AuthMethodSpec::OAuthAuto { label, .. }
-                    | harness_core::auth::plugin::AuthMethodSpec::OAuthCode { label }
-                    | harness_core::auth::plugin::AuthMethodSpec::ApiKey { label }
-                    | harness_core::auth::plugin::AuthMethodSpec::Prompts { label, .. } => label,
+                let methods = provider.methods.iter().map(|method| {
+                    let (id, label) = match method {
+                        harness_core::auth::plugin::AuthMethodSpec::OAuthAuto { label, .. } => ("browser", label),
+                        harness_core::auth::plugin::AuthMethodSpec::OAuthCode { label } => ("device", label),
+                        harness_core::auth::plugin::AuthMethodSpec::ApiKey { label } => ("api-key", label),
+                        harness_core::auth::plugin::AuthMethodSpec::Prompts { label, .. } => ("device", label),
+                    };
+                    json!({"id":id,"label":label})
                 }).collect::<Vec<_>>();
                 json!({"id": provider.id, "label": provider.label, "description": provider.description,
                     "methods": methods, "connected": connected.iter().any(|id| id == provider.id.as_str())})
@@ -413,9 +457,7 @@ async fn auth_start(server: &Server, params: &Value) -> Result<Value, String> {
         Some(Value::String(value)) => Some(value.clone()),
         _ => return Err("invalid_params: stdin must be a string".into()),
     };
-    let settings = server
-        .settings(&server.config_context.discovery.current_dir)
-        .await?;
+    let settings = server.settings(&cwd(server, params)?).await?;
     let attempt = server.auth_sequence.fetch_add(1, Ordering::Relaxed) + 1;
     let mut active = server
         .auth_attempt

@@ -55,6 +55,69 @@ export class FixtureExtensions {
       ],
     });
     switch (method) {
+      case 'worktrees.list':
+        return { repository_root: p.cwd, managed_count: 0, worktrees: [] };
+      case 'worktrees.remove': {
+        const list = this.values['worktrees.list'];
+        const entry = list?.worktrees.find(
+          (entry) => entry.harness_managed && entry.slug === p.slug,
+        );
+        if (!entry || !list) throw new Error('Managed worktree not found');
+        list.worktrees = list.worktrees.filter((saved) => saved !== entry);
+        list.managed_count = list.worktrees.filter((entry) => entry.harness_managed).length;
+        return {
+          removed: true,
+          slug: entry.slug,
+          path: entry.path,
+          branch: entry.branch,
+          delete_branch: !p.keepBranch,
+        };
+      }
+      case 'diagnostics.rebuildSessionIndex':
+        return {
+          entry_count: 0,
+          journals_scanned: 0,
+          journals_opened: 0,
+          index_path: '/fixture/sessions/session-index.json',
+          skipped_changing_journals: 0,
+        };
+      case 'diagnostics.crashScan':
+        return {
+          scan_root: '/fixture/sessions',
+          summary: {
+            scanned: 0,
+            previous_crash: 0,
+            clean: 0,
+            stale_writer_lock: 0,
+            recovery_marker: 0,
+          },
+          reports: [],
+        };
+      case 'diagnostics.refreshModelCatalog':
+        return { message: 'Fixture model catalog refreshed; no network request was made.' };
+      case 'providers.protocols':
+        return [
+          {
+            protocol: 'open_ai_compatible',
+            support: 'supported',
+            apis: ['responses', 'chat_completions'],
+          },
+          { protocol: 'anthropic_messages', support: 'supported', apis: ['messages'] },
+        ];
+      case 'config.validate':
+        return { valid: true, message: 'Fixture configuration is valid.' };
+      case 'config.explain':
+        return {
+          schema_version: 'harness-config-explain-v1',
+          path: p.path,
+          redacted: true,
+          found: false,
+          effective: null,
+          source_path: null,
+          primary_path: null,
+          layers: [],
+          source_note: 'No fixture layer defines this path.',
+        };
       case 'blobs.put': {
         const bytes = Buffer.from(p.dataBase64, 'base64');
         if (bytes.toString('base64') !== p.dataBase64) throw new Error('Invalid base64');

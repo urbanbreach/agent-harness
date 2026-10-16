@@ -66,6 +66,45 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
         !home.exists(),
         "initialization must not create home artifacts"
     );
+    std::fs::create_dir_all(cwd.join(".harness/commands"))?;
+    std::fs::write(
+        cwd.join(".harness/commands/review.md"),
+        "Review $1 against $2. Full: $ARGUMENTS",
+    )?;
+    assert_eq!(
+        client
+            .call(
+                "commands.expand",
+                json!({
+                    "cwd":cwd,"name":"review","args":"\"two words\" base"
+                })
+            )
+            .await?["text"],
+        "Review two words against base. Full: \"two words\" base"
+    );
+    assert!(client
+        .call(
+            "commands.expand",
+            json!({"cwd":cwd,"name":"missing","args":""})
+        )
+        .await
+        .is_err());
+    assert_eq!(
+        client.call("config.validate", json!({"cwd":cwd})).await?["valid"],
+        true
+    );
+    let protocols = client
+        .call("providers.protocols", json!({"cwd":cwd}))
+        .await?;
+    assert!(protocols
+        .as_array()
+        .ok_or("protocols must be an array")?
+        .iter()
+        .any(|protocol| protocol["protocol"] == "anthropic_messages"));
+    assert!(client
+        .call("worktrees.list", json!({"cwd":cwd,"all":"yes"}))
+        .await
+        .is_err());
     assert_eq!(
         client
             .call("state.read", json!({"name":"workspace"}))
@@ -229,6 +268,37 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
         .await?;
     let rows = client.call("sessions.list", json!({"cwd":cwd})).await?;
     assert_eq!(rows.as_array().ok_or("sessions must be an array")?.len(), 1);
+    assert_eq!(rows[0]["projectCwd"], json!(cwd));
+    let rebuilt = client
+        .call("diagnostics.rebuildSessionIndex", json!({"cwd":cwd}))
+        .await?;
+    assert_eq!(rebuilt["entry_count"], 1);
+    assert!(Path::new(rebuilt["index_path"].as_str().ok_or("missing index path")?).is_file());
+    let scan = client
+        .call("diagnostics.crashScan", json!({"cwd":cwd}))
+        .await?;
+    // Native crash scans inspect every non-hidden child, including the deletion trash directory.
+    assert_eq!(scan["summary"]["scanned"], 2);
+    let reports = scan["reports"]
+        .as_array()
+        .ok_or("crash reports must be an array")?;
+    assert!(reports
+        .iter()
+        .any(|report| report["run_dir"] == run_dir && report["events_log_present"] == true));
+    let trash = Path::new(run_dir.as_str().ok_or("missing run path")?)
+        .parent()
+        .ok_or("missing session parent")?
+        .join("trash");
+    assert!(reports
+        .iter()
+        .any(|report| report["run_dir"] == json!(trash) && report["events_log_present"] == false));
+    let explanation = client
+        .call(
+            "config.explain",
+            json!({"cwd":cwd,"path":"subagents.max_depth"}),
+        )
+        .await?;
+    assert_eq!(explanation["effective"], 2);
     let matches = client
         .call(
             "sessions.search",
@@ -261,5 +331,99 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
     assert!(stopped
         .iter()
         .any(|event| matches!(event.payload, EventV1::RunFinished(_))));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scripted_mock_completion_is_tool_free_without_provider_configuration(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let home = root.path().join("home");
+    let script_path = root.path().join("script.json");
+    std::fs::write(
+        &script_path,
+        r#"[[{"kind":"text","text":"Describe the change"},{"kind":"stop"}],[{"kind":"tool","id":"eval-check","toolId":"eval","args":{"language":"js","summary":"Check native evaluation","code":"display('native evaluation ran')"}},{"kind":"stop"}],[{"kind":"text","text":"Evaluation finished"},{"kind":"stop"}]]"#,
+    )?;
+    let context = harness::CliDeps::real()
+        .with_current_dir(root.path().to_owned())
+        .with_env("HARNESS_HOME", home.to_string_lossy())
+        .config_load_context();
+    let (client, server) = tokio::io::duplex(1024 * 1024);
+    let (reader, writer) = tokio::io::split(server);
+    let server = tokio::spawn(serve(
+        reader,
+        writer,
+        true,
+        Some(mock_script::Script::read(&script_path)?),
+        None,
+        None,
+        context,
+    ));
+    let (reader, writer) = tokio::io::split(client);
+    let mut client = Client {
+        reader: BufReader::new(reader).lines(),
+        writer,
+        id: 0,
+        events: Vec::new(),
+    };
+    let result = client
+        .call(
+            "llm.complete",
+            json!({
+                "cwd":root.path(),"prompt":"Write a commit message"
+            }),
+        )
+        .await?;
+    assert_eq!(result["text"], "Describe the change");
+    assert_eq!(result["provider"], "mock");
+    assert!(
+        !home.exists(),
+        "completion must not create sessions or credentials"
+    );
+    assert!(client
+        .call("llm.complete", json!({"cwd":root.path(),"prompt":" "}))
+        .await
+        .is_err());
+    let session = client
+        .call(
+            "session.create",
+            json!({"cwd":root.path(),"accessMode":"full"}),
+        )
+        .await?;
+    let id = &session["sessionId"];
+    client
+        .call(
+            "session.intent",
+            json!({"sessionId":id,"intent":{"kind":"submit","text":"First scripted turn"}}),
+        )
+        .await?;
+    loop {
+        let message = client.next().await?;
+        if message["params"]["update"]["event"]["payload"]["event_type"] == "task_completed" {
+            break;
+        }
+    }
+    client
+        .call(
+            "session.intent",
+            json!({"sessionId":id,"intent":{"kind":"submit","text":"Execute the evaluation"}}),
+        )
+        .await?;
+    let mut eval_call = None;
+    loop {
+        let message = client.next().await?;
+        let payload = &message["params"]["update"]["event"]["payload"];
+        if payload["event_type"] == "tool_call_requested" {
+            assert_eq!(payload["data"]["tool_id"], "eval");
+            eval_call = Some(payload["data"]["tool_call_id"].clone());
+        }
+        if payload["event_type"] == "tool_call_finished" {
+            assert_eq!(Some(payload["data"]["tool_call_id"].clone()), eval_call);
+            assert_eq!(payload["data"]["status"], "succeeded");
+            break;
+        }
+    }
+    client.writer.shutdown().await?;
+    server.await??;
     Ok(())
 }

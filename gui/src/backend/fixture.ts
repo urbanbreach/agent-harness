@@ -19,6 +19,8 @@ export type Scenario = {
   updates?: { sessionId: string; delayMs: number; update: Update }[];
   extensions?: ExtensionFixtures;
   state?: Record<string, Json>;
+  providers?: Methods['providers.list']['result'];
+  auth?: { url: string; code: string };
 };
 export class FixtureBackend implements Backend {
   private scenario: Scenario;
@@ -143,6 +145,18 @@ export class FixtureBackend implements Backend {
             data: { request_id: 'imported-prompt-1', text: 'Review this imported conversation.' },
           },
         });
+        session.events.push({
+          schema_version: 1,
+          event_id: `${handle.sessionId}-2`,
+          seq: 2,
+          run_id: handle.sessionId,
+          mono_ms: 1,
+          actor: { kind: 'system' },
+          payload: {
+            event_type: 'run_finished',
+            data: { summary: 'Imported visible history is complete.' },
+          },
+        });
         return {
           run_id: handle.sessionId,
           run_dir: handle.runDir,
@@ -156,7 +170,10 @@ export class FixtureBackend implements Backend {
         const { row } = find();
         return {
           sessionId: row.runId,
-          accessMode: this.accessModes.get(row.runId) ?? 'supervised',
+          accessMode:
+            this.accessModes.get(row.runId) ??
+            this.extensions.values['models.catalog']?.defaultAccessMode ??
+            'supervised',
           runDir: row.runDir,
           cwd: row.cwd,
           profile: row.catalog.profile_preset ?? 'default',
@@ -176,7 +193,7 @@ export class FixtureBackend implements Backend {
       }
       case 'sessions.list':
         return this.scenario.sessions
-          .filter((s) => s.row.cwd === p.cwd)
+          .filter((s) => (s.row.projectCwd ?? s.row.cwd) === p.cwd)
           .map((s) => s.row)
           .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       case 'sessions.events':
@@ -228,7 +245,10 @@ export class FixtureBackend implements Backend {
         const row: SessionRow = {
           runId,
           runDir: `/fixture/sessions/${runId}`,
-          cwd: p.cwd,
+          cwd: p.worktree ? `/fixture/worktrees/${p.worktree.name || runId}` : p.cwd,
+          projectCwd: p.cwd,
+          branch: p.worktree ? `harness/wt-${p.worktree.name || runId}` : null,
+          worktree: !!p.worktree,
           live: true,
           createdAt: '2026-01-01T00:00:00Z',
           catalog: {
@@ -266,6 +286,47 @@ export class FixtureBackend implements Backend {
       }
       case 'session.intent': {
         const { row } = find();
+        if (p.intent.kind === 'loadRewindPoints') {
+          const points = find().events.flatMap((event) =>
+            event.payload.event_type === 'user_message_submitted'
+              ? [
+                  {
+                    seq: event.seq,
+                    request_id: event.payload.data.request_id,
+                    text: event.payload.data.text,
+                  },
+                ]
+              : [],
+          );
+          queueMicrotask(() =>
+            this.emit(row.runId, { kind: 'rewindPoints', generation: p.intent.generation, points }),
+          );
+          return null;
+        }
+        if (p.intent.kind === 'rewind') {
+          const session = find();
+          const event = session.events.find(
+            (event) =>
+              event.payload.event_type === 'user_message_submitted' &&
+              event.payload.data.request_id === p.intent.requestId,
+          );
+          if (!event || event.payload.event_type !== 'user_message_submitted')
+            throw new BackendError('not_found', 'Rewind point not found');
+          const point = {
+            seq: event.seq,
+            request_id: event.payload.data.request_id,
+            text: event.payload.data.text,
+          };
+          session.events = session.events.filter((saved) => saved.seq < event.seq);
+          queueMicrotask(() =>
+            this.emit(row.runId, {
+              kind: 'rewindComplete',
+              generation: p.intent.generation,
+              point,
+            }),
+          );
+          return null;
+        }
         if (!row.live) throw new BackendError('failed', 'Fixture session is not live');
         if (p.intent.kind === 'updateTitle') row.catalog.run_name = p.intent.title;
         if (p.intent.kind === 'setAccessMode') this.accessModes.set(row.runId, p.intent.mode);
@@ -302,8 +363,25 @@ export class FixtureBackend implements Backend {
         this.emit(row.runId, { kind: 'status', text: `Fixture accepted ${p.intent.kind}` });
         return null;
       }
+      case 'auth.command':
       case 'auth.start': {
         const attempt = ++this.serial;
+        queueMicrotask(() => {
+          for (const listener of this.listeners)
+            listener({
+              method: 'auth.update',
+              params: {
+                attempt,
+                kind: 'notice',
+                level: 'info',
+                message: `Fixture only: open ${this.scenario.auth?.url ?? 'https://example.invalid/device'} and enter code ${this.scenario.auth?.code ?? 'HARNESS-DEMO'}. No provider is contacted.`,
+              },
+            });
+        });
+        if (this.scenario.auth) {
+          this.timers.set(`auth-${attempt}`, []);
+          return { attempt };
+        }
         const timer = setTimeout(() => {
           for (const listener of this.listeners) {
             listener({
@@ -316,11 +394,28 @@ export class FixtureBackend implements Backend {
               },
             });
           }
-        }, 100);
+        }, 1500);
         this.timers.set(`auth-${attempt}`, [timer]);
         return { attempt };
       }
       case 'auth.input':
+        if (this.timers.has(`auth-${p.attempt}`)) {
+          this.stop(`auth-${p.attempt}`);
+          for (const listener of this.listeners)
+            listener({
+              method: 'auth.update',
+              params: {
+                attempt: p.attempt,
+                kind: 'result',
+                success: p.line !== null,
+                message:
+                  p.line === null
+                    ? 'Fixture authentication cancelled'
+                    : 'Fixture authentication completed. No real credentials were stored.',
+              },
+            });
+        }
+        return null;
       case 'auth.logout':
         return null;
       case 'settings.write':
@@ -336,9 +431,20 @@ export class FixtureBackend implements Backend {
       }
       case 'models.catalog':
         return { current: null, models: [], profiles: [] };
+      case 'commands.expand': {
+        const command = this.extensions.values['commands.list']?.find(
+          (command) => command.name === p.name,
+        );
+        if (!command?.template) throw new BackendError('not_found', 'Prompt command not found');
+        return { text: expandTemplate(command.template, p.args) };
+      }
+      case 'agents.list':
+      case 'mcp.resources':
+        return [];
+      case 'providers.list':
+        return this.scenario.providers ?? [];
       case 'commands.list':
       case 'files.index':
-      case 'providers.list':
       case 'settings.list':
         return [];
       default:
@@ -367,4 +473,41 @@ export async function createBackend(): Promise<Backend> {
     new URL(`../../test/fixtures/scenarios/${name}.json`, import.meta.url),
   ).json()) as Scenario;
   return new FixtureBackend(scenario);
+}
+
+function expandTemplate(template: string, raw: string): string {
+  const args = raw.trim();
+  const positional: string[] = [];
+  let value = '',
+    quote = '',
+    started = false;
+  const chars = [...args];
+  for (let at = 0; at < chars.length; at++) {
+    const char = chars[at]!;
+    if (char === '\\' && quote !== "'") {
+      value += chars[++at] ?? '\\';
+      started = true;
+    } else if ((char === "'" || char === '"') && quote === char) {
+      quote = '';
+    } else if ((char === "'" || char === '"') && !quote) {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char) && !quote) {
+      if (started) {
+        positional.push(value);
+        value = '';
+        started = false;
+      }
+    } else {
+      value += char;
+      started = true;
+    }
+  }
+  if (started) positional.push(value);
+  let substituted = false;
+  const text = template.replace(/\$(ARGUMENTS|@|[1-9])/g, (_, key: string) => {
+    substituted = true;
+    return key === 'ARGUMENTS' || key === '@' ? args : (positional[Number(key) - 1] ?? '');
+  });
+  return !substituted && args ? `${text}\n\n${args}` : text;
 }
