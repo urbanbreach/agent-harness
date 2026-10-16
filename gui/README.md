@@ -81,6 +81,10 @@ bun run format                     # Prettier
   `test/fixtures/scripts/interactive.json` and `docs/gui/protocol.md`.
 - Always point `HARNESS_HOME` at a temporary directory when experimenting.
 
+Shared popup menus select pointer choices on the completed click, not mouse-down.
+This keeps the release from activating a control beneath a closing popup, including
+after changing themes. Keyboard selection retains its existing Enter/Space behavior.
+
 ### Workspace panels
 
 The header information button opens **Environment and background work**, not

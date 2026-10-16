@@ -263,8 +263,10 @@ export function Menu({
                     setSubmenu(item.items ? item.id : undefined);
                   }
                 }}
-                onMouseDown={(e) => {
-                  if (e.button === 0 && !disabled) select(i);
+                onClick={(event) => {
+                  // Keep the popup mounted through release so the same press
+                  // cannot click a control underneath it.
+                  if (event.button === 0 && !disabled) select(i);
                 }}
                 style={{
                   ...row,
