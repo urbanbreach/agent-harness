@@ -15,6 +15,7 @@ import { Button, Icon, IconButton, Tooltip, ellipsis, row } from '../../ui/contr
 import { Scrollbar } from '../../ui/scrollbar';
 import { openPanelFile } from '../panel/index';
 import { runAction } from '../actions';
+import { highlightCode } from '../../syntax';
 
 const column: StyleDesc = {
   display: 'flex',
@@ -408,8 +409,8 @@ function filePatch(file: ToolDiffFile): string {
       : `--- a/${file.path}\n+++ b/${file.path}\n${file.diff}`;
   if (file.before === undefined || file.after === undefined || file.before === file.after)
     return '';
-  const before = file.before ? file.before.split('\n') : [];
-  const after = file.after ? file.after.split('\n') : [];
+  const before = file.before ? file.before.replace(/\n$/, '').split('\n') : [];
+  const after = file.after ? file.after.replace(/\n$/, '').split('\n') : [];
   let start = 0;
   while (start < before.length && start < after.length && before[start] === after[start]) start++;
   let oldEnd = before.length,
@@ -418,11 +419,35 @@ function filePatch(file: ToolDiffFile): string {
     oldEnd--;
     newEnd--;
   }
-  return `--- a/${file.path}\n+++ b/${file.path}\n@@ -${oldEnd === start ? start : start + 1},${oldEnd - start} +${newEnd === start ? start : start + 1},${newEnd - start} @@\n${before
-    .slice(start, oldEnd)
-    .map((line) => `-${line}`)
+  const contextStart = Math.max(0, start - 3);
+  const contextEnd = Math.min(before.length - oldEnd, 3);
+  return `--- a/${file.path}\n+++ b/${file.path}\n@@ -${contextStart + 1},${oldEnd - contextStart + contextEnd} +${contextStart + 1},${newEnd - contextStart + contextEnd} @@\n${before
+    .slice(contextStart, start)
+    .map((line) => ` ${line}`)
+    .concat(before.slice(start, oldEnd).map((line) => `-${line}`))
     .concat(after.slice(start, newEnd).map((line) => `+${line}`))
+    .concat(before.slice(oldEnd, oldEnd + contextEnd).map((line) => ` ${line}`))
     .join('\n')}\n`;
+}
+
+function diffLines(patch: string) {
+  let before = 0;
+  let after = 0;
+  return patch.split('\n').flatMap((line) => {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      before = Number(hunk[1]);
+      after = Number(hunk[2]);
+      return [];
+    }
+    if ((!before && !after) || /^(---|\+\+\+|\\)/.test(line) || !line) return [];
+    const kind = line[0];
+    if (kind !== '+' && kind !== '-' && kind !== ' ') return [];
+    const number = kind === '-' ? before : after;
+    if (kind !== '+') before++;
+    if (kind !== '-') after++;
+    return [{ kind, number, text: line.slice(1) }];
+  });
 }
 
 function InlineDiff({ files }: { files: ToolDiffFile[] }) {
@@ -470,16 +495,72 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
               <OpenFile path={file.path} />
             </div>
           )}
-          <diff
-            patch={patch}
-            wordDiff
-            style={{
-              minWidth: 0,
-              fontFamily: CODE_FONT_FAMILY,
-              fontSize: codeFontSize,
-              lineHeight: Math.round(codeFontSize * 3) / 2,
-            }}
-          />
+          {file.before === undefined || file.after === undefined ? (
+            <diff
+              patch={patch}
+              wordDiff
+              style={{
+                minWidth: 0,
+                fontFamily: CODE_FONT_FAMILY,
+                fontSize: codeFontSize,
+                lineHeight: Math.round(codeFontSize * 3) / 2,
+              }}
+            />
+          ) : (
+            diffLines(patch).map((line, index) => (
+              <div
+                key={index}
+                style={{
+                  ...row,
+                  fontFamily: CODE_FONT_FAMILY,
+                  fontSize: codeFontSize,
+                  lineHeight: Math.round(codeFontSize * 3) / 2,
+                  backgroundColor:
+                    line.kind === '+'
+                      ? colors.is_dark
+                        ? '#344a37'
+                        : '#d7ecd7'
+                      : line.kind === '-'
+                        ? colors.is_dark
+                          ? '#4a3030'
+                          : '#f7dada'
+                        : undefined,
+                  borderLeftWidth: 2,
+                  borderColor:
+                    line.kind === '+'
+                      ? colors.success
+                      : line.kind === '-'
+                        ? colors.danger
+                        : 'transparent',
+                }}
+              >
+                <text
+                  style={{
+                    width: 50,
+                    paddingRight: 10,
+                    textAlign: 'right',
+                    color: colors.text_tertiary,
+                  }}
+                >
+                  {line.number}
+                </text>
+                <rich-text
+                  text={line.text || ' '}
+                  runs={highlightCode(
+                    line.text || ' ',
+                    file.path.split('.').at(-1),
+                    colors.is_dark,
+                  )}
+                  style={{
+                    flexGrow: 1,
+                    paddingLeft: 12,
+                    color: colors.text_secondary,
+                    userSelect: 'text',
+                  }}
+                />
+              </div>
+            ))
+          )}
         </div>
       ))}
       {patches.hidden > 0 && (
@@ -686,36 +767,42 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
     >
       {expandable ? (
         <>
-          <div
-            style={{
-              ...column,
-              paddingLeft: 12,
-              paddingRight: 12,
-              paddingTop: 8,
-              paddingBottom: 8,
-              gap: 8,
-            }}
-          >
-            {server && (
-              <div style={{ ...row, gap: 8, fontSize: sp(12.5) }}>
-                <text style={{ color: colors.text_tertiary }}>MCP server:</text>
-                <text style={{ color: colors.text_secondary }}>{server}</text>
-              </div>
-            )}
-            <div style={{ ...row, gap: 8, fontSize: sp(12.5) }}>
-              <text style={{ color: colors.text_tertiary }}>Tool:</text>
-              <text style={{ color: colors.text_secondary, userSelect: 'text' }}>{nativeName}</text>
-            </div>
-            <CopySection label={command ? 'Command' : 'Arguments'} content={args} />
-            <CopySection
-              label="Output"
-              content={result}
-              command={command}
-              live={live && !complete(tool)}
+          {(!suppressRaw || server) && (
+            <div
+              style={{
+                ...column,
+                paddingLeft: 12,
+                paddingRight: 12,
+                paddingTop: 8,
+                paddingBottom: 8,
+                gap: 8,
+              }}
             >
-              {images ? <ToolImages tool={tool} /> : undefined}
-            </CopySection>
-          </div>
+              {server && (
+                <div style={{ ...row, gap: 8, fontSize: sp(12.5) }}>
+                  <text style={{ color: colors.text_tertiary }}>MCP server:</text>
+                  <text style={{ color: colors.text_secondary }}>{server}</text>
+                </div>
+              )}
+              {server && (
+                <div style={{ ...row, gap: 8, fontSize: sp(12.5) }}>
+                  <text style={{ color: colors.text_tertiary }}>Tool:</text>
+                  <text style={{ color: colors.text_secondary, userSelect: 'text' }}>
+                    {nativeName}
+                  </text>
+                </div>
+              )}
+              <CopySection label={command ? 'Command' : 'Arguments'} content={args} />
+              <CopySection
+                label="Output"
+                content={result}
+                command={command}
+                live={live && !complete(tool)}
+              >
+                {images ? <ToolImages tool={tool} /> : undefined}
+              </CopySection>
+            </div>
+          )}
           {files.length > 0 && (
             <div style={{ ...column, borderTopWidth: 1, borderColor: colors.border_strong }}>
               <InlineDiff files={files} />

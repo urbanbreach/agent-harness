@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGpuix, type PublicInstance } from '@gpuix/react';
+import { useGpuix, type EventPayload, type PublicInstance } from '@gpuix/react';
 import { Markdown } from '../../markdown';
-import { getAppStore } from '../../store';
+import { getAppStore, usePreferences } from '../../store';
 import { nativeRenderer } from '../../native';
 import { useTheme } from '../../theme';
 import { Button, ContextMenu, Icon, IconButton, Tooltip, type MenuItem } from '../../ui';
@@ -13,6 +13,7 @@ import { registerAction, runAction } from '../actions';
 import { timestamp } from './rows';
 import { AttachmentTile, loadPromptAttachments } from './attachments';
 import { copyTurnCheckpoints, getTurnCheckpoint } from './checkpoints';
+import { usePromptDisplay } from '../composer/prompt-display';
 const promptEditors = new Map<string, () => void>();
 export function requestPromptEdit(sessionId: string, requestId: string): boolean {
   const edit = promptEditors.get(`${sessionId}:${requestId}`);
@@ -93,6 +94,7 @@ export function ResponseFooter({
 }) {
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
+  const preferences = usePreferences();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const cursor = turn.requestIds.find((id) => view.providerTurns[id]);
@@ -204,14 +206,16 @@ export function ResponseFooter({
             style={{ width: 27, height: 27, borderRadius: 8 }}
           />
         </Tooltip>
-        <text style={{ paddingLeft: 4, color: colors.text_tertiary, fontSize: sp(12.5) }}>
-          {timestamp(
-            Date.parse(
-              view.entries.find((entry) => entry.turnId === turn.id && entry.timestamp)
-                ?.timestamp ?? '',
-            ) + (turn.durationMs ?? 0),
-          )}
-        </text>
+        {preferences.showMessageTimes !== false && (
+          <text style={{ paddingLeft: 4, color: colors.text_tertiary, fontSize: sp(12.5) }}>
+            {timestamp(
+              Date.parse(
+                view.entries.find((entry) => entry.turnId === turn.id && entry.timestamp)
+                  ?.timestamp ?? '',
+              ) + (turn.durationMs ?? 0),
+            )}
+          </text>
+        )}
       </div>
       {error && <text style={{ color: colors.danger, fontSize: sp(12.5) }}>{error}</text>}
     </ContextMenu>
@@ -231,6 +235,8 @@ export function UserMessage({
 }) {
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
+  const preferences = usePreferences();
+  const displayText = usePromptDisplay(sessionId, entry.text);
   const editor = useRef<PublicInstance>(null);
   const bubble = useRef<PublicInstance>(null);
   const [hovered, setHovered] = useState(false);
@@ -361,9 +367,21 @@ export function UserMessage({
         : []),
     ];
   }
+  function updateHover(event: EventPayload) {
+    const bounds = bubble.current && renderer?.getElementBounds?.(bubble.current.id);
+    const x = event.x;
+    const y = event.y;
+    if (!bounds || x === undefined || y === undefined) return;
+    setHovered(
+      x >= bounds.x - 12 &&
+        x <= bounds.x + bounds.width + 12 &&
+        y >= bounds.y - 8 &&
+        y <= bounds.y + bounds.height + 38,
+    );
+  }
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={updateHover}
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'flex',
@@ -501,7 +519,12 @@ export function UserMessage({
           }}
         >
           <div ref={bubble} style={{ maxHeight: 384, overflow: 'scroll' }}>
-            <Markdown source={entry.text} context="user" menuItems={menu()} />
+            <Markdown
+              source={displayText}
+              context="user"
+              menuItems={menu()}
+              onHover={updateHover}
+            />
           </div>
         </ContextMenu>
       ) : null}
@@ -515,16 +538,18 @@ export function UserMessage({
           opacity: hovered || editing ? 1 : 0,
         }}
       >
-        <text
-          style={{
-            color: colors.text_tertiary,
-            fontSize: sp(12.5),
-            paddingLeft: 4,
-            paddingRight: 4,
-          }}
-        >
-          {timestamp(entry.timestamp ? Date.parse(entry.timestamp) : 0)}
-        </text>
+        {preferences.showMessageTimes !== false && (
+          <text
+            style={{
+              color: colors.text_tertiary,
+              fontSize: sp(12.5),
+              paddingLeft: 4,
+              paddingRight: 4,
+            }}
+          >
+            {timestamp(entry.timestamp ? Date.parse(entry.timestamp) : 0)}
+          </text>
+        )}
         <CopyButton text={entry.text} />
         {canEdit && (
           <Tooltip content="Revert to here">

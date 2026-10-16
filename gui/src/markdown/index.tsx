@@ -31,6 +31,7 @@ export interface MarkdownProps {
   reasoning?: boolean;
   mathEnabled?: boolean;
   onOpenLink?: (destination: string) => void;
+  onHover?: (event: EventPayload) => void;
   /** Usual containing-message context actions, appended after formula actions. */
   menuItems?: MenuItem[];
   style?: StyleDesc;
@@ -49,6 +50,7 @@ interface Environment extends Metrics {
   mathEnabled: boolean;
   reasoning: boolean;
   onOpenLink?: (destination: string) => void;
+  onHover?: (event: EventPayload) => void;
   menuItems: MenuItem[];
 }
 const EnvironmentContext = createContext<Environment | null>(null);
@@ -106,6 +108,7 @@ export function Markdown({
   reasoning = false,
   mathEnabled = true,
   onOpenLink,
+  onHover,
   menuItems = [],
   style,
 }: MarkdownProps) {
@@ -129,6 +132,7 @@ export function Markdown({
       reasoning,
       mathEnabled,
       onOpenLink,
+      onHover,
       menuItems,
     }),
     [
@@ -141,6 +145,7 @@ export function Markdown({
       reasoning,
       mathEnabled,
       onOpenLink,
+      onHover,
       menuItems,
     ],
   );
@@ -148,6 +153,8 @@ export function Markdown({
   return (
     <EnvironmentContext.Provider value={environment}>
       <div
+        onMouseEnter={onHover}
+        onMouseLeave={onHover}
         style={{
           ...column,
           gap: environment.gap,
@@ -256,6 +263,8 @@ function InlineText({
   return (
     <rich-text
       text={model.text}
+      onMouseEnter={env.onHover}
+      onMouseLeave={env.onHover}
       runs={focusedRuns}
       tabIndex={links.length ? 0 : undefined}
       onClick={activate}
@@ -299,6 +308,8 @@ function Formula({ source, display = false }: { source: string; display?: boolea
     return (
       <rich-text
         text={source}
+        onMouseEnter={env.onHover}
+        onMouseLeave={env.onHover}
         style={{
           fontFamily: display ? 'JetBrains Mono' : UI_FONT_FAMILY,
           fontSize: env.size,
@@ -313,6 +324,8 @@ function Formula({ source, display = false }: { source: string; display?: boolea
     <img
       src={image.url}
       alt={source}
+      onMouseEnter={env.onHover}
+      onMouseLeave={env.onHover}
       objectFit="scaleDown"
       style={{
         width: image.width,
@@ -535,6 +548,8 @@ const CodeBlock = memo(function CodeBlock({ text, language }: { text: string; la
       >
         <rich-text
           text={text}
+          onMouseEnter={env.onHover}
+          onMouseLeave={env.onHover}
           runs={faded}
           style={{
             width: '100%',
@@ -703,6 +718,8 @@ const Block = memo(function Block({ block }: { block: MarkdownBlock }) {
         <div style={{ ...column, gap: 4, userSelect: 'none' }}>
           <img
             src={block.source}
+            onMouseEnter={env.onHover}
+            onMouseLeave={env.onHover}
             objectFit="scaleDown"
             style={{ maxWidth: '100%', maxHeight: 320, borderRadius: 6, flexShrink: 1 }}
           />

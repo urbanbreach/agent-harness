@@ -5,13 +5,14 @@ test('code colors preserve UTF-16 text, aliases, embedded fences and unfinished 
   const cases: { language: string; text: string; samples: [string, string, string][] }[] = [
     {
       language: ' RS linenums',
-      text: '#[derive(Debug)]\n// 😀 <&>\nfn main() { let n = 42; }\n/* open\nstill <&> 😀',
+      text: '#[derive(Debug)]\n// 😀 <&>\nfn main() { let n = 42; println!("ready"); }\n/* open\nstill <&> 😀',
       samples: [
         ['#[', '#858585', '#7D7D7D'],
         ['// 😀 <&>', '#A4A4A4', '#575757'],
         ['fn', '#9A4B92', '#C98BC0'],
         ['main', '#2F6690', '#8FB8D9'],
         ['42', '#9A6019', '#D9A05B'],
+        ['println!', '#666666', '#A3A3A3'],
         ['still <&> 😀', '#A4A4A4', '#575757'],
       ],
     },

@@ -58,7 +58,7 @@ const scopes: Record<string, Token> = {
   regexp: 'string',
   char: 'string',
   type: 'type',
-  built_in: 'type',
+  built_in: 'plain',
   title: 'type',
   class: 'type',
   function: 'type',

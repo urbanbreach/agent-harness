@@ -62,7 +62,7 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
         >
           <Icon name="file-diff" size={16} color={colors.text_secondary} />
         </div>
-        <div style={{ minWidth: 0, flexGrow: 1, gap: 2 }}>
+        <div style={{ minWidth: 0, flexGrow: 1, gap: 0 }}>
           <div style={{ ...textStyle, fontWeight: 500, color: colors.text }}>
             {t(count === 1 ? 'transcript.changed_file' : 'transcript.changed_files', { count })}
           </div>

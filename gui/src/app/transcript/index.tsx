@@ -81,7 +81,10 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     return Number.isFinite(date) ? date : Date.now();
   }, [sessionId, view.turns.at(-1)?.id]);
   const checkpoints = useTurnCheckpoints(sessionId, view);
-  const rows = useMemo(() => transcriptRows(view, expanded), [view, expanded]);
+  const rows = useMemo(
+    () => transcriptRows(view, expanded, preferences.showReasoning !== false),
+    [view, expanded, preferences.showReasoning],
+  );
   const offsets = [0];
   for (const row of rows) offsets.push(offsets[offsets.length - 1]! + (rowHeights[row.id] ?? 110));
   const anchorIndex = anchoredTurn
@@ -123,6 +126,21 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
   function reveal(index: number) {
     if (list.current) renderer?.scrollToItem?.(list.current.id, index, -24);
   }
+  function followTail() {
+    setAnchoredTurn(undefined);
+    if (list.current) renderer?.scrollToItem?.(list.current.id, rows.length, 0);
+  }
+  useEffect(() => {
+    const remove = ['follow', 'tail'].map((command) =>
+      registerAction({
+        id: `transcript.${command}`,
+        label: command === 'follow' ? 'Follow latest output' : 'Scroll to latest output',
+        enabled: () => rows.length > 0,
+        run: followTail,
+      }),
+    );
+    return () => remove.forEach((unregister) => unregister());
+  }, [rows.length, renderer]);
   function navigate(back: boolean) {
     if (!matches.length) return;
     const next =
@@ -165,6 +183,31 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
       }),
     [renderer],
   );
+  useEffect(() => {
+    const failed = view.turns.filter((turn) => turn.status === 'failed').at(-1);
+    const streaming = view.turns.filter((turn) => turn.status === 'working').at(-1);
+    function jump(turnId: string | undefined) {
+      if (!turnId) return;
+      const index = rows.findIndex((row) => row.kind === 'message' && row.entry.turnId === turnId);
+      if (index >= 0) reveal(index);
+    }
+    const removeFailed = registerAction({
+      id: 'transcript.latestFailed',
+      label: 'Jump to latest failed turn',
+      enabled: () => !!failed,
+      run: () => jump(failed?.id),
+    });
+    const removeStreaming = registerAction({
+      id: 'transcript.streaming',
+      label: 'Jump to live streaming turn',
+      enabled: () => !!streaming,
+      run: () => jump(streaming?.id),
+    });
+    return () => {
+      removeFailed();
+      removeStreaming();
+    };
+  }, [rows, view.turns, renderer]);
   useEffect(() => {
     if (findOpen && input.current) {
       renderer?.focusElement?.(input.current.id);
@@ -290,7 +333,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                 paddingLeft: 20,
                 paddingRight: 20,
                 paddingTop: row.kind === 'footer' ? 0 : index === 0 ? 22 : newTurn ? 48 : 8,
-                paddingBottom: index === rows.length - 1 ? 22 : 8,
+                paddingBottom: index === rows.length - 1 ? 27 : 8,
                 alignItems: 'center',
               }}
             >
@@ -342,15 +385,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                   </div>
                 )}
                 {row.kind === 'activity' && (
-                  <ActivityGroup
-                    entries={
-                      preferences.showReasoning === false
-                        ? row.entries.filter((entry) => entry.kind !== 'reasoning')
-                        : row.entries
-                    }
-                    view={view}
-                    live={row.live}
-                  />
+                  <ActivityGroup entries={row.entries} view={view} live={row.live} />
                 )}
                 {row.kind === 'fold' && (
                   <Button
@@ -545,10 +580,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
           name="arrow-down"
           size={16}
           label="Scroll to bottom"
-          onClick={() => {
-            if (list.current)
-              renderer?.scrollToItem?.(list.current.id, rows.length + (spacer > 0 ? 1 : 0), 0);
-          }}
+          onClick={followTail}
           style={{
             position: 'absolute',
             bottom: 8,

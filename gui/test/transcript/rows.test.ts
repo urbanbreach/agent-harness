@@ -61,4 +61,21 @@ test('settled work folds only interim content and keeps the complete trailing an
     'answer-b',
     'working',
   ]);
+  view.entries = [
+    view.entries[0]!,
+    { ...base, id: 'thought', kind: 'reasoning', text: 'Private thought', streaming: false },
+    view.entries[3]!,
+  ];
+  expect(transcriptRows(view, new Set(), false).map((row) => row.id)).toEqual([
+    'prompt',
+    'answer-a',
+    'working',
+  ]);
+  view.turns[0]!.status = 'completed';
+  view.status = 'idle';
+  expect(transcriptRows(view, new Set(), false).map((row) => row.id)).toEqual([
+    'prompt',
+    'answer-a',
+    'footer:turn',
+  ]);
 });

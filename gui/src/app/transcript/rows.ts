@@ -47,10 +47,17 @@ export function timestamp(ms: number, now = new Date()): string {
   return `${date.toLocaleDateString('en-US', { month: 'short' })} ${n}${suffix}${date.getFullYear() !== now.getFullYear() ? `, ${date.getFullYear()}` : ''}, ${time}`;
 }
 
-export function transcriptRows(view: SessionView, expanded: ReadonlySet<string>): TranscriptRow[] {
+export function transcriptRows(
+  view: SessionView,
+  expanded: ReadonlySet<string>,
+  showReasoning = true,
+): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   const turns = new Map(view.turns.map((turn) => [turn.id, turn]));
   const grouped = new Set<string>();
+  const visibleEntries = showReasoning
+    ? view.entries
+    : view.entries.filter((entry) => entry.kind !== 'reasoning');
   const append = (entries: TranscriptEntry[], live: boolean) => {
     let activity: TranscriptEntry[] = [];
     const flush = () => {
@@ -73,7 +80,7 @@ export function transcriptRows(view: SessionView, expanded: ReadonlySet<string>)
     }
     flush();
   };
-  for (const entry of view.entries) {
+  for (const entry of visibleEntries) {
     const turn = entry.turnId ? turns.get(entry.turnId) : undefined;
     if (!turn) {
       append([entry], false);
@@ -81,7 +88,7 @@ export function transcriptRows(view: SessionView, expanded: ReadonlySet<string>)
     }
     if (grouped.has(turn.id)) continue;
     grouped.add(turn.id);
-    const entries = view.entries.filter((item) => item.turnId === turn.id);
+    const entries = visibleEntries.filter((item) => item.turnId === turn.id);
     const live = turn.status === 'working' || turn.status === 'queued';
     if (live) {
       append(entries, true);
