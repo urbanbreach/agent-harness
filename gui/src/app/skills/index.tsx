@@ -7,6 +7,7 @@ import {
   Button,
   Dropdown,
   Icon,
+  Switch,
   TextField,
   useToast,
   type IconName,
@@ -269,14 +270,11 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
     props: { onMouseDownOutside?: () => void } = {},
   ) {
     return (
-      <div
+      <Button
         {...props}
-        tabIndex={busy ? -1 : 0}
-        role="button"
+        disabled={Boolean(busy)}
         aria-label={label}
-        onClick={() => {
-          if (!busy) onClick();
-        }}
+        onClick={onClick}
         style={{
           ...row,
           height: 26,
@@ -296,7 +294,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
       >
         <Icon name={icon} size={11} color={danger ? colors.danger : colors.text_tertiary} />
         <text style={{ fontSize: sp(12.5) }}>{label}</text>
-      </div>
+      </Button>
     );
   }
   function tile(skill: Skill, large = false) {
@@ -517,8 +515,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                 </div>
               ) : (
                 <div key={entry.skill.id} style={{ paddingBottom: 1 }}>
-                  <div
-                    tabIndex={0}
+                  <Button
                     role="option"
                     aria-selected={entry.skill.id === selectedId}
                     aria-label={entry.skill.name}
@@ -579,7 +576,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                           entry.skill.installs.map((install) => install.source).join(' · ')}
                       </text>
                     </div>
-                  </div>
+                  </Button>
                 </div>
               ),
             )}
@@ -652,38 +649,14 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                 {`${selectedSources} · ${selected.scope === 'user' ? t('skills.scope_user_detail') : t('skills.scope_in_project', { project: selected.project?.split('/').filter(Boolean).pop() || t('settings.skills_this_project') })}`}
               </text>
             </div>
-            <div
-              tabIndex={busy ? -1 : 0}
-              role="switch"
-              aria-label={t(selected.enabled ? 'skills.disable_named' : 'skills.enable_named', {
+            <Switch
+              disabled={Boolean(busy)}
+              checked={selected.enabled}
+              label={t(selected.enabled ? 'skills.disable_named' : 'skills.enable_named', {
                 name: selected.name,
               })}
-              aria-valuetext={t(selected.enabled ? 'settings.skills_on' : 'settings.skills_off')}
-              onClick={() => void toggle(selected)}
-              style={{
-                ...row,
-                width: 36,
-                height: 20,
-                padding: 2,
-                borderWidth: 1,
-                borderRadius: 20,
-                flexShrink: 0,
-                justifyContent: selected.enabled ? 'flex-end' : 'flex-start',
-                backgroundColor: selected.enabled ? colors.inverse : colors.inset,
-                borderColor: selected.enabled ? colors.inverse : colors.border_strong,
-                opacity: busy ? 0.55 : 1,
-                focusVisible: { borderColor: colors.accent },
-              }}
-            >
-              <div
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: 14,
-                  backgroundColor: selected.enabled ? colors.on_inverse : colors.text_tertiary,
-                }}
-              />
-            </div>
+              onChange={() => void toggle(selected)}
+            />
           </div>
           <text style={{ ...textStyle, marginTop: 14 }}>
             {selected.description || t('skills.no_description')}

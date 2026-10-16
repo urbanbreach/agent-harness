@@ -224,6 +224,12 @@ export function Dialog({
         <DialogBackdrop style={{ backgroundColor: scrimColor }} />
         <DialogPopup
           aria-label={title}
+          onKeyDown={(event) => {
+            if (!bare(event) || event.key !== 'escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          }}
           style={{
             display: 'flex',
             flexDirection: 'column',

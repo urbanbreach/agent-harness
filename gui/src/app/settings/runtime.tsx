@@ -60,10 +60,10 @@ export function RuntimePage({ cwd }: { cwd: string }) {
                 <div
                   style={{ display: 'flex', flexDirection: 'row', gap: 8, alignItems: 'center' }}
                 >
-                  {typeof setting.value === 'boolean' ? (
+                  {setting.kind === 'boolean' ? (
                     <Switch
                       label={setting.label}
-                      checked={setting.value}
+                      checked={setting.value === true}
                       disabled={!setting.editable}
                       onChange={(value) => void write(setting, value)}
                     />
@@ -85,21 +85,21 @@ export function RuntimePage({ cwd }: { cwd: string }) {
                       readOnly={!setting.editable}
                       value={
                         drafts[setting.id] ??
-                        (typeof setting.value === 'string'
-                          ? setting.value
+                        (setting.kind === 'string'
+                          ? String(setting.value ?? '')
                           : JSON.stringify(setting.value))
                       }
                       style={{ width: 180, opacity: setting.editable ? 1 : 0.55 }}
                       onChange={(value) =>
                         setDrafts((previous) => ({ ...previous, [setting.id]: value }))
                       }
-                      onKeyDown={(event) => {
-                        if (event.key !== 'enter' || !setting.editable) return;
+                      onSubmit={() => {
+                        if (!setting.editable) return;
                         const text = drafts[setting.id];
                         if (text === undefined) return;
                         try {
                           const value =
-                            typeof setting.value === 'string' ? text : (JSON.parse(text) as Json);
+                            setting.kind === 'string' ? text : (JSON.parse(text) as Json);
                           void write(setting, value);
                         } catch (error) {
                           setError(String(error));
@@ -110,9 +110,19 @@ export function RuntimePage({ cwd }: { cwd: string }) {
                   {setting.editable && (
                     <Button
                       onClick={() => {
+                        const draft = drafts[setting.id];
                         void backend
                           .call('settings.reset', { cwd, id: setting.id })
-                          .then(load)
+                          .then(async () => {
+                            await load();
+                            setDrafts((previous) => {
+                              if (previous[setting.id] !== draft) return previous;
+                              const next = { ...previous };
+                              delete next[setting.id];
+                              return next;
+                            });
+                            setError('');
+                          })
                           .catch((error) => setError(String(error)));
                       }}
                       style={{ padding: 6, fontSize: sp(12.5) }}

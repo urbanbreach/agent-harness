@@ -7,7 +7,6 @@ export {
   Switch,
   Segmented,
   Badge,
-  Kbd,
   Spinner,
   Tooltip,
   row,

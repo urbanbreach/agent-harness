@@ -50,11 +50,10 @@ const share = (part: number, total: number) =>
   `${(total > 0 ? (part / total) * 100 : 0).toFixed(1)}%`;
 const metricValue = (aggregate: Aggregate, metric: Metric) =>
   metric === 'cost' ? aggregate.knownCostUsd : aggregate.totalTokens;
-const iso = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const parseDay = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`);
+const iso = (date: Date) => date.toISOString().slice(0, 10);
+const parseDay = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00Z`);
 const shortDay = (value: string, locale: string) =>
-  parseDay(value).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+  parseDay(value).toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const ranges: { id: string; key: TranslationKey }[] = [
   { id: '7', key: 'usage.last_7_days' },
   { id: '30', key: 'usage.last_30_days' },
@@ -83,17 +82,17 @@ export function UsagePage({ cwd }: { cwd?: string }) {
   const monthlyView = view === 'monthly';
   const shape = monthlyView ? 'months' : ['7', '30', '90'].includes(range) ? 'days' : range;
   const window = useMemo(() => {
-    const end = new Date(),
-      start = new Date(end);
+    const end = new Date();
+    const start = new Date(end);
     if (monthlyView) {
-      start.setDate(1);
-      start.setMonth(start.getMonth() - 11);
-    } else if (range === 'this') start.setDate(1);
+      start.setUTCDate(1);
+      start.setUTCMonth(start.getUTCMonth() - 11);
+    } else if (range === 'this') start.setUTCDate(1);
     else if (range === 'last') {
-      start.setDate(1);
-      start.setMonth(start.getMonth() - 1);
-      end.setDate(0);
-    } else start.setDate(start.getDate() - Number(range) + 1);
+      start.setUTCDate(1);
+      start.setUTCMonth(start.getUTCMonth() - 1);
+      end.setUTCDate(0);
+    } else start.setUTCDate(start.getUTCDate() - Number(range) + 1);
     return { from: iso(start), to: iso(end) };
   }, [monthlyView, range, refresh]);
   useEffect(() => {
@@ -170,7 +169,10 @@ export function UsagePage({ cwd }: { cwd?: string }) {
           t('usage.cached_input'),
           compact(total.cachedInputTokens),
           t('usage.observed_input_share', {
-            share: share(total.cachedInputTokens, total.cachedInputTokens + total.inputTokens),
+            share: share(
+              total.cachedInputTokens,
+              total.cachedInputTokens + total.cacheWriteTokens + total.inputTokens,
+            ),
           }),
         ],
         [
@@ -218,6 +220,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                 ? parseDay(displayed.from).toLocaleDateString(locale, {
                     month: 'short',
                     year: 'numeric',
+                    timeZone: 'UTC',
                   })
                 : shortDay(displayed.from, locale)
               : shortDay(window.from, locale),
@@ -226,6 +229,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                 ? parseDay(displayed.to).toLocaleDateString(locale, {
                     month: 'short',
                     year: 'numeric',
+                    timeZone: 'UTC',
                   })
                 : shortDay(displayed.to, locale)
               : shortDay(window.to, locale),
@@ -855,7 +859,11 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
   const [hover, setHover] = useState<number>();
   const days = useMemo(() => {
     const result: { key: string; values: number[] }[] = [];
-    for (const day = parseDay(data.from); iso(day) <= data.to; day.setDate(day.getDate() + 1)) {
+    for (
+      const day = parseDay(data.from);
+      iso(day) <= data.to;
+      day.setUTCDate(day.getUTCDate() + 1)
+    ) {
       const key = iso(day),
         aggregate = data.byDay.find((d) => d.key === key);
       result.push({
@@ -1085,6 +1093,7 @@ function HistoryRow({
     ? parseDay(`${a.key.slice(0, 7)}-01`).toLocaleDateString(locale, {
         month: 'long',
         year: 'numeric',
+        timeZone: 'UTC',
       })
     : a.key;
   const path =
@@ -1150,7 +1159,9 @@ function HistoryRow({
 
 function MonthChart({ month, data }: { month: string; data: Snapshot }) {
   const { colors } = useTheme();
-  const days = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const days = new Date(
+    Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0),
+  ).getUTCDate();
   const unit: Metric = data.totals.knownCostUsd > 0 ? 'cost' : 'tokens';
   const peak = Math.max(0, ...data.byDay.map((day) => metricValue(day, unit)));
   const barWidth = Math.max(1, (168 - days + 1) / days);

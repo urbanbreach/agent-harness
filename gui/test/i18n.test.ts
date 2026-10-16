@@ -1,5 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
-import { resolveLanguage, setLanguage, t, type Locale } from '../src/i18n';
+import {
+  english,
+  resolveLanguage,
+  setLanguage,
+  t,
+  type Locale,
+  type TranslationKey,
+} from '../src/i18n';
 
 afterEach(() => {
   setLanguage('en');
@@ -22,11 +29,12 @@ test('system language follows the process locale and only ships Simplified Chine
   expect(resolveLanguage('ja', { LANG: 'zh_CN.UTF-8' })).toBe('ja');
 });
 
-test('labels follow the applied language and keep their placeholders', () => {
-  setLanguage('zh-CN');
-  expect(t('notice.saveFailed', { error: 'disk full' })).toBe('无法保存本地状态：disk full');
-  setLanguage('ja');
-  expect(t('action.quit')).toBe('Harness を終了');
-  setLanguage('en');
-  expect(t('transcript.showing_first_files', { count: 2, total: 9 })).toBe('Showing first 2 of 9');
+test.each(['zh-CN', 'ja'] as const)('%s preserves every English placeholder', (locale) => {
+  setLanguage(locale);
+  for (const [key, text] of Object.entries(english)) {
+    const names = [...text.matchAll(/%?\{([^}]+)\}/g)].map((match) => match[1]!);
+    const variables = Object.fromEntries(names.map((name) => [name, `__${name}__`]));
+    const translated = t(key as TranslationKey, variables);
+    for (const value of Object.values(variables)) expect(translated).toContain(value);
+  }
 });

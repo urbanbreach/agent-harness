@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useWindowSize, type StyleDesc } from '@gpuix/react';
 import { useTheme } from '../../theme';
+import { FONT_SIZE_CHOICES } from '../../theme/fonts';
 import { Button, Dropdown, Icon, Switch, TextField } from '../../ui';
 import { getAppStore, usePreferences, useSelectedProject } from '../../store';
 import { english, t, useLanguage, useLocale, type TranslationKey } from '../../i18n';
@@ -142,7 +143,6 @@ function General() {
 function Appearance() {
   const theme = useTheme();
   const language = useLanguage();
-  const sizes = [11, 12, 13, 14, 15, 16, 18, 20];
   const languages = [
     ['system', t('language.system')],
     ['en', 'English'],
@@ -194,7 +194,7 @@ function Appearance() {
           menuAlign="end"
           style={{ width: 116, justifyContent: 'space-between' }}
           label={`${theme.uiFontSize} px`}
-          items={sizes.map((size) => ({
+          items={FONT_SIZE_CHOICES.map((size) => ({
             id: String(size),
             label: `${size} px`,
             selected: size === theme.uiFontSize,
@@ -212,7 +212,7 @@ function Appearance() {
           menuAlign="end"
           style={{ width: 116, justifyContent: 'space-between' }}
           label={`${theme.codeFontSize} px`}
-          items={sizes.map((size) => ({
+          items={FONT_SIZE_CHOICES.map((size) => ({
             id: String(size),
             label: `${size} px`,
             selected: size === theme.codeFontSize,

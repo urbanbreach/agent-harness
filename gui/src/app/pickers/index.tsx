@@ -256,7 +256,22 @@ export function ProjectPicker(
           aria-label={t('shell.projects')}
           onKeyDown={keys}
           onMouseDownOutside={(event) => {
-            if (event.button === 0) props.onClose();
+            if (event.button !== 0) return;
+            const bounds =
+              props.triggerId === undefined
+                ? undefined
+                : renderer?.getElementBounds?.(props.triggerId);
+            if (
+              bounds &&
+              event.x !== undefined &&
+              event.y !== undefined &&
+              event.x >= bounds.x &&
+              event.x <= bounds.x + bounds.width &&
+              event.y >= bounds.y &&
+              event.y <= bounds.y + bounds.height
+            )
+              return;
+            props.onClose();
           }}
           style={{
             // Keep fractional positioning on the surface, outside the snapped anchor.

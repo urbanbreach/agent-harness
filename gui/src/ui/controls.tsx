@@ -555,13 +555,6 @@ export function Badge({ children, style, ...props }: Props) {
     </div>
   );
 }
-export function Kbd({ children, style, ...props }: Props) {
-  return (
-    <text {...props} style={{ whiteSpace: 'nowrap', flexShrink: 0, ...style }}>
-      {children}
-    </text>
-  );
-}
 const spinnerEpoch = Date.now();
 export function Spinner({
   size = 13,

@@ -10,6 +10,7 @@ import { matchScore } from './search';
 import { NestedPalette, type PalettePage } from './nested';
 import type { Draft } from '../../store/store';
 import { writeClipboardText, type Run } from '../../native';
+import { restoreStash } from './stash';
 
 export interface PaletteRow {
   id: string;
@@ -91,11 +92,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
         Array.isArray(store.getSnapshot().preferences.stashedDrafts) &&
         Boolean((store.getSnapshot().preferences.stashedDrafts as unknown[]).length),
       run: () => {
-        const state = store.getSnapshot();
-        const stashes = state.preferences.stashedDrafts as unknown as Draft[];
-        if (!stashes[0]) return;
-        store.setDraft(state.selection, stashes[0]);
-        store.setPreferences({ stashedDrafts: stashes.slice(1) as never });
+        restoreStash(0);
         runAction('composer.focus');
       },
     });
@@ -152,6 +149,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
   const [, refreshActions] = useState(0);
   const input = useRef<PublicInstance>(null);
   const card = useRef<PublicInstance>(null);
+  const highlighted = useRef<PublicInstance>(null);
   const previousFocus = useRef(renderer?.getFocusedElementId?.());
   const cache = useRef(new Map<string, typeof hits>());
   useEffect(() => subscribeActions(() => refreshActions((value) => value + 1)), []);
@@ -446,6 +444,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
   const [nestedRows, setNestedRows] = useState<PaletteRow[]>([]);
   const displayed = page === 'root' ? rows : nestedRows;
   const active = Math.min(selected, Math.max(0, displayed.length - 1));
+  useEffect(() => {
+    highlighted.current?.scrollIntoView?.();
+  }, [active, page, query]);
   if (page === 'news')
     return (
       <NestedPalette
@@ -604,7 +605,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               }}
             >
               {displayed.map((row, index) => (
-                <div key={row.id}>
+                <div key={row.id} ref={index === active ? highlighted : undefined}>
                   {index === 0 || displayed[index - 1]?.section !== row.section ? (
                     <div
                       style={{

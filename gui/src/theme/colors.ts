@@ -81,19 +81,3 @@ export function providerColor(provider: string, colors: ThemeColors): string {
       return colors.is_dark ? '#F3F3F3' : '#34363B';
   }
 }
-
-export function sessionStatusColor(status: string, colors: ThemeColors): string {
-  switch (status) {
-    case 'connecting':
-    case 'working':
-      return colors.accent;
-    case 'background':
-      return colors.text_secondary;
-    case 'waiting':
-      return colors.warning;
-    case 'failed':
-      return colors.danger;
-    default:
-      return colors.text_ghost;
-  }
-}

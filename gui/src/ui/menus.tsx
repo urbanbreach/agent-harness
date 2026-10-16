@@ -95,6 +95,10 @@ export function Menu({
     item.onSelect?.();
   }
   function keys(event: KeyEvent) {
+    if (event.key === 'tab') {
+      flushSync(close);
+      return;
+    }
     if (!bare(event)) return;
     const key = event.key;
     if (

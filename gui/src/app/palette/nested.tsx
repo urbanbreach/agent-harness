@@ -10,6 +10,7 @@ import { runAction } from '../actions';
 import { requestPromptEdit } from '../transcript/messages';
 import type { PaletteRow } from './index';
 import { matchScore } from './search';
+import { restoreStash } from './stash';
 
 export type PalettePage =
   'root' | 'resume' | 'providers' | 'rewind' | 'tree' | 'history' | 'stash' | 'news';
@@ -166,8 +167,7 @@ export function NestedPalette({
         icon: 'file-text',
         section: t('settings.palette_stashed_drafts'),
         run: () => {
-          store.setDraft(state.selection, draft);
-          store.setPreferences({ stashedDrafts: stashes.filter((_, at) => at !== index) as never });
+          restoreStash(index);
           onClose();
           runAction('composer.focus');
         },

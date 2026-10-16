@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises';
 
 export const UI_FONT_FAMILY = '.SystemUIFont';
 export const CODE_FONT_FAMILY = 'JetBrains Mono';
-export const SYSTEM_MONO_FONT_FAMILY = '.SystemMono';
 export const FONT_SIZE_CHOICES = [11, 12, 13, 14, 15, 16, 18, 20] as const;
 export const DEFAULT_UI_FONT_SIZE = 14;
 export const DEFAULT_CODE_FONT_SIZE = 13;
@@ -10,14 +9,6 @@ export const DEFAULT_CODE_FONT_SIZE = 13;
 export function clampFontSize(value: number, fallback: number): number {
   return Number.isFinite(value) ? Math.min(24, Math.max(9, value)) : fallback;
 }
-
-export const typography = {
-  menu: { fontSize: 12.5, lineHeight: 15 },
-  menuCaption: { fontSize: 12.5, lineHeight: 14, fontWeight: 500 },
-  tooltip: { fontSize: 12.5, lineHeight: 15 },
-  textField: { fontSize: 12.5, lineHeight: 16 },
-  menuChip: { fontSize: 13, lineHeight: 16 },
-} as const;
 
 export interface FontRegistrar {
   registerFont(data: Buffer): void | Promise<void>;
