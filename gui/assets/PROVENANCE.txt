@@ -12,28 +12,54 @@ https://registry.npmjs.org/lucide-static/-/lucide-static-0.468.0.tgz
 License and upstream notices are retained in icons/LICENSE.
 Stock aliases: alert = triangle-alert, fork = split, rewind = history,
 sparkle = asterisk, compose = square-pen.
-star-filled changes the stock star fill to currentColor.
-Stock outline stroke widths are calibrated from 2 to 1.4 viewBox units.
-At a 14 px icon size and 2x output scale this is a 1.63 physical-pixel stroke.
-The sparkle alias enlarges the stock asterisk paths by 1.5 around the viewBox
-center, with inverse stroke scaling to retain the rendered 1.4-unit stroke.
+Stock outline strokes use 2 viewBox units, except separately calibrated
+file-diff (2.2) and cloud-upload (1.8) masks. At 14 px and 2x scale, the
+standard stroke is 2.33 physical pixels. The panel-toggle rectangles use
+corner radius 3. The sparkle alias enlarges the stock asterisk paths by 1.5
+around the viewBox center with inverse stroke scaling, retaining the
+rendered 2-unit stroke.
 These names intentionally select the documented shapes rather than the
 similarly named but differently shaped Lucide glyphs.
 
 Custom artwork
 The appearance, changes, queue, block, stop, stop-filled, terminal-square,
-command, cursor-spark, file-bottom-left-arrow, arrow-left, arrow-right,
-plus, search, folder, folder-new, folder-open, window-maximize,
-window-minimize, window-restore, and the provider-claude, provider-openai,
+cursor-spark, file-bottom-left-arrow, arrow-left, arrow-right,
+plus, search, folder, folder-open, window-maximize,
+window-minimize, window-restore, and the provider-claude,
 provider-deepseek, provider-grok SVG files are original vector geometry authored
 for Harness from the clean-room shape descriptions.
 No upstream product SVG source was used for these drawings.
-Provider silhouettes are original interpretations, not official brand assets.
+The custom provider silhouettes above are original interpretations, not
+official brand assets.
+
+star.svg and star-filled.svg are original mathematical five-point stars.
+Their ten vertices alternate outer radius 10 and inner radius 5.5 around
+center (12,12), at angles -90 + 36*i degrees for i=0..9, rounded to three
+decimal places. Both use stroke-width 2; the filled variant fills currentColor.
+No screenshot contours or pixel-traced geometry are used.
+queue.svg is an original top bar, quarter-circle turn, and arrow drawing.
+
+command.svg is the unmodified Framework7 Icons command silhouette:
+https://github.com/framework7io/framework7-icons/blob/master/package/svg/command.svg
+License: MIT, copyright Vladimir Kharlampidi 2016; notice retained in the SVG.
+
+folder-new.svg uses the Framework7 Icons folder_badge_plus silhouette:
+https://github.com/framework7io/framework7-icons/blob/master/package/svg/folder_badge_plus.svg
+License: MIT, copyright Vladimir Kharlampidi 2016; notice retained in the SVG.
+
+provider-openai.svg uses the canonical 256x260 provider-identification mark
+published in SVGCode's brand-logos catalog:
+https://svgcode.com/icons/brand-logos/openai
+Published icon license: MIT; publisher attribution and full notice retained
+in the SVG. The mask uses currentColor; OpenAI retains its trademarks.
 
 File icons
 The full-color SVGs are unmodified stock Material Icon Theme artwork:
 https://github.com/material-extensions/vscode-material-icon-theme/tree/main/icons
 License: MIT, retained in file-icons/LICENSE.
 Each file uses the matching upstream filename except file.svg, which is
-upstream document.svg. Render file icons as full-color images, not masks.
+upstream document.svg. Two exceptions are original Harness drawings:
+rust.svg (a gear with computed teeth around an R) and text.svg (a page
+outline with a folded corner). Render file icons as full-color images, not
+masks.
 All shipping assets are local; displaying them needs no network access.
