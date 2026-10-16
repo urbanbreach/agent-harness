@@ -106,8 +106,11 @@ export async function seedPanelRepos() {
       ).stdout.trim();
       await gitCommand(cwd, ['update-index', '--cacheinfo', '100644', blob, 'notes.txt'], { env });
       const tree = (await gitCommand(cwd, ['write-tree'], { env })).stdout.trim();
+      const commit = (
+        await gitCommand(cwd, ['commit-tree', tree, '-p', 'HEAD', '-m', 'Fixture completed turn'])
+      ).stdout.trim();
       await gitCommand(cwd, ['update-ref', 'refs/harness-gui/release-review/1-start', 'HEAD']);
-      await gitCommand(cwd, ['update-ref', 'refs/harness-gui/release-review/1-end', tree]);
+      await gitCommand(cwd, ['update-ref', 'refs/harness-gui/release-review/1-end', commit]);
       await rm(index);
     }
   }

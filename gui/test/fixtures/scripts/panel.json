@@ -9,5 +9,34 @@
     },
     { "kind": "stop" }
   ],
-  [{ "kind": "text", "text": "Updated the release checklist." }, { "kind": "stop" }]
+  [
+    {
+      "kind": "tool",
+      "id": "panel-todos",
+      "toolId": "todowrite",
+      "args": {
+        "todos": [
+          { "content": "Review the release notes", "status": "completed", "priority": "high" },
+          { "content": "Confirm the launch window", "status": "in_progress", "priority": "high" },
+          { "content": "Share the rollout plan", "status": "pending", "priority": "medium" }
+        ]
+      }
+    },
+    { "kind": "stop" }
+  ],
+  [
+    {
+      "kind": "tool",
+      "id": "panel-plan",
+      "toolId": "bash",
+      "args": {
+        "command": "bash -lc 'for sessions in \"$HARNESS_HOME\"/sessions/v2-*; do if test -d \"$sessions\"; then runtime=\"$HARNESS_HOME/projects/${sessions##*/}\"; mkdir -p \"$runtime/plans\"; printf \"# Atlas rollout plan\\n\\n1. Confirm the launch window.\\n2. Stage the release and watch the metrics.\\n3. Share the outcome with the team.\\n\" > \"$runtime/plans/release.md\"; fi; done'"
+      }
+    },
+    { "kind": "stop" }
+  ],
+  [
+    { "kind": "text", "text": "Updated the release checklist and rollout plan." },
+    { "kind": "stop" }
+  ]
 ]

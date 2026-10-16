@@ -297,7 +297,7 @@
         "runDir": "/fixture/sessions/release-review",
         "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-15T23:12:26.000Z",
-        "live": true,
+        "live": false,
         "catalog": {
           "run_id": "release-review",
           "run_name": "Review Atlas release plan",
@@ -777,25 +777,6 @@
             "event_type": "run_finished",
             "data": {
               "summary": "# Atlas release notes\n\nA **reliable release** starts with *small changes*, ~~last-minute guesses~~, and `clear ownership`. Read the [release guide](https://example.com/guide).\n\n## Plan the rollout\n\n- Prepare the checklist\n- Review the changes\n  - Confirm owners\n  - Check rollback steps\n\n1. Stage the release\n2. Watch the metrics\n3. Share the outcome\n\n- [x] Draft release notes\n- [ ] Confirm the launch window\n\n### Operational checks\n\n> Ship calmly. Prefer evidence over assumptions.\n\n| Area | Owner | Checks |\n| :--- | :---: | ---: |\n| API | Maya | 12 |\n| Search | Leo | 8 |\n| Docs | Nina | 5 |\n\n#### Implementation examples\n\n```rust\nfn main() {\n    println!(\"Atlas is ready\");\n}\n```\n\n```typescript\nconst release = { name: \"atlas\", ready: true };\nconsole.log(release.name);\n```\n\n```bash\nprintf 'Release ready\\n'\ngit status --short\n```\n\n```\nRelease checklist complete.\nNo blocking issues found.\n```\n\n---\n\nThe next step is to confirm the launch window with the team."
-            }
-          }
-        },
-        {
-          "schema_version": 1,
-          "event_id": "composer-running",
-          "seq": 24,
-          "run_id": "release-review",
-          "mono_ms": 9000,
-          "actor": {
-            "kind": "supervisor"
-          },
-          "payload": {
-            "event_type": "provider_request_started",
-            "data": {
-              "request_id": "composer-working",
-              "provider_id": "mock",
-              "model_id": "model-1",
-              "metadata": null
             }
           }
         }

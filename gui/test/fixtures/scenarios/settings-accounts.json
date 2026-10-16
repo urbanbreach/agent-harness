@@ -1,0 +1,839 @@
+{
+  "state": {
+    "layout": {
+      "selectedProject": "atlas",
+      "selectedTask": "release-review"
+    },
+    "preferences": {
+      "referenceNow": 1792106066000,
+      "sidebarGrouping": "updated",
+      "sidebarOrdering": "newest"
+    }
+  },
+  "projects": [
+    {
+      "id": "atlas",
+      "name": "atlas",
+      "cwd": "/fixture/atlas"
+    },
+    {
+      "id": "harbor",
+      "name": "harbor",
+      "cwd": "/fixture/harbor"
+    }
+  ],
+  "sessions": [
+    {
+      "row": {
+        "runId": "release-review",
+        "runDir": "/fixture/sessions/release-review",
+        "cwd": "/fixture/atlas",
+        "createdAt": "2026-10-15T23:12:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "release-review",
+          "run_name": "Review Atlas release plan",
+          "status": "finished",
+          "last_updated_at": "2026-10-15T23:12:26.000Z",
+          "workspace_root": "/fixture/atlas",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "release-review-1",
+          "seq": 1,
+          "run_id": "release-review",
+          "mono_ms": 0,
+          "ts": "2026-10-15T23:12:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "release-review-turn",
+              "text": "Review the Atlas release plan.\nInclude the checklist, examples, and a short recommendation.\nKeep the rollout safe and easy to follow."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "release-review-2",
+          "seq": 2,
+          "run_id": "release-review",
+          "mono_ms": 1000,
+          "ts": "2026-10-15T23:12:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "release-review-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "release-review-3",
+          "seq": 3,
+          "run_id": "release-review",
+          "mono_ms": 8000,
+          "ts": "2026-10-15T23:12:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "search-relevance",
+        "runDir": "/fixture/sessions/search-relevance",
+        "cwd": "/fixture/atlas",
+        "createdAt": "2026-10-15T22:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "search-relevance",
+          "run_name": "Improve search relevance",
+          "status": "finished",
+          "last_updated_at": "2026-10-15T22:14:26.000Z",
+          "workspace_root": "/fixture/atlas",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "search-relevance-1",
+          "seq": 1,
+          "run_id": "search-relevance",
+          "mono_ms": 0,
+          "ts": "2026-10-15T22:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "search-relevance-turn",
+              "text": "Improve search relevance."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "search-relevance-2",
+          "seq": 2,
+          "run_id": "search-relevance",
+          "mono_ms": 1000,
+          "ts": "2026-10-15T22:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "search-relevance-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "search-relevance-3",
+          "seq": 3,
+          "run_id": "search-relevance",
+          "mono_ms": 8000,
+          "ts": "2026-10-15T22:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "health-checks",
+        "runDir": "/fixture/sessions/health-checks",
+        "cwd": "/fixture/atlas",
+        "createdAt": "2026-10-15T21:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "health-checks",
+          "run_name": "Investigate flaky health checks",
+          "status": "finished",
+          "last_updated_at": "2026-10-15T21:14:26.000Z",
+          "workspace_root": "/fixture/atlas",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "health-checks-1",
+          "seq": 1,
+          "run_id": "health-checks",
+          "mono_ms": 0,
+          "ts": "2026-10-15T21:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "health-checks-turn",
+              "text": "Investigate flaky health checks."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "health-checks-2",
+          "seq": 2,
+          "run_id": "health-checks",
+          "mono_ms": 1000,
+          "ts": "2026-10-15T21:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "health-checks-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "health-checks-3",
+          "seq": 3,
+          "run_id": "health-checks",
+          "mono_ms": 8000,
+          "ts": "2026-10-15T21:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "onboarding-copy",
+        "runDir": "/fixture/sessions/onboarding-copy",
+        "cwd": "/fixture/atlas",
+        "createdAt": "2026-10-14T23:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "onboarding-copy",
+          "run_name": "Refresh onboarding copy",
+          "status": "failed",
+          "last_updated_at": "2026-10-14T23:14:26.000Z",
+          "workspace_root": "/fixture/atlas",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "onboarding-copy-1",
+          "seq": 1,
+          "run_id": "onboarding-copy",
+          "mono_ms": 0,
+          "ts": "2026-10-14T23:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "onboarding-copy-turn",
+              "text": "Refresh onboarding copy."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "onboarding-copy-2",
+          "seq": 2,
+          "run_id": "onboarding-copy",
+          "mono_ms": 1000,
+          "ts": "2026-10-14T23:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "onboarding-copy-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "onboarding-copy-3",
+          "seq": 3,
+          "run_id": "onboarding-copy",
+          "mono_ms": 8000,
+          "ts": "2026-10-14T23:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_failed",
+            "data": {
+              "error": "The task failed."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "migration-checklist",
+        "runDir": "/fixture/sessions/migration-checklist",
+        "cwd": "/fixture/atlas",
+        "createdAt": "2026-10-13T23:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "migration-checklist",
+          "run_name": "Prepare migration checklist",
+          "status": "finished",
+          "last_updated_at": "2026-10-13T23:14:26.000Z",
+          "workspace_root": "/fixture/atlas",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "migration-checklist-1",
+          "seq": 1,
+          "run_id": "migration-checklist",
+          "mono_ms": 0,
+          "ts": "2026-10-13T23:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "migration-checklist-turn",
+              "text": "Prepare migration checklist."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "migration-checklist-2",
+          "seq": 2,
+          "run_id": "migration-checklist",
+          "mono_ms": 1000,
+          "ts": "2026-10-13T23:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "migration-checklist-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "migration-checklist-3",
+          "seq": 3,
+          "run_id": "migration-checklist",
+          "mono_ms": 8000,
+          "ts": "2026-10-13T23:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "api-errors",
+        "runDir": "/fixture/sessions/api-errors",
+        "cwd": "/fixture/atlas",
+        "createdAt": "2026-10-11T23:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "api-errors",
+          "run_name": "Audit API error messages",
+          "status": "finished",
+          "last_updated_at": "2026-10-11T23:14:26.000Z",
+          "workspace_root": "/fixture/atlas",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "api-errors-1",
+          "seq": 1,
+          "run_id": "api-errors",
+          "mono_ms": 0,
+          "ts": "2026-10-11T23:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "api-errors-turn",
+              "text": "Audit API error messages."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "api-errors-2",
+          "seq": 2,
+          "run_id": "api-errors",
+          "mono_ms": 1000,
+          "ts": "2026-10-11T23:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "api-errors-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "api-errors-3",
+          "seq": 3,
+          "run_id": "api-errors",
+          "mono_ms": 8000,
+          "ts": "2026-10-11T23:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "harbor-runbook",
+        "runDir": "/fixture/sessions/harbor-runbook",
+        "cwd": "/fixture/harbor",
+        "createdAt": "2026-10-07T23:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "harbor-runbook",
+          "run_name": "Update harbor runbook",
+          "status": "finished",
+          "last_updated_at": "2026-10-07T23:14:26.000Z",
+          "workspace_root": "/fixture/harbor",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "harbor-runbook-1",
+          "seq": 1,
+          "run_id": "harbor-runbook",
+          "mono_ms": 0,
+          "ts": "2026-10-07T23:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "harbor-runbook-turn",
+              "text": "Update harbor runbook."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "harbor-runbook-2",
+          "seq": 2,
+          "run_id": "harbor-runbook",
+          "mono_ms": 1000,
+          "ts": "2026-10-07T23:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "harbor-runbook-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "harbor-runbook-3",
+          "seq": 3,
+          "run_id": "harbor-runbook",
+          "mono_ms": 8000,
+          "ts": "2026-10-07T23:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "weekly-changes",
+        "runDir": "/fixture/sessions/weekly-changes",
+        "cwd": "/fixture/harbor",
+        "createdAt": "2026-09-29T23:14:26.000Z",
+        "live": false,
+        "catalog": {
+          "run_id": "weekly-changes",
+          "run_name": "Summarize weekly changes",
+          "status": "finished",
+          "last_updated_at": "2026-09-29T23:14:26.000Z",
+          "workspace_root": "/fixture/harbor",
+          "profile_preset": null,
+          "provider_model": "openai/gpt-6.1-sol",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "weekly-changes-1",
+          "seq": 1,
+          "run_id": "weekly-changes",
+          "mono_ms": 0,
+          "ts": "2026-09-29T23:14:26.000Z",
+          "actor": {
+            "kind": "user"
+          },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": {
+              "request_id": "weekly-changes-turn",
+              "text": "Summarize weekly changes."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "weekly-changes-2",
+          "seq": 2,
+          "run_id": "weekly-changes",
+          "mono_ms": 1000,
+          "ts": "2026-09-29T23:14:27.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": {
+              "request_id": "weekly-changes-turn",
+              "delta": "The checklist is ready for review."
+            }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "weekly-changes-3",
+          "seq": 3,
+          "run_id": "weekly-changes",
+          "mono_ms": 8000,
+          "ts": "2026-09-29T23:14:34.000Z",
+          "actor": {
+            "kind": "supervisor"
+          },
+          "payload": {
+            "event_type": "run_finished",
+            "data": {
+              "summary": "The checklist is ready for review."
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "extensions": {
+    "usage.history": {
+      "from": "2026-09-17",
+      "to": "2026-10-16",
+      "timeZone": "UTC",
+      "totals": {
+        "key": "total",
+        "records": 0,
+        "sessions": 0,
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "totalTokens": 0,
+        "costUsd": 0,
+        "knownCostUsd": 0,
+        "unpricedRecords": 0,
+        "lastActive": null,
+        "providers": [],
+        "models": []
+      },
+      "byCategory": [],
+      "byModel": [],
+      "byProvider": [],
+      "byProject": [],
+      "byDay": [],
+      "byMonth": [],
+      "quality": {
+        "providerReportedRecords": 0,
+        "modelPricedRecords": 0,
+        "unpricedRecords": 0
+      },
+      "scan": {
+        "scanned": 0,
+        "skipped": 0,
+        "records": 0,
+        "elapsedMs": 0
+      },
+      "errors": [],
+      "ratesAvailable": true,
+      "cacheSavingsUsd": 0
+    },
+    "settings.list": [
+      {
+        "id": "compaction.trigger_percent",
+        "surface": "Compaction",
+        "label": "Auto-compaction threshold",
+        "description": "Context usage that triggers automatic compaction.",
+        "kind": "number",
+        "value": 80,
+        "defaultValue": 80,
+        "editable": true
+      },
+      {
+        "id": "runtime.show_reasoning",
+        "surface": "Runtime",
+        "label": "Reasoning",
+        "description": "Reasoning visibility in the terminal.",
+        "kind": "boolean",
+        "value": true,
+        "defaultValue": true,
+        "editable": true
+      }
+    ],
+    "skills.list": {
+      "errors": [],
+      "skills": [
+        {
+          "id": "docs-polish",
+          "name": "docs-polish",
+          "description": "Improve project documentation.",
+          "scope": "user",
+          "project": null,
+          "enabled": true,
+          "body": "\n# Docs Polish\n\nUse clear headings and concrete examples.\n",
+          "allowedTools": [],
+          "primaryDirectory": "/fixture/home/skills/docs-polish",
+          "primaryFile": "/fixture/home/skills/docs-polish/SKILL.md",
+          "installs": [
+            {
+              "directory": "/fixture/home/skills/docs-polish",
+              "file": "/fixture/home/skills/docs-polish/SKILL.md",
+              "root": "/fixture/home/skills",
+              "scope": "user",
+              "source": "Shared",
+              "enabled": true
+            }
+          ],
+          "supportingFiles": 0,
+          "sizeBytes": 128,
+          "updatedAt": 1792107543557
+        },
+        {
+          "id": "incident-notes",
+          "name": "incident-notes",
+          "description": "Write concise incident notes.",
+          "scope": "user",
+          "project": null,
+          "enabled": true,
+          "body": "\n# Incident Notes\n\nRecord the impact, timeline, and next actions.\n",
+          "allowedTools": [],
+          "primaryDirectory": "/fixture/home/skills/incident-notes",
+          "primaryFile": "/fixture/home/skills/incident-notes/SKILL.md",
+          "installs": [
+            {
+              "directory": "/fixture/home/skills/incident-notes",
+              "file": "/fixture/home/skills/incident-notes/SKILL.md",
+              "root": "/fixture/home/skills",
+              "scope": "user",
+              "source": "Shared",
+              "enabled": true
+            }
+          ],
+          "supportingFiles": 0,
+          "sizeBytes": 138,
+          "updatedAt": 1792107543557
+        },
+        {
+          "id": "legacy-migration",
+          "name": "legacy-migration",
+          "description": "Plan a legacy data migration.",
+          "scope": "user",
+          "project": null,
+          "enabled": false,
+          "body": "\n# Legacy Migration\n\nInventory the data and document rollback steps.\n",
+          "allowedTools": [],
+          "primaryDirectory": "/fixture/home/skills/legacy-migration",
+          "primaryFile": "/fixture/home/skills/legacy-migration/SKILL.md.disabled",
+          "installs": [
+            {
+              "directory": "/fixture/home/skills/legacy-migration",
+              "file": "/fixture/home/skills/legacy-migration/SKILL.md.disabled",
+              "root": "/fixture/home/skills",
+              "scope": "user",
+              "source": "Shared",
+              "enabled": false
+            }
+          ],
+          "supportingFiles": 0,
+          "sizeBytes": 143,
+          "updatedAt": 1792107543557
+        },
+        {
+          "id": "release-review",
+          "name": "release-review",
+          "description": "Review a release checklist before shipping.",
+          "scope": "user",
+          "project": null,
+          "enabled": true,
+          "body": "\n# Release Review\n\nCheck the rollout plan, verify owners, and summarize outstanding risks.\n",
+          "allowedTools": [],
+          "primaryDirectory": "/fixture/home/skills/release-review",
+          "primaryFile": "/fixture/home/skills/release-review/SKILL.md",
+          "installs": [
+            {
+              "directory": "/fixture/home/skills/release-review",
+              "file": "/fixture/home/skills/release-review/SKILL.md",
+              "root": "/fixture/home/skills",
+              "scope": "user",
+              "source": "Shared",
+              "enabled": true
+            }
+          ],
+          "supportingFiles": 0,
+          "sizeBytes": 177,
+          "updatedAt": 1792107543557
+        }
+      ]
+    }
+  },
+  "providers": [
+    {
+      "id": "anthropic-subscription",
+      "label": "Synthetic subscription accounts",
+      "description": "Fixture-only account management; no provider is contacted.",
+      "connected": true,
+      "methods": []
+    }
+  ]
+}

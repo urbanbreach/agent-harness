@@ -4,7 +4,7 @@
       "selectedProject": "atlas",
       "selectedTask": "release-review",
       "rightVisible": true,
-      "rightWidth": 684
+      "rightWidth": 460
     },
     "preferences": {
       "referenceNow": 1792107026000,
@@ -42,7 +42,7 @@
     },
     "ui": {
       "appearance": {
-        "preference": "dark",
+        "preference": "light",
         "uiFontSize": 14,
         "codeFontSize": 13
       }

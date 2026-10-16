@@ -704,14 +704,14 @@
         "id": "openai",
         "label": "OpenAI",
         "description": "Use OpenAI models with an API key.",
-        "methods": ["api-key"],
+        "methods": [{ "id": "api-key", "label": "API key" }],
         "connected": false
       },
       {
         "id": "anthropic",
         "label": "Anthropic",
         "description": "Claude API and subscription accounts.",
-        "methods": ["api-key", "oauth"],
+        "methods": [{ "id": "api-key", "label": "API key" }],
         "connected": false
       }
     ],

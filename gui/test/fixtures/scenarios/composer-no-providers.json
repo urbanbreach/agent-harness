@@ -21,7 +21,7 @@
             "ref": "refs/harness-gui/release-review/1-end",
             "startRef": "refs/harness-gui/release-review/1-start",
             "endRef": "refs/harness-gui/release-review/1-end",
-            "cwd": "/tmp/harness-panel-repos/atlas",
+            "cwd": "/tmp/composer-atlas",
             "state": "ready",
             "files": [
               {
@@ -56,7 +56,7 @@
     {
       "id": "atlas",
       "name": "atlas",
-      "cwd": "/tmp/harness-panel-repos/atlas"
+      "cwd": "/tmp/composer-atlas"
     },
     {
       "id": "harbor",
@@ -69,7 +69,7 @@
       "row": {
         "runId": "release-review",
         "runDir": "/fixture/sessions/release-review",
-        "cwd": "/tmp/harness-panel-repos/atlas",
+        "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-15T23:12:26.000Z",
         "live": false,
         "catalog": {
@@ -77,7 +77,7 @@
           "run_name": "Review Atlas release plan",
           "status": "finished",
           "last_updated_at": "2026-10-15T23:12:26.000Z",
-          "workspace_root": "/tmp/harness-panel-repos/atlas",
+          "workspace_root": "/tmp/composer-atlas",
           "profile_preset": null,
           "provider_model": "openai/gpt-6.1-sol",
           "mode_source": "scenario_fixture",
@@ -103,7 +103,7 @@
           "payload": {
             "event_type": "run_started",
             "data": {
-              "workspace_root": "/tmp/harness-panel-repos/atlas",
+              "workspace_root": "/tmp/composer-atlas",
               "run_id": "release-review",
               "model": "openai/gpt-6.1-sol"
             }
@@ -564,7 +564,7 @@
       "row": {
         "runId": "search-relevance",
         "runDir": "/fixture/sessions/search-relevance",
-        "cwd": "/tmp/harness-panel-repos/atlas",
+        "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-15T22:14:26.000Z",
         "live": false,
         "catalog": {
@@ -572,7 +572,7 @@
           "run_name": "Improve search relevance",
           "status": "finished",
           "last_updated_at": "2026-10-15T22:14:26.000Z",
-          "workspace_root": "/tmp/harness-panel-repos/atlas",
+          "workspace_root": "/tmp/composer-atlas",
           "profile_preset": null,
           "provider_model": "openai/gpt-6.1-sol",
           "mode_source": "scenario_fixture",
@@ -643,7 +643,7 @@
       "row": {
         "runId": "health-checks",
         "runDir": "/fixture/sessions/health-checks",
-        "cwd": "/tmp/harness-panel-repos/atlas",
+        "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-15T21:14:26.000Z",
         "live": false,
         "catalog": {
@@ -651,7 +651,7 @@
           "run_name": "Investigate flaky health checks",
           "status": "finished",
           "last_updated_at": "2026-10-15T21:14:26.000Z",
-          "workspace_root": "/tmp/harness-panel-repos/atlas",
+          "workspace_root": "/tmp/composer-atlas",
           "profile_preset": null,
           "provider_model": "openai/gpt-6.1-sol",
           "mode_source": "scenario_fixture",
@@ -722,7 +722,7 @@
       "row": {
         "runId": "onboarding-copy",
         "runDir": "/fixture/sessions/onboarding-copy",
-        "cwd": "/tmp/harness-panel-repos/atlas",
+        "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-14T23:14:26.000Z",
         "live": false,
         "catalog": {
@@ -730,7 +730,7 @@
           "run_name": "Refresh onboarding copy",
           "status": "failed",
           "last_updated_at": "2026-10-14T23:14:26.000Z",
-          "workspace_root": "/tmp/harness-panel-repos/atlas",
+          "workspace_root": "/tmp/composer-atlas",
           "profile_preset": null,
           "provider_model": "openai/gpt-6.1-sol",
           "mode_source": "scenario_fixture",
@@ -801,7 +801,7 @@
       "row": {
         "runId": "migration-checklist",
         "runDir": "/fixture/sessions/migration-checklist",
-        "cwd": "/tmp/harness-panel-repos/atlas",
+        "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-13T23:14:26.000Z",
         "live": false,
         "catalog": {
@@ -809,7 +809,7 @@
           "run_name": "Prepare migration checklist",
           "status": "finished",
           "last_updated_at": "2026-10-13T23:14:26.000Z",
-          "workspace_root": "/tmp/harness-panel-repos/atlas",
+          "workspace_root": "/tmp/composer-atlas",
           "profile_preset": null,
           "provider_model": "openai/gpt-6.1-sol",
           "mode_source": "scenario_fixture",
@@ -880,7 +880,7 @@
       "row": {
         "runId": "api-errors",
         "runDir": "/fixture/sessions/api-errors",
-        "cwd": "/tmp/harness-panel-repos/atlas",
+        "cwd": "/tmp/composer-atlas",
         "createdAt": "2026-10-11T23:14:26.000Z",
         "live": false,
         "catalog": {
@@ -888,7 +888,7 @@
           "run_name": "Audit API error messages",
           "status": "finished",
           "last_updated_at": "2026-10-11T23:14:26.000Z",
-          "workspace_root": "/tmp/harness-panel-repos/atlas",
+          "workspace_root": "/tmp/composer-atlas",
           "profile_preset": null,
           "provider_model": "openai/gpt-6.1-sol",
           "mode_source": "scenario_fixture",
@@ -1116,7 +1116,14 @@
   ],
   "extensions": {
     "models.catalog": {
-      "current": null,
+      "current": {
+        "profile": "default",
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "label": "GPT-6.1-Sol",
+        "variant": "low",
+        "variantLabel": "Low"
+      },
       "models": [],
       "profiles": [],
       "defaultAccessMode": "full"

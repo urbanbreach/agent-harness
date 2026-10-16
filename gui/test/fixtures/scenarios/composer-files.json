@@ -227,6 +227,41 @@
           "variantLabel": "Low",
           "label": "GPT-5.6-Terra",
           "reasoningEffort": "low"
+        },
+        {
+          "profile": "default",
+          "provider": "google",
+          "providerLabel": "Google",
+          "model": "gemini-3.1-pro-preview",
+          "label": "Gemini 3.1 Pro Preview"
+        },
+        {
+          "profile": "default",
+          "provider": "openrouter",
+          "providerLabel": "OpenRouter",
+          "model": "anthropic/claude-sonnet-4.6",
+          "label": "Sonnet 4.6"
+        },
+        {
+          "profile": "default",
+          "provider": "mistral",
+          "providerLabel": "Mistral",
+          "model": "mistral-medium-2604",
+          "label": "Mistral Medium"
+        },
+        {
+          "profile": "default",
+          "provider": "deepseek",
+          "providerLabel": "DeepSeek",
+          "model": "deepseek-v4-flash",
+          "label": "DeepSeek V4 Flash"
+        },
+        {
+          "profile": "default",
+          "provider": "groq",
+          "providerLabel": "Groq",
+          "model": "moonshotai/kimi-k2-instruct-0905",
+          "label": "Kimi K2"
         }
       ],
       "profiles": ["default"],
