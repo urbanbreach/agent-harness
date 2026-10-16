@@ -24,8 +24,13 @@ import { setLanguage, t } from './i18n';
 import { restoreWindowGeometry, type WindowGeometry } from './state/window';
 import { useTheme } from './theme';
 
+// `bun --hot` reruns this module in the same process. Flush the previous store's drafts
+// and close its backend, so each reload does not leave another gui-server running.
+const hot = globalThis as { harnessGuiStore?: AppStore };
+await hot.harnessGuiStore?.dispose().catch(() => {});
 const backend = await createBackend();
 const store = new AppStore(backend);
+hot.harnessGuiStore = store;
 setAppStore(store);
 const persist = createBackendPersist(backend);
 const taskSwitcher = createTaskSwitcherController();
