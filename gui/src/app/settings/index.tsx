@@ -3,7 +3,7 @@ import { useWindowSize, type StyleDesc } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import { Button, Dropdown, Icon, Switch, TextField } from '../../ui';
 import { getAppStore, usePreferences, useSelectedProject } from '../../store';
-import { setLanguage, type Language } from '../../i18n';
+import { useLanguage } from '../../i18n';
 import { SkillsPage } from '../skills';
 import { UsagePage } from '../usage';
 import { ProvidersPage } from './providers';
@@ -138,7 +138,7 @@ function General() {
 }
 function Appearance() {
   const theme = useTheme();
-  const preferences = usePreferences();
+  const language = useLanguage();
   const sizes = [11, 12, 13, 14, 15, 16, 18, 20];
   const languages = [
     ['system', 'System'],
@@ -171,15 +171,12 @@ function Appearance() {
         <Dropdown
           outlined
           style={{ width: 116, justifyContent: 'space-between' }}
-          label={languages.find(([value]) => value === preferences.language)?.[1] ?? 'System'}
+          label={languages.find(([value]) => value === language)?.[1] ?? 'System'}
           items={languages.map(([value, label]) => ({
             id: value,
             label,
-            selected: (preferences.language ?? 'system') === value,
-            onSelect: () => {
-              getAppStore().setPreferences({ language: value });
-              setLanguage(value);
-            },
+            selected: language === value,
+            onSelect: () => getAppStore().setPreferences({ language: value }),
           }))}
         />
       </SettingsRow>
@@ -227,14 +224,6 @@ export function SettingsPage({
   const text = useSettingsText();
   const window = useWindowSize();
   const project = useSelectedProject();
-  const preferences = usePreferences();
-  useEffect(() => {
-    setLanguage(
-      (['en', 'zh-CN', 'ja'].includes(String(preferences.language))
-        ? preferences.language
-        : 'system') as Language,
-    );
-  }, [preferences.language]);
   const [current, setCurrent] = useState(page);
   const [query, setQuery] = useState('');
   useEffect(() => setCurrent(page), [page]);

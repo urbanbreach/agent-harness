@@ -19,7 +19,7 @@ import { isWindowActive, nativeRenderer } from './native';
 import { notify } from './workspace/os';
 import { inspectBranches } from './workspace/git';
 import { useToast } from './ui';
-import { t } from './i18n';
+import { setLanguage, t } from './i18n';
 import { restoreWindowGeometry, type WindowGeometry } from './state/window';
 import { useTheme } from './theme';
 
@@ -81,6 +81,9 @@ function FpsCounter() {
 
 function Application() {
   const state = useStore((value) => value);
+  // Set before children render so every label in this pass uses the stored language.
+  const language = state.preferences.language;
+  setLanguage(language === 'en' || language === 'zh-CN' || language === 'ja' ? language : 'system');
   const { renderer } = useGpuix();
   const [settings, setSettings] = useState<string>();
   const [palette, setPalette] = useState(false);
