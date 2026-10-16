@@ -81,6 +81,7 @@ export class AppStore {
   private unsubscribers: (() => void)[];
   private loading = new Map<string, Promise<void>>();
   private loadingUpdates = new Map<string, Update[]>();
+  private forkRefreshes = new Map<string, Promise<SessionRow[]>>();
   private loaded = new Set<string>();
   private saved = new Map<string, string>();
   private pendingWrites = new Map<string, Json>();
@@ -112,12 +113,28 @@ export class AppStore {
     this.unsubscribers = [
       backend.subscribeStatus(() => {
         const status = backend.getStatus();
+        if (status.state !== 'connected') this.forkRefreshes.clear();
         this.patch({ backend: status, ...(status.state !== 'connected' ? { live: {} } : {}) });
       }),
       backend.subscribe((notification) => {
         if (notification.method !== 'session.update') return;
         const { sessionId, update } = notification.params;
         if (this.removed.has(sessionId)) return;
+        if (update.kind === 'forked') {
+          const parent = this.row(sessionId);
+          if (parent) {
+            const refresh = this.loadSessions(parent.cwd);
+            this.forkRefreshes.set(update.runId, refresh);
+            const clear = () => {
+              if (this.forkRefreshes.get(update.runId) === refresh)
+                this.forkRefreshes.delete(update.runId);
+            };
+            void refresh.then(clear, (error) => {
+              clear();
+              this.patch({ error: `Could not refresh forked sessions: ${String(error)}` });
+            });
+          }
+        }
         if (!this.loaded.has(sessionId)) {
           const buffered = this.loadingUpdates.get(sessionId) || [];
           buffered.push(update);
@@ -293,13 +310,17 @@ export class AppStore {
       this.selectProject(this.state.selectedProject);
       return;
     }
-    const row = this.row(id);
-    if (!row) throw new Error(`Unknown session ${id}`);
-    const projectId = this.state.projects.find((project) => project.cwd === row.cwd)?.id ?? row.cwd;
-    const target: Selection = { kind: 'session', sessionId: id, projectId };
     const generation = ++this.selectionGeneration;
-    this.patch({ provisionalSelection: target });
     try {
+      const refresh = this.forkRefreshes.get(id);
+      if (refresh) await refresh;
+      if (generation !== this.selectionGeneration) return;
+      const row = this.row(id);
+      if (!row) throw new Error(`Unknown session ${id}`);
+      const projectId =
+        this.state.projects.find((project) => project.cwd === row.cwd)?.id ?? row.cwd;
+      const target: Selection = { kind: 'session', sessionId: id, projectId };
+      this.patch({ provisionalSelection: target });
       await this.flushDrafts();
       await this.loadSession(id);
       if (generation === this.selectionGeneration) this.commitSelection(target);
@@ -602,6 +623,8 @@ export class AppStore {
     return rows;
   }
   async loadSession(id: string): Promise<void> {
+    const refresh = this.forkRefreshes.get(id);
+    if (refresh) await refresh;
     const loading = this.loading.get(id);
     if (loading) return loading;
     if (this.loaded.has(id)) return;
@@ -639,6 +662,8 @@ export class AppStore {
     return handle;
   }
   async continueSession(id: string) {
+    const refresh = this.forkRefreshes.get(id);
+    if (refresh) await refresh;
     if (this.state.live[id]) return this.state.live[id]!;
     const row = this.row(id);
     if (!row) throw new Error(`Unknown session ${id}`);
@@ -725,6 +750,7 @@ export class AppStore {
       await this.flushDrafts();
     } finally {
       for (const unsubscribe of this.unsubscribers) unsubscribe();
+      this.forkRefreshes.clear();
       this.backend.close();
     }
   }

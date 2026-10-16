@@ -40,6 +40,7 @@
     },
     "drafts": {
       "session:release-review": {
+        "accessMode": "full",
         "text": "Release review\n01. Check the release notes and confirm the rollout plan.\n02. Check the release notes and confirm the rollout plan.\n03. Check the release notes and confirm the rollout plan.\n04. Check the release notes and confirm the rollout plan.\n05. Check the release notes and confirm the rollout plan.\n06. Check the release notes and confirm the rollout plan.\n07. Check the release notes and confirm the rollout plan.\n08. Check the release notes and confirm the rollout plan.\n09. Check the release notes and confirm the rollout plan.\n10. Check the release notes and confirm the rollout plan.\n11. Check the release notes and confirm the rollout plan.\n12. Check the release notes and confirm the rollout plan.\n13. Check the release notes and confirm the rollout plan.\n14. Check the release notes and confirm the rollout plan.\n15. Check the release notes and confirm the rollout plan.\n16. Check the release notes and confirm the rollout plan.\n17. Check the release notes and confirm the rollout plan.\n18. Check the release notes and confirm the rollout plan."
       }
     }

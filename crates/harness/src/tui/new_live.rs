@@ -297,10 +297,12 @@ async fn run_new_live_runtime(
     let _ = live_update_tx.send(LiveUpdate::Status("starting new session".to_string()));
     let bootstrap_error_tx = live_update_tx.clone();
     let session_history_update_tx = live_update_tx.clone();
+    let workspace = prepare_new_live_workspace(&settings, demo_mode, &run_id_override)?;
 
     match bootstrap_new_live_runtime(
         &settings,
         demo_mode,
+        workspace,
         run_id_override,
         launch_metadata,
         coordinator_config_warmup,

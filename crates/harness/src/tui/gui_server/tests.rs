@@ -87,6 +87,22 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
     client
         .call(
             "settings.write",
+            json!({"cwd":cwd,"id":"subagents.max_depth","value":2}),
+        )
+        .await?;
+    let registry = client.call("settings.list", json!({"cwd":cwd})).await?;
+    assert_eq!(
+        registry
+            .as_array()
+            .ok_or("registry must be an array")?
+            .iter()
+            .find(|row| row["id"] == "subagents.max_depth")
+            .ok_or("missing subagent depth setting")?["value"],
+        json!(2)
+    );
+    client
+        .call(
+            "settings.write",
             json!({"cwd":cwd,"id":"runtime.compaction.enabled","value":false}),
         )
         .await?;
@@ -118,6 +134,8 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
         if client.events.iter().any(|message| {
             message["params"]["update"]["event"]["payload"]["event_type"]
                 == "assistant_message_finished"
+        }) && client.events.iter().any(|message| {
+            message["params"]["update"]["event"]["payload"]["event_type"] == "task_completed"
         }) {
             break;
         }
@@ -132,6 +150,74 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
         .ok_or("events must be an array")?
         .iter()
         .any(|event| event["payload"]["event_type"] == "user_message_submitted"));
+    let source_events = events.as_array().ok_or("events must be an array")?;
+    let started = source_events
+        .iter()
+        .find(|event| event["payload"]["event_type"] == "run_started")
+        .ok_or("missing run start")?;
+    assert_eq!(started["payload"]["data"]["workspace_root"], json!(cwd));
+    let prompt = source_events
+        .iter()
+        .find(|event| event["payload"]["event_type"] == "user_message_submitted")
+        .ok_or("missing source prompt")?;
+    client
+        .call(
+            "session.intent",
+            json!({"sessionId":id,"intent":{"kind":"fork","promptRequestId":prompt["payload"]["data"]["request_id"]}}),
+        )
+        .await?;
+    let forked = loop {
+        if let Some(message) = client
+            .events
+            .iter()
+            .find(|message| message["params"]["update"]["kind"] == "forked")
+        {
+            break message["params"]["update"].clone();
+        }
+        let message = client.next().await?;
+        client.events.push(message);
+    };
+    let fork_id = &forked["runId"];
+    let fork_dir = &forked["runDir"];
+    let catalog = client.call("sessions.list", json!({"cwd":cwd})).await?;
+    let child = catalog
+        .as_array()
+        .ok_or("sessions must be an array")?
+        .iter()
+        .find(|row| row["runId"] == *fork_id)
+        .ok_or("fork missing from project catalog")?;
+    assert_eq!(child["cwd"], json!(cwd));
+    assert_eq!(child["catalog"]["parent_session_id"], id);
+    assert_eq!(child["catalog"]["is_resumable"], json!(true));
+    let fork_events = client
+        .call("sessions.events", json!({"runDir":fork_dir}))
+        .await?;
+    assert!(fork_events
+        .as_array()
+        .ok_or("fork events must be an array")?
+        .iter()
+        .any(|event| event["payload"]["event_type"] == "assistant_message_finished"));
+    let continued = client
+        .call("session.continue", json!({"runDir":fork_dir}))
+        .await?;
+    assert_eq!(continued["cwd"], json!(cwd));
+    client.call("session.intent", json!({"sessionId":fork_id,"intent":{"kind":"submit","text":"Continue the forked conversation"}})).await?;
+    loop {
+        let message = client.next().await?;
+        let is_prompt = message["params"]["sessionId"] == *fork_id
+            && message["params"]["update"]["event"]["payload"]["event_type"]
+                == "user_message_submitted";
+        client.events.push(message);
+        if is_prompt {
+            break;
+        }
+    }
+    client
+        .call("session.close", json!({"sessionId":fork_id}))
+        .await?;
+    client
+        .call("sessions.delete", json!({"runDir":fork_dir}))
+        .await?;
     client
         .call("session.close", json!({"sessionId":id}))
         .await?;

@@ -282,7 +282,7 @@ export class FixtureBackend implements Backend {
             live: false,
             catalog: { ...clone.row.catalog, run_id: runId, parent_session_id: row.runId },
           };
-          let draft = '';
+          const draft = '';
           if (p.intent.kind === 'fork' && p.intent.promptRequestId) {
             const index = clone.events.findIndex(
               (e) =>
@@ -290,10 +290,10 @@ export class FixtureBackend implements Backend {
                 e.payload.data.request_id === p.intent.promptRequestId,
             );
             if (index < 0) throw new BackendError('not_found', 'Prompt not found');
-            const prompt = clone.events[index]!;
-            if (prompt.payload.event_type === 'user_message_submitted')
-              draft = prompt.payload.data.text;
-            clone.events = clone.events.slice(0, index);
+            const next = clone.events.findIndex(
+              (event, at) => at > index && event.payload.event_type === 'user_message_submitted',
+            );
+            if (next >= 0) clone.events = clone.events.slice(0, next);
           }
           this.scenario.sessions.push(clone);
           this.emit(row.runId, { kind: 'forked', runId, runDir: clone.row.runDir, draft });

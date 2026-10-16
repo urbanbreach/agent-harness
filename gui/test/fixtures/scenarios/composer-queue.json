@@ -50,6 +50,7 @@
     },
     "drafts": {
       "session:release-review": {
+        "accessMode": "full",
         "text": ""
       }
     }

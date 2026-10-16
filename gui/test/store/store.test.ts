@@ -15,12 +15,15 @@ async function conversation() {
 
 class GatedBackend extends FixtureBackend {
   gate?: (method: Method, params: unknown) => Promise<void>;
+  responseGate?: (method: Method, params: unknown) => Promise<void>;
   override async call<M extends Method>(
     method: M,
     params: Methods[M]['params'],
   ): Promise<Methods[M]['result']> {
     await this.gate?.(method, params);
-    return super.call(method, params);
+    const result = await super.call(method, params);
+    await this.responseGate?.(method, params);
+    return result;
   }
 }
 
@@ -105,6 +108,86 @@ test('hydration leaves the previous transcript visible and failed selection does
   } finally {
     release();
     backend.gate = undefined;
+    await store.dispose();
+  }
+});
+
+test('fork selection and continuation await the parent catalog refresh and child transcript', async () => {
+  const backend = new GatedBackend(await conversation());
+  const store = new AppStore(backend);
+  let releaseCatalog!: () => void;
+  const catalogBlocked = new Promise<void>((resolve) => {
+    releaseCatalog = resolve;
+  });
+  let catalogRequested!: (params: unknown) => void;
+  const catalogStarted = new Promise<unknown>((resolve) => {
+    catalogRequested = resolve;
+  });
+  let releaseTranscript!: () => void;
+  const transcriptBlocked = new Promise<void>((resolve) => {
+    releaseTranscript = resolve;
+  });
+  let transcriptRequested!: () => void;
+  const transcriptStarted = new Promise<void>((resolve) => {
+    transcriptRequested = resolve;
+  });
+  let stop: (() => void) | undefined;
+  try {
+    await store.initialize();
+    await store.selectTask('chat');
+    await store.continueSession('chat');
+    const parent = store.getSnapshot().selection;
+    backend.responseGate = async (method, params) => {
+      if (method === 'sessions.list') {
+        catalogRequested(params);
+        await catalogBlocked;
+      } else if (method === 'sessions.events') {
+        transcriptRequested();
+        await transcriptBlocked;
+      }
+    };
+    const forked = new Promise<string>((resolve) => {
+      stop = backend.subscribe((notification) => {
+        if (
+          notification.method === 'session.update' &&
+          notification.params.sessionId === 'chat' &&
+          notification.params.update.kind === 'forked'
+        )
+          resolve(notification.params.update.runId);
+      });
+    });
+    await store.sendIntent('chat', { kind: 'fork' });
+    const childId = await forked;
+    expect(store.getSnapshot().selection).toEqual(parent);
+    expect(
+      store.getSnapshot().sessions['/fixture/demo']?.some((row) => row.runId === childId),
+    ).toBe(false);
+    const opened = Promise.all([
+      store.selectTask(childId),
+      store.loadSession(childId),
+      store.continueSession(childId),
+    ]);
+    void opened.catch(() => {});
+    expect(await Promise.race([catalogStarted, opened])).toEqual({ cwd: '/fixture/demo' });
+    expect(store.getSnapshot().selectedTask).toBe('chat');
+    releaseCatalog();
+    await Promise.race([transcriptStarted, opened]);
+    expect(store.getSnapshot().selectedTask).toBe('chat');
+    expect(store.getSnapshot().views[childId]).toBeUndefined();
+    releaseTranscript();
+    const [, , handle] = await opened;
+    expect(store.getSnapshot().selectedTask).toBe(childId);
+    expect(store.getSnapshot().views[childId]?.entries).toMatchObject([
+      { kind: 'user', text: 'What does this project do?' },
+      { kind: 'text', text: 'It is a small, synthetic desktop demo.' },
+    ]);
+    expect(handle).toMatchObject({ sessionId: childId, cwd: '/fixture/demo' });
+    expect(store.getSnapshot().live[childId]).toEqual(handle);
+  } finally {
+    releaseCatalog();
+    releaseTranscript();
+    stop?.();
+    backend.responseGate = undefined;
     await store.dispose();
   }
 });

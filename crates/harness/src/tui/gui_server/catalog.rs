@@ -268,9 +268,16 @@ fn tui_flag(server: &Server, root: &Path, id: &str) -> Result<(bool, PathBuf), S
 
 async fn settings_list(server: &Server, params: &Value) -> Result<Value, String> {
     let root = cwd(server, params)?;
-    let settings = server.settings(&root).await?;
-    let mut effective =
-        serde_json::to_value(&settings.config).map_err(|error| error.to_string())?;
+    let _ = server.settings(&root).await?;
+    // Registry values describe authored configuration, even when the runtime is mocked.
+    let context = server.config_context.clone().with_current_dir(root.clone());
+    let loaded = config::load_config_or_defaults_with_lookup(
+        server.config_path.as_deref(),
+        &context,
+        &|name| std::env::var(name).ok(),
+    )
+    .map_err(|error| error.to_string())?;
+    let mut effective = serde_json::to_value(&loaded.config).map_err(|error| error.to_string())?;
     harness_core::redact::redact_in_place(
         &harness_core::redact::DefaultRedactor::default(),
         &mut effective,

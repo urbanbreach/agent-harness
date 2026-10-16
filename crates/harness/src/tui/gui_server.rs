@@ -217,6 +217,7 @@ impl Server {
             let runtime = super::live_runtime::bootstrap_new_live_runtime(
                 &settings,
                 self.mock,
+                settings.workspace_root.clone(),
                 id.clone(),
                 metadata.clone(),
                 warmup,
@@ -304,7 +305,18 @@ impl Server {
             let selected=request.map(|id|events.iter().find(|event| matches!(&event.payload,EventV1::UserMessageSubmitted(message) if message.request_id.as_str()==id)).ok_or("not_found: prompt request not found")).transpose()?;
             let cutoff = selected.map_or_else(
                 || events.last().map_or(0, |e| e.seq),
-                |e| e.seq.saturating_sub(1),
+                |selected| {
+                    events
+                        .iter()
+                        .find(|event| {
+                            event.seq > selected.seq
+                                && matches!(event.payload, EventV1::UserMessageSubmitted(_))
+                        })
+                        .map_or_else(
+                            || events.last().map_or(0, |event| event.seq),
+                            |next| next.seq.saturating_sub(1),
+                        )
+                },
             );
             let prefix = if kind == "clone" {
                 harness_core::session_lineage::latest_clone_stable_prefix(&events)
@@ -312,17 +324,11 @@ impl Server {
                 harness_core::session_lineage::validate_tui_fork_stable_prefix(&events, cutoff)
             }
             .map_err(|e| e.to_string())?;
-            let draft = selected
-                .and_then(|e| match &e.payload {
-                    EventV1::UserMessageSubmitted(message) => Some(message.text.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
             UiIntent::ForkSession {
                 source_run_dir: session.run_dir.clone(),
                 events,
                 stable_prefix: prefix,
-                prompt_text: draft,
+                prompt_text: String::new(),
             }
         } else {
             wire::intent(value, &session.metadata)

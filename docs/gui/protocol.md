@@ -157,8 +157,11 @@ type Update =
 Fork and clone materialize a child journal and emit `forked`; they do not replace
 the source coordinator. The GUI selects the child with `session.continue`.
 The optional fork request id identifies a `user_message_submitted.request_id`;
-the child ends immediately before that prompt, which becomes `draft`. A clone
-uses the latest stable history and an empty draft.
+the child includes that prompt and its completed response, stopping immediately
+before the next user prompt. Its draft is empty. A clone uses the latest stable
+history and an empty draft. A `forked` update triggers a store catalog refresh
+using the parent row's project cwd; child selection waits for that refresh and
+transcript hydration before replacing the current selection.
 
 Session-history refresh and provider-catalog refresh updates map to `status`;
 session-local authentication notices map to `notice`. Dedicated `auth.start`
@@ -200,6 +203,8 @@ type ModelEntry = {
 - `settings.list { cwd }` → `{ id, surface, label, description, kind, value,
   defaultValue, editable, choices?: string[] }[]`.
 - `settings.write { cwd, id, value }` → `null`; `settings.reset { cwd, id }` → `null`.
+Registry values are freshly loaded from authored configuration on each read,
+including under `--mock`; mock runtime defaults do not hide persisted edits.
 
 Runtime setting writes target the explicit `--config` path when supplied,
 otherwise `cwd/harness.jsonc` (or an existing `cwd/harness.json`). The core
@@ -438,6 +443,9 @@ The JSON root is an array of provider turns. Each turn is an array of steps;
 the final step must be `stop`. A provider turn means one completion call:
 tool execution normally causes another completion call within the same user turn.
 Every new session starts a fresh copy of the script.
+GUI mock sessions use the requested project cwd, just like live sessions.
+Their run events, handles, catalog rows and fork children retain that workspace
+identity. The terminal demo's separate generated workspace is not used by the GUI.
 
 ```json
 [

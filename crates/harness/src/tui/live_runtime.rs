@@ -1,4 +1,3 @@
-use super::live_settings::prepare_new_live_workspace;
 use super::new_live::NewLiveRuntime;
 use super::profile_log::profile_handoff;
 use super::{
@@ -125,9 +124,14 @@ pub(super) async fn bootstrap(
         events,
     ))
 }
+#[expect(
+    clippy::too_many_arguments,
+    reason = "bootstrap receives explicit workspace and runtime channels"
+)]
 pub(super) async fn bootstrap_new_live_runtime(
     settings: &LiveSettings,
     demo_mode: bool,
+    workspace: PathBuf,
     run_id_override: String,
     launch_metadata: LaunchMetadata,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
@@ -135,7 +139,6 @@ pub(super) async fn bootstrap_new_live_runtime(
     live_update_tx: LiveUpdateSender,
     intent_rx: mpsc::UnboundedReceiver<UiIntent>,
 ) -> Result<NewLiveRuntime, String> {
-    let workspace = prepare_new_live_workspace(settings, demo_mode, run_id_override.as_str())?;
     profile_handoff("new_live.workspace_ready");
 
     let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
