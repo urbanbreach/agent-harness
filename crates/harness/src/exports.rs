@@ -190,6 +190,8 @@ pub(crate) fn write_output(
     if let Some(output) = output {
         let cwd = deps.current_dir().map_err(|e| e.to_string())?;
         let output = destination(&cwd.join(output), source)?;
+        harness_core::store::create_private_dir(output.parent().ok_or("output parent missing")?)
+            .map_err(|error| error.to_string())?;
         harness_core::store::write_private_atomic(&output, bytes).map_err(|e| e.to_string())
     } else {
         io.stdout.write_all(bytes).map_err(|e| e.to_string())
