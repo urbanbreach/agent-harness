@@ -176,7 +176,7 @@ scripts/test-lanes.sh all-deterministic
 python3 scripts/check-test-suite-gates.py
 HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness --test binary_smoke --ignore-default-filter
 bash scripts/harness-qa-dogfood.sh --self-test
-gui/native/build.sh
+gui/native/build.sh --test
 (cd gui && bun install && bun x tsc --noEmit -p . && bun test && bun run format:check)
 ```
 

@@ -80,55 +80,23 @@ bun run format                     # Prettier
   mock provider (text, reasoning, tool calls, delays); see
   `test/fixtures/scripts/interactive.json` and `docs/gui/protocol.md`.
 - Always point `HARNESS_HOME` at a temporary directory when experimenting.
+- `test/fixtures/scripts/panel.json` drives a local edit, todo updates and a
+  saved plan through the scripted mock backend; `test/fixtures/repos/panel.ts`
+  resets its `/tmp/harness-panel-repos` fixture repositories.
 
-Shared popup menus select pointer choices on the completed click, not mouse-down.
-This keeps the release from activating a control beneath a closing popup, including
-after changing themes. Keyboard selection retains its existing Enter/Space behavior.
+## Using it
 
-### Workspace panels
-
-The header information button opens **Environment and background work**, not
-usage. It refreshes the current branch and working-tree line counts when opened,
-offers **Commit or push** and **Compare branch**, and shows the task's background
-work with the same inspect/cancel controls as the transcript. Commit progress
-remains visible after dismissing its dialog; completion still produces a toast.
-Usage remains available through Ctrl+U and the composer's usage meter.
-
-Review opens on **Uncommitted** changes; the Review button on a transcript turn
-opens that turn's checkpoint instead. File headers and the changed-file tree keep
-their counts and status badges aligned to the trailing edge. Review scrollbars
-appear during scrolling or pointer interaction and fade at rest.
-Diff body and gutter tints are separate layers, so additions and deletions retain
-their distinct contrast. Diff source uses the same language-aware syntax palette
-as the editor, including Markdown headings, emphasis and link labels.
-The `git.compareBranch` action opens Review on Branch for the selected workspace,
-including when the Review surface has not yet mounted.
-The surface chooser centers Browser, Terminal, Files and Review; Session, Todos
-and Plan remain available in the auxiliary row below and in the add-tab menu.
-
-The file editor supports Ctrl+Home/End and Ctrl+Shift+Home/End for document-edge
-navigation and selection. Find keeps its case, whole-word and regular-expression
-options inside the query field; Enter/Shift+Enter navigate matches. Empty
-regular-expression matches are not replacement targets.
-Ctrl+Alt+F opens replacement. Enter in the replacement field replaces the current
-match; Ctrl+Alt+Enter replaces all matches.
-The find query owns keyboard focus independently from the editor. When find
-is focused, the editor's inactive selection cannot cover the current-match wash.
-
-Each Terminal tab owns an independent shell. Ctrl+Shift+C copies the selected
-terminal cells; Ctrl+Shift+V pastes clipboard text, respecting bracketed paste and
-normalizing line endings. Word/line selections can be extended with dragging.
-Panel resizing reflows output and resizes the PTY; shell exit preserves output
-and marks the status dot red.
-Shell title escape sequences update the terminal toolbar, not its tab label.
-The terminal grid measures the difference between two long monospace samples,
-avoiding rounded single-glyph bounds and the native text layout's caret overhang.
-
-`test/fixtures/scripts/panel.json` exercises a local edit, todo updates and a
-saved rollout plan through the scripted mock backend, without provider calls.
-Use an isolated `HARNESS_HOME`; `test/fixtures/repos/panel.ts` resets only its
-dedicated `/tmp/harness-panel-repos` fixture repositories.
-For the plan-writing proof, copy the fixture workspace to `<HARNESS_HOME>/repo`.
-The scripted eval cell derives the isolated home from that workspace's parent
-and requires its GUI and session directories before writing a plan; eval does
-not inherit the `HARNESS_HOME` environment variable.
+- Language: Settings → Appearance → Language (System, English, 简体中文,
+  日本語). System follows `LC_ALL`, `LC_MESSAGES` or `LANG`.
+- The header's information button opens **Environment and background work**:
+  the branch and its line changes, **Commit or push**, **Compare branch** and
+  the task's background work. Usage is on Ctrl+U and the composer's meter.
+- Review opens on uncommitted changes; a turn's Review button opens that turn's
+  checkpoint. Editing an earlier prompt restores the files from its checkpoint.
+  Checkpoints skip untracked `.env` files, and a restore first saves the real
+  index under `refs/harness-gui/<session>/safety-…-index`, so staged work stays
+  recoverable (`git read-tree <ref>`).
+- File editor: Ctrl+F find, Ctrl+Alt+F replace (Enter replaces the current
+  match, Ctrl+Alt+Enter all), Ctrl+Home/End and their Shift variants.
+- Terminal: each tab is its own shell; Ctrl+Shift+C/V copy and paste.
+- External links open only `http`, `https` and `mailto` URLs.
