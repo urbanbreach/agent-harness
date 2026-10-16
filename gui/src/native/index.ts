@@ -15,7 +15,7 @@ export interface Run {
   wash?: { color: string; radius?: number; padX?: number; insetY?: number };
 }
 export interface NativeEvent extends EventPayload {
-  charIndex?: number | null;
+  charIndex: number | null;
   selectionStart?: number;
   selectionEnd?: number;
 }
@@ -31,6 +31,20 @@ export interface InputTheme {
   selectionWash?: string;
   placeholder?: string;
   caretWidth?: number;
+}
+export interface InputHighlight {
+  start: number;
+  end: number;
+  color: string;
+  active?: boolean;
+  activeColor?: string;
+}
+export interface InputGutter {
+  color: string;
+  activeColor?: string;
+  width?: number;
+  gap?: number;
+  fontSize?: number;
 }
 export type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 export type InputCommand = 'cut' | 'copy' | 'paste' | 'selectAll' | 'undo' | 'redo';
@@ -48,15 +62,28 @@ export interface HarnessNativeRenderer extends NativeRenderer {
   inputSetSelection(elementId: number, start: number, end: number): void;
   inputReplaceSelection(elementId: number, text: string): void;
   inputCommand(elementId: number, name: InputCommand): void;
+  inputRevealRange(elementId: number, start: number, end: number): void;
+  inputScrollTo(elementId: number, x: number, y: number): void;
   writeClipboardText(text: string): void;
   readClipboardText(): string | null;
   readClipboardImage(): { mime: string; data: Buffer } | null;
+  readClipboardPaths(): string[] | null;
   /** napi callbacks are error-first; null unregisters the listener. */
   setInputSelectionListener(
     elementId: number,
     callback: ((error: Error | null, event: NativeEvent) => void) | null,
   ): void;
   windowDecorations(): WindowDecorations;
+  windowBounds(): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    maximized: boolean;
+    fullscreen: boolean;
+    displayId?: string | null;
+  };
+  closeWindow(): void;
   requestClientDecorations(client: boolean): void;
   startWindowMove(): void;
   startWindowResize(edge: ResizeEdge): void;
@@ -87,6 +114,14 @@ export const inputReplaceSelection = (renderer: NativeRenderer, id: number, text
   nativeRenderer(renderer).inputReplaceSelection(id, text);
 export const inputCommand = (renderer: NativeRenderer, id: number, name: InputCommand): void =>
   nativeRenderer(renderer).inputCommand(id, name);
+export const inputRevealRange = (
+  renderer: NativeRenderer,
+  id: number,
+  start: number,
+  end: number,
+): void => nativeRenderer(renderer).inputRevealRange(id, start, end);
+export const inputScrollTo = (renderer: NativeRenderer, id: number, x: number, y: number): void =>
+  nativeRenderer(renderer).inputScrollTo(id, x, y);
 export const writeClipboardText = (renderer: NativeRenderer, text: string): void =>
   nativeRenderer(renderer).writeClipboardText(text);
 export const readClipboardText = (renderer: NativeRenderer): string | null =>

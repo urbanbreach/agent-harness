@@ -37,11 +37,19 @@ for patch in "$here"/patches/*.patch; do
   [ -e "$patch" ] || continue
   git -C "$src/gpuix" apply --whitespace=nowarn "$patch"
 done
+git -C "$src/gpuix/zed" checkout -q -- .
+git -C "$src/gpuix/zed" clean -fdq
+for patch in "$here"/patches/zed/*.patch; do
+  [ -e "$patch" ] || continue
+  git -C "$src/gpuix/zed" apply --whitespace=nowarn "$patch"
+done
 
 bun install --cwd "$src/gpuix" --ignore-scripts
 bun run --cwd "$src/gpuix/packages/native" build:js
 bun run --cwd "$src/gpuix/packages/react" build
 
+# Generate declarations from the same Rust build as the addon.
+bun run --cwd "$src/gpuix/packages/native" build:harness
 # Copy only published runtime files, never the Rust target directory.
 bun -e '
 const fs = require("node:fs");
@@ -62,12 +70,9 @@ for (const name of ["native", "react"]) {
 }
 ' "$src/gpuix" "$here/../vendor/gpuix"
 
-cargo build --release --no-default-features \
-  --manifest-path "$src/gpuix/packages/native/Cargo.toml"
-
 mkdir -p "$here/dist"
 # Replace atomically so an already-running renderer keeps its mapped addon intact.
-cp "$src/gpuix/packages/native/target/release/libgpuix_native.so" \
+cp "$src/gpuix/packages/native/gpuix-native.linux-x64-gnu.node" \
   "$here/dist/gpuix-native.linux-x64-gnu.node.new"
 mv "$here/dist/gpuix-native.linux-x64-gnu.node.new" \
   "$here/dist/gpuix-native.linux-x64-gnu.node"

@@ -12,6 +12,7 @@
   "dependencies": {
     "@gpuix/native": "file:./vendor/gpuix/native",
     "@gpuix/react": "file:./vendor/gpuix/react",
+    "@noble/hashes": "2.4.0",
     "@xterm/headless": "6.0.0",
     "highlight.js": "11.11.1",
     "markdown-it": "14.1.0",

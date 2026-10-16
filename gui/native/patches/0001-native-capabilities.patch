@@ -1,8 +1,619 @@
+diff --git i/README.md w/README.md
+index f1577fd..91316f0 100644
+--- i/README.md
++++ w/README.md
+@@ -1314,14 +1314,12 @@ Containers with `overflow: "scroll"` become natively scrollable. GPUI handles sc
+ 
+ Plain scroll containers still build every child. Use `<virtual-list>` below when the collection can grow large.
+ 
+-> [!IMPORTANT]
+-> **Nested scrolling is not supported.** One parent may scroll. An inner
+-> `overflow: "scroll"`, `<virtual-list>`, or `<diff>` must not. GPUI gives both
+-> hitboxes the same wheel event, so the inner list steals the gesture.
+->
+-> Keep long inner content in that parent. Collapse it behind an **expandable**
+-> (preview plus Show more) instead of giving the child its own viewport.
+->
++Nested `<div overflow="scroll">` containers (via their `style` prop) retain
++their offsets through virtual row rebuilds. Wheel movement stays in the inner
++viewport until it reaches an edge, then bubbles to the outer container/list.
++Offsets are retained while the host element ID remains mounted. Nesting one
++`<virtual-list>` or `<diff>` inside another scroller remains unsupported.
++
+ > Horizontal overflow is the exception. `overflowX: "scroll"` on a wide child
+ > (a code row, a table) does not steal the vertical wheel. GPUIX lays that
+ > scroller out as a flex viewport with `minWidth: 0`. The wide child must not
+@@ -1521,7 +1519,7 @@ Each **direct host child** is one virtual row. Give every row a stable React key
+ </virtual-list>
+ ```
+ 
+-A row can contain nested `<div>`, `<text>`, `<markdown>`, `<code>`, `<diff>`, `<input>`, and `<textarea>` elements. Focusable rows stay active when they move offscreen, so keyboard input and native editor state are preserved. Those children must not scroll. Nested scrolling is not supported; see [Scrolling](#scrolling).
++A row can contain nested `<div>`, `<text>`, `<markdown>`, `<code>`, `<diff>`, `<input>`, and `<textarea>` elements. Focusable rows stay active when they move offscreen, so keyboard input and native editor state are preserved. An inner div can use `style={{height: 400, overflow: "scroll"}}`; its native handle retains the offset through row rebuilds and wheel events bubble to the list only at an edge.
+ 
+ ### Chat tail behavior
+ 
+@@ -2552,6 +2550,50 @@ function onKeyDown(event: KeyEvent) {
+ </div>
+ ```
+ 
++## Native code editor
++
++`<input>` and `<textarea>` accept `runs` with UTF-16 `start`/`end` ranges and
++the same color, font, decoration and wash fields as `<rich-text>`. Later
++overlapping runs override earlier style fields. Update runs alongside the
++controlled `value`; native edits and undo remain immediate.
++
++`highlights` accepts `{start, end, color, active?, activeColor?}` ranges.
++`gutter={{color, activeColor?, width?, gap?, fontSize?}}` paints logical line
++numbers once per line, including when that line wraps. Width defaults to 42px
++and gap to 12px. `wrap={false}` enables horizontal scrolling; the default is
++soft wrapping. Read-only editors retain selection and copying but hide the
++editing caret.
++`secure={true}` masks display and accessibility text, disables copying, and
++retains real Unicode/UTF-16 editing offsets. Controlled change events still
++contain the real value; applications must not log them.
++
++`renderer.inputRevealRange(id, start, end)` reveals a UTF-16 range without
++changing selection. `renderer.inputScrollTo(id, x, y)` uses clamped pixel
++offsets. Existing `inputSetSelection` and `inputReplaceSelection` remain
++independent operations.
++
++Native editors emit key-down events in capture phase, before editor actions.
++JS callbacks cannot cancel native defaults retroactively. Use
++`interceptedKeys={["up", "down", "tab", "ctrl-v"]}` to intercept exact GPUI
++chords synchronously while still receiving `onKeyDown`; update the array
++when an autocomplete popup opens/closes. With `onSubmit`, Enter and
++Ctrl/Cmd+Enter submit (including `key` and `modifiers` in the payload), while
++Shift+Enter inserts a newline.
++
++Desktop renderers expose `windowBounds()` with the normal rectangle,
++maximized/fullscreen flags, and optional stable `displayId`, plus `closeWindow()`.
++Initialization accepts `x`, `y`, `maximized`, and `displayId` in addition to
++width/height. A missing saved display reanchors to the primary display;
++the origin is clamped to keep at least 160px of titlebar width and 22px of
++height visible. Placement remains compositor-controlled; there is no runtime
++window-position setter.
++
++`readClipboardPaths()` returns local paths from the desktop clipboard, or null.
++Container surfaces and editors support `onFileDragEnter`, `onFileDragLeave`,
++and `onFileDragMove` with `{x,y,paths,hovered}` payloads. Native OS cancellation
++and exit clear hover as well as movement outside the element. `onFileDrop`
++remains the drop/submit boundary.
++
+ ## Text selection
+ 
+ Every text GPUIX paints is **selectable and copyable**, including text inside
+@@ -2559,6 +2601,15 @@ Every text GPUIX paints is **selectable and copyable**, including text inside
+ inside a fenced code block selects everything between; Cmd+C copies it joined in
+ document order.
+ 
++Use `<div copySeparator={"\n\n"}>` around a markdown block to copy a blank line
++before and after it when a selection crosses the container boundary.
++`copySeparator` accepts `"\n"` or `"\n\n"` on `<div>` and `<text>` in both
++React and Solid, including updates or removal after mounting.
++Adjacent boundaries coalesce, so two neighbouring blocks still get one blank
++line. Inline text inside the block keeps its normal joining behaviour. This
++prop changes clipboard text only, not layout, and adds no leading or trailing
++separator to the selection.
++
+ There is nothing to opt into. A tap does not select. Only a drag does.
+ To opt *out* — toolbars, buttons, line-number gutters — set
+ `userSelect: "none"`, which inherits like the CSS property:
+diff --git i/packages/native/index.d.ts w/packages/native/index.d.ts
+index 2f865d1..887ecb7 100644
+--- i/packages/native/index.d.ts
++++ w/packages/native/index.d.ts
+@@ -1,14 +1,6 @@
+ /* auto-generated by NAPI-RS */
+ /* eslint-disable */
+ 
+-/**
+- * Which binding artifact the generated loader actually loaded: `'native'` for
+- * a native addon, otherwise the `platformArchABI` of the WASI flavor. Every
+- * flavor napi-rs can build is listed, because `NAPI_RS_NATIVE_LIBRARY_PATH`
+- * can point the loader at a WASI artifact this package does not build itself.
+- */
+-export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
+-
+ /** An update ready to download and install. */
+ export declare class AvailableUpdate {
+   /** Version currently running. */
+@@ -34,6 +26,56 @@ export declare class AvailableUpdate {
+ 
+ /** The main GPUI renderer exposed to Node.js. */
+ export declare class GpuixRenderer {
++  /** Normal window rectangle, retained while maximized or fullscreen. */
++  windowBounds(): NativeWindowBounds
++  closeWindow(): void
++  /** Read local paths advertised by the desktop clipboard, without converting them to text. */
++  readClipboardPaths(): Array<string> | null
++  /**
++   * Override native chrome appearance, or follow the system.
++   * GPUI applies this app-wide on macOS; other platforms leave it unchanged.
++   */
++  setWindowAppearance(appearance: string): void
++  /** Set the logical-pixel size used for rem units in this window. */
++  setRemSize(size: number): void
++  /** Replace the platform clipboard with plain text. */
++  writeClipboardText(text: string): void
++  /** Read the platform clipboard's text using GPUI's clipboard conversion. */
++  readClipboardText(): string | null
++  /** Return the first clipboard image in its original encoded format. */
++  readClipboardImage(): ClipboardImage | null
++  /** Query the actual decoration mode and compositor-reported tiled edges. */
++  windowDecorations(): NativeWindowDecorations
++  /**
++   * Request client decorations, or server decorations when disabled.
++   * The compositor decides the actual mode returned by windowDecorations.
++   */
++  requestClientDecorations(enabled: boolean): void
++  /** Begin the platform's interactive move operation. */
++  startWindowMove(): void
++  /** Begin an interactive resize on n, s, e, w, ne, nw, se, or sw. */
++  startWindowResize(edge: string): void
++  isWindowMaximized(): boolean
++  /** Query the controls supported by the platform for this window. */
++  windowControls(): NativeWindowControls
++  isWindowActive(): boolean
++  /** Query the current appearance, reducing vibrant variants to light/dark. */
++  windowAppearance(): string
++  /**
++   * Subscribe directly, bypassing framework-level document-selection routing.
++   * Passing null removes the listener; unmounting also releases it.
++   */
++  setInputSelectionListener(id: number, callback?: (((err: Error | null, arg: EventPayload) => any)) | undefined | null): void
++  /** Set a mounted input's selection using UTF-16 code-unit offsets. */
++  inputSetSelection(id: number, start: number, end: number): void
++  /** Reveal a UTF-16 range without modifying the editor selection. */
++  inputRevealRange(id: number, start: number, end: number): void
++  /** Scroll the editor to pixel offsets, clamped to its content. */
++  inputScrollTo(id: number, x: number, y: number): void
++  /** Replace the current selection as one independent undoable edit. */
++  inputReplaceSelection(id: number, text: string): void
++  /** Execute an editing command on the addressed input, regardless of focus. */
++  inputCommand(id: number, name: string): void
+   constructor(eventCallback?: (((err: Error | null, arg: EventPayload) => any)) | undefined | null)
+   /** Initialize GPUI using the native event-loop architecture for this OS. */
+   init(options?: WindowOptions | undefined | null): void
+@@ -209,238 +251,8 @@ export declare class GpuixRenderer {
+   captureScreenshot(path: string): void
+ }
+ 
+-/**
+- * GPU-backed GPUI test renderer. Uses VisualTestAppContext with the native
+- * Metal or DirectX renderer and TestDispatcher for deterministic scheduling.
+- * Same GpuixView and rendering pipeline as production.
+- *
+- * Usage from JS:
+- *   const r = new TestGpuixRenderer()
+- *   r.applyBatch('[["createElement",1,"div"],["setRoot",1]]')
+- *   r.flush()                  // triggers GpuixView::render() on the GPU
+- *   r.simulateClick(50, 50)    // dispatches through GPUI hit testing
+- *   const events = r.drainEvents()
+- *   r.captureScreenshot("/tmp/test.png")  // saves rendered UI as PNG
+- */
+ export declare class TestGpuixRenderer {
+   constructor(width?: number | undefined | null, height?: number | undefined | null)
+-  /**
+-   * How many elements the retained tree holds, reachable from the root or
+-   * not. `getTreeJson` walks from the root, so it cannot see a node that was
+-   * detached and never destroyed. This is the only way a test can prove a
+-   * removal actually freed it.
+-   */
+-  getRetainedElementCount(): number
+-  /**
+-   * Apply a batch of mutations in a single FFI call.
+-   * Same format as GpuixRenderer::apply_batch (string op names).
+-   * Returns accumulated destroyed IDs from all destroyElement ops.
+-   */
+-  applyBatch(json: string): Array<number>
+-  /**
+-   * Notify the view entity and run GPUI until parked.
+-   * This triggers GpuixView::render() → build_element() → GPUI layout.
+-   * Must be called after mutations and before simulating events (GPUI's
+-   * hit testing requires elements to be laid out).
+-   */
+-  flush(): void
+-  /**
+-   * Simulate a click at the given window coordinates.
+-   * Dispatches MouseDown + MouseUp through GPUI's input pipeline,
+-   * which triggers the same event handlers as production.
+-   * IMPORTANT: Call flush() before this — hit testing requires laid-out elements.
+-   * `modifiers` uses the `press()` syntax: "cmd", "cmd-shift", "alt".
+-   */
+-  simulateClick(x: number, y: number, button?: number | undefined | null, modifiers?: string | undefined | null): void
+-  /**
+-   * Simulate key strokes through GPUI's input pipeline.
+-   * Format: space-separated keys, e.g. "a", "enter", "cmd-shift-p".
+-   * The focused element receives keyDown/keyUp events.
+-   */
+-  simulateKeystrokes(keystrokes: string): void
+-  /**
+-   * Simulate a single key down event through GPUI's input pipeline.
+-   * Format: modifier-key string, e.g. "a", "enter", "cmd-s".
+-   * Unlike simulate_keystrokes, this dispatches ONLY a KeyDownEvent —
+-   * no automatic KeyUpEvent follows. Use with simulate_key_up for
+-   * fine-grained key event testing.
+-   */
+-  simulateKeyDown(keystroke: string, isHeld?: boolean | undefined | null): void
+-  /**
+-   * Simulate a single key up event through GPUI's input pipeline.
+-   * Format: modifier-key string, e.g. "a", "enter", "cmd-s".
+-   * Pairs with simulate_key_down for fine-grained key event testing.
+-   */
+-  simulateKeyUp(keystroke: string): void
+-  /**
+-   * Simulate a mouse move to the given coordinates.
+-   * pressed_button: optional mouse button held during move (0=left, 1=middle, 2=right).
+-   * Used to simulate drag events.
+-   */
+-  simulateMouseMove(x: number, y: number, pressedButton?: number | undefined | null, modifiers?: string | undefined | null): void
+-  /**
+-   * Simulate the pointer leaving the window, as the platform reports it when
+-   * the cursor crosses the window edge: there is no final mouse move.
+-   */
+-  simulateMouseExit(x: number, y: number): void
+-  /**
+-   * Focus an element by its numeric ID.
+-   * The element must have a FocusHandle (created by sync_focus_handles when
+-   * the element has keyDown, keyUp, focus, or blur listeners).
+-   * Call flush() before this so the element tree and focus handles exist.
+-   */
+-  focusElement(id: number): void
+-  focusNext(): void
+-  focusPrevious(): void
+-  promptForPaths(options?: PathPromptOptions | undefined | null): Promise<Array<string> | null>
+-  getFocusedElementId(): number | null
+-  focusNextWithin(elementId: number): void
+-  focusPreviousWithin(elementId: number): void
+-  setWindowKeyEvents(keyDown: boolean, keyUp: boolean, eventId: number): void
+-  setWindowSelectionChange(enabled: boolean, eventId: number): void
+-  /**
+-   * Simulate a mouse down event at the given window coordinates.
+-   * Button: 0=left, 1=middle, 2=right. Defaults to left (0).
+-   */
+-  simulateMouseDown(x: number, y: number, button?: number | undefined | null, modifiers?: string | undefined | null): void
+-  /**
+-   * Simulate a mouse up event at the given window coordinates.
+-   * Button: 0=left, 1=middle, 2=right. Defaults to left (0).
+-   */
+-  simulateMouseUp(x: number, y: number, button?: number | undefined | null, modifiers?: string | undefined | null): void
+-  /**
+-   * Simulate a scroll wheel event at the given position.
+-   * delta_x and delta_y are in pixels (negative = scroll up/left).
+-   */
+-  simulateScrollWheel(x: number, y: number, deltaX: number, deltaY: number, modifiers?: string | undefined | null): void
+-  /**
+-   * Simulate a Finder-style file drop at the given window coordinates.
+-   * Dispatches FileDrop Entered then Submit, matching GPUI's OS drop path.
+-   */
+-  simulateFileDrop(x: number, y: number, paths: Array<string>): void
+-  /** The current text selection joined in document order, or null. */
+-  getSelectedText(): string | null
+-  /** Drop the current selection. */
+-  clearSelection(): void
+-  /**
+-   * Syntax-cache counters as `[hits, misses, documents]`.
+-   *
+-   * GPUIX rebuilds its whole element tree every frame, so a `<code>` block
+-   * that misses the cache reparses at frame rate. A test can watch the hit
+-   * count to catch that regression before a profiler does.
+-   */
+-  getSyntaxCacheStats(): Array<number>
+-  /**
+-   * Every string painted in the last frame, in paint order.
+-   *
+-   * `getAllText()` only sees `<text>` nodes in the retained tree. Native
+-   * elements such as `<code>` and `<diff>` draw their text inside gpui, so
+-   * this is the only way to assert on what they actually rendered.
+-   */
+-  getPaintedText(): Array<string>
+-  /**
+-   * Every highlight wash painted in the last frame, in paint order.
+-   *
+-   * A quad is invisible to `getPaintedText()`, so this is the only way to
+-   * assert on `highlight` without a screenshot. Each entry carries its rects,
+-   * so a soft-wrapped match is provably two boxes.
+-   */
+-  getPaintedHighlights(): Array<HighlightMatch>
+-  /**
+-   * Drag-select from one point to another: mouse down, move, up.
+-   *
+-   * A single helper rather than three calls because the listeners that drive
+-   * selection are registered during **paint**, so a flush must sit between
+-   * the down and the move. Getting that order wrong silently selects nothing,
+-   * which is a miserable thing to debug from JS.
+-   */
+-  dragSelect(x1: number, y1: number, x2: number, y2: number): void
+-  /**
+-   * Set the scroll offset of a scrollable element.
+-   * x and y are negative pixel values (scroll down = more negative y).
+-   * Call flush() after to apply the offset and re-render.
+-   */
+-  scrollTo(elementId: number, x: number, y: number): void
+-  /**
+-   * Scroll a child into view by its index in the children list.
+-   * Call flush() after to apply and re-render. For a `<virtual-list>` the
+-   * scroll is queued and applied on that flush, after the child splice.
+-   * `offset_in_item` is in pixels and may be negative, which anchors the
+-   * viewport top above the item.
+-   */
+-  scrollToItem(elementId: number, index: number, offsetInItem?: number | undefined | null): void
+-  /** Scroll this element's nearest scroll parent until the element is visible. */
+-  scrollIntoView(elementId: number): void
+-  /** Packed `"rgba"` (default) or `"bgra"` pixels onto an `<img>` host node. */
+-  setImagePixels(elementId: number, width: number, height: number, pixels: Buffer, format?: string | undefined | null): void
+-  /** Encoded image bytes onto an `<img>` host node. */
+-  setImage(elementId: number, bytes: Buffer): void
+-  /** Make the fonts in a TrueType or OpenType file usable by `fontFamily`. */
+-  registerFont(data: Buffer): void
+-  /**
+-   * The logical scroll anchor of a `<virtual-list>`:
+-   * `[itemIndex, offsetInItemPx, viewportHeightPx]`, or null for anything
+-   * else. `itemIndex == item count` is gpui's at-end sentinel.
+-   */
+-  getListScrollTop(elementId: number): Array<number> | null
+-  /** `"hidden"` | `"minimal"` | `"full"`. */
+-  setDebugFrameOverlay(mode: string): string
+-  /** Hidden → minimal → full → hidden. */
+-  cycleDebugFrameOverlay(): string
+-  getDebugFrameOverlay(): string
+-  /** Clears the last 1000 draw samples. Frame count stays. */
+-  resetDebugFrameOverlayStats(): void
+-  /** Same numbers as the on-screen overlay: current, p90, p99, max, frames. */
+-  getDebugFrameOverlayStats(): DebugFrameOverlayStats
+-  /**
+-   * Get the current scroll offset of a scrollable element.
+-   * Returns [x, y] or null if the element has no scroll handle.
+-   */
+-  getScrollOffset(elementId: number): Array<number> | null
+-  /**
+-   * Capture a screenshot of the current rendered state and save as PNG.
+-   * Supported on macOS through Metal and Windows through DirectX.
+-   */
+-  captureScreenshot(path: string): void
+-  /**
+-   * Return and clear all collected events since the last drain.
+-   * Events are collected synchronously — no event loop queuing.
+-   */
+-  drainEvents(): Array<EventPayload>
+-  /** Get all text content in the tree (depth-first order). */
+-  getAllText(): Array<string>
+-  /** Find element IDs matching the given type (e.g. "div", "text"). */
+-  findByType(elementType: string): Array<number>
+-  /** Check if an element has a specific event listener. */
+-  hasEventListener(id: number, eventType: string): boolean
+-  /** Get the text content of an element. */
+-  getText(id: number): string | null
+-  /** Get the full tree as JSON for snapshot testing. */
+-  getTreeJson(): string
+-  /**
+-   * GPUI accessibility dump from the last painted frame.
+-   * Empty until a11y is active; the test renderer turns that on at construct.
+-   */
+-  getA11yTree(): string
+-  /** Tree JSON with last-paint bounds. Used by the automation locators. */
+-  getAutomationTree(): string
+-  /** Last painted bounds for an element, or null if it was not painted. */
+-  getElementBounds(id: number): ElementBounds | null
+-  /** Ids under the window point, topmost first. See the live renderer. */
+-  getElementsAt(x: number, y: number): Array<number>
+-  clockPause(): number
+-  clockSet(nowMs: number): number
+-  clockFastForward(deltaMs: number): number
+-  clockResume(): number
+-  /** Advance GPUI's deterministic test executor and run due timers. */
+-  advanceTime(milliseconds: number): void
+-  /** Get the root element ID, or null if no root is set. */
+-  getRootId(): number | null
+-  /**
+-   * The offscreen window size, so `useWindowSize()` reports the same numbers
+-   * under test as in a real window instead of falling back to a default.
+-   */
+-  getWindowSize(): WindowSize
+ }
+ 
+ /**
+@@ -467,6 +279,11 @@ export interface CheckUpdateOptions {
+   installMode?: string
+ }
+ 
++export interface ClipboardImage {
++  mime: string
++  data: Buffer
++}
++
+ /** Recorded draw times from the debug frame overlay. */
+ export interface DebugFrameOverlayStats {
+   currentMs?: number
+@@ -589,6 +406,11 @@ export interface EventPayload {
+    * absent when the selection is empty).
+    */
+   value?: string
++  /** UTF-16 offset hit by a rich-text pointer event. */
++  charIndex: number | null
++  /** UTF-16 selection endpoints for native input change and selectionChange. */
++  selectionStart?: number
++  selectionEnd?: number
+   /** Line number on the pre-change side. Populated for: `<diff>` lineClick. */
+   oldLine?: number
+   /** Line number on the post-change side. Populated for: `<diff>` lineClick. */
+@@ -706,6 +528,28 @@ export interface LayerShellOptions {
+   keyboardInteractivity?: string
+ }
+ 
++export interface NativeWindowBounds {
++  x: number
++  y: number
++  width: number
++  height: number
++  maximized: boolean
++  fullscreen: boolean
++  displayId?: string
++}
++
++export interface NativeWindowControls {
++  fullscreen: boolean
++  maximize: boolean
++  minimize: boolean
++  windowMenu: boolean
++}
++
++export interface NativeWindowDecorations {
++  kind: string
++  tiling: WindowTiling
++}
++
+ export interface PathPromptOptions {
+   /** Select files. Defaults to true unless `directories` is true. */
+   files?: boolean
+@@ -739,6 +583,10 @@ export interface WindowOptions {
+   appName?: string
+   width?: number
+   height?: number
++  x?: number
++  y?: number
++  maximized?: boolean
++  displayId?: string
+   minWidth?: number
+   minHeight?: number
+   resizable?: boolean
+@@ -781,3 +629,10 @@ export interface WindowSize {
+   width: number
+   height: number
+ }
++
++export interface WindowTiling {
++  top: boolean
++  left: boolean
++  right: boolean
++  bottom: boolean
++}
+diff --git i/packages/native/js/host.ts w/packages/native/js/host.ts
+index 47a3fac..1a55b6f 100644
+--- i/packages/native/js/host.ts
++++ w/packages/native/js/host.ts
+@@ -411,6 +411,9 @@ export interface HighlightSpec {
+ // Framework adapters add their own children, key, and ref fields.
+ export interface HostProps {
+   style?: StyleDesc
++  /** Newlines around a div/text block when copying a cross-element selection.
++   * Adjacent boundaries coalesce. Does not alter rendered text or layout. */
++  copySeparator?: "\n" | "\n\n"
+ 
+   // ── Mouse events ───────────────────────────────────────────────
+   /** Primary button only, like the DOM. Use `onAuxClick` for the others. */
+@@ -457,6 +460,9 @@ export interface HostProps {
+ 
+   // ── File drop (Finder / OS paths) ───────────────────────────────
+   onFileDrop?: (event: EventPayload) => void
++  onFileDragEnter?: (event: EventPayload) => void
++  onFileDragLeave?: (event: EventPayload) => void
++  onFileDragMove?: (event: EventPayload) => void
+ 
+   // ── Text editor events ─────────────────────────────────────────
+   onChange?: (event: EventPayload) => void
+@@ -515,12 +521,32 @@ export interface HostProps {
+ }
+ 
+ // Props for native text editor elements.
++export interface TextRunStyle {
++  start: number
++  end: number
++  color?: string
++  fontFamily?: string
++  fontWeight?: string | number
++  italic?: boolean
++  underline?: { color?: string; thickness?: number; wavy?: boolean }
++  strikethrough?: { color?: string; thickness?: number }
++  background?: string
++  wash?: { color: string; radius?: number; padX?: number; insetY?: number }
++}
+ export interface InputProps extends HostProps {
+   /** External editor value. Native edits apply immediately and report through onChange. */
+   value?: string
+   placeholder?: string
+   readOnly?: boolean
++  /** Mask display/accessibility value and prevent copying; onChange still returns the actual value. */
++  secure?: boolean
+   theme?: GpuixTheme
++  runs?: TextRunStyle[]
++  highlights?: { start: number; end: number; color: string; active?: boolean; activeColor?: string }[]
++  gutter?: { color: string; activeColor?: string; width?: number; gap?: number; fontSize?: number }
++  wrap?: boolean
++  /** Exact GPUI key chords intercepted natively before editor defaults; capture key events still fire. */
++  interceptedKeys?: string[]
+ }
+ 
+ export interface TextareaProps extends InputProps {
+diff --git i/packages/native/js/mutations.ts w/packages/native/js/mutations.ts
+index 9a72394..86376b5 100644
+--- i/packages/native/js/mutations.ts
++++ w/packages/native/js/mutations.ts
+@@ -111,6 +111,9 @@ export const EVENT_PROPS = [
+   ["onLayout", "layout"],
+   ["onScrollChange", "scrollChange"],
+   ["onFileDrop", "fileDrop"],
++  ["onFileDragEnter", "fileDragEnter"],
++  ["onFileDragLeave", "fileDragLeave"],
++  ["onFileDragMove", "fileDragMove"],
+ ] as const
+ 
+ export const EVENT_PROP_NAMES: ReadonlySet<string> = new Set(
+@@ -140,6 +143,7 @@ export const UNIVERSAL_PROPS: ReadonlySet<string> = new Set([
+   "motion",
+   "testId",
+   "highlight",
++  "copySeparator",
+   "role",
+   "aria-label",
+   "aria-description",
+diff --git i/packages/native/package.json w/packages/native/package.json
+index 1bf1fdf..c6f5384 100644
+--- i/packages/native/package.json
++++ w/packages/native/package.json
+@@ -63,6 +63,7 @@
+     "access": "public"
+   },
+   "scripts": {
++    "build:harness": "napi build --release --no-default-features --platform --no-js --dts index.d.ts",
+     "artifacts": "napi artifacts",
+     "build": "napi build --platform --esm --js index.js --release --features test-support && napi build --platform --js index.cjs --release --features test-support && bun run build:js",
+     "build:release": "napi build --platform --esm --js index.js --release --no-default-features && napi build --platform --js index.cjs --release --no-default-features && bun run build:js",
 diff --git i/packages/native/src/custom_elements/input.rs w/packages/native/src/custom_elements/input.rs
-index 0f98401..4815372 100644
+index 0f98401..06c33dc 100644
 --- i/packages/native/src/custom_elements/input.rs
 +++ w/packages/native/src/custom_elements/input.rs
-@@ -71,7 +71,6 @@ const INPUT_KEY_CONTEXT: &str = "GpuixInput";
+@@ -26,6 +26,28 @@ use web_time::Instant;
+ use super::{CustomElement, CustomElementFactory, CustomRenderContext};
+ use crate::renderer::{emit_event_full, emit_key_event, EventCallback};
+ use crate::theme::Theme;
++use super::rich_text::{Run, styled_runs, color};
++use std::sync::Arc;
++
++#[derive(Clone, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct SearchHighlight {
++    start: usize,
++    end: usize,
++    color: String,
++    active: Option<bool>,
++    active_color: Option<String>,
++}
++
++#[derive(Clone, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct Gutter {
++    color: String,
++    active_color: Option<String>,
++    width: Option<f32>,
++    gap: Option<f32>,
++    font_size: Option<f32>,
++}
+ 
+ actions!(
+     gpuix_text_editor,
+@@ -71,7 +93,6 @@ const INPUT_KEY_CONTEXT: &str = "GpuixInput";
  const TEXTAREA_KEY_CONTEXT: &str = "GpuixTextarea";
  const TEXTAREA_SUBMIT_KEY_CONTEXT: &str = "GpuixTextareaSubmit";
  const CARET_BLINK_MS: u64 = 500;
@@ -10,7 +621,7 @@ index 0f98401..4815372 100644
  const DRAG_SCROLL_FRAME_MS: u64 = 16;
  const UNDO_COALESCE: Duration = Duration::from_millis(700);
  const UNDO_LIMIT: usize = 200;
-@@ -93,8 +92,8 @@ fn clipboard_text(item: ClipboardItem) -> Option<String> {
+@@ -93,8 +114,8 @@ fn clipboard_text(item: ClipboardItem) -> Option<String> {
  
  // Chrome paints the caret at line height, not font size. Firefox uses the em
  // square after you type. Match Chrome so a 14/20 composer bar is 20px tall.
@@ -21,13 +632,28 @@ index 0f98401..4815372 100644
  }
  
  #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-@@ -283,6 +282,22 @@ fn word_navigation_uses_alt() -> bool {
+@@ -216,6 +237,12 @@ fn text_editor_bindings(
+         KeyBinding::new("shift-cmd-up", SelectDocStart, context),
+         KeyBinding::new("shift-cmd-down", SelectDocEnd, context),
+     ];
++    if enter_submits {
++        bindings.extend([
++            KeyBinding::new("ctrl-enter", Submit, context),
++            KeyBinding::new("cmd-enter", Submit, context),
++        ]);
++    }
+     if multiline {
+         bindings.extend([
+             KeyBinding::new("up", Up, context),
+@@ -283,6 +310,24 @@ fn word_navigation_uses_alt() -> bool {
      cfg!(target_os = "macos")
  }
  
 +
 +pub enum InputOperation {
 +    SetSelection { start: usize, end: usize },
++    RevealRange { start: usize, end: usize },
++    ScrollTo { x: f32, y: f32 },
 +    ReplaceSelection(String),
 +    Command(InputCommand),
 +    SetSelectionListener(Option<EventCallback>),
@@ -44,7 +670,43 @@ index 0f98401..4815372 100644
  pub struct InputFactory;
  
  impl CustomElementFactory for InputFactory {
-@@ -347,6 +362,7 @@ impl CustomElement for TextEditorElement {
+@@ -312,11 +357,17 @@ struct TextEditorElement {
+     value: String,
+     placeholder: String,
+     read_only: bool,
++    secure: bool,
+     min_rows: usize,
+     max_rows: usize,
+     last_prop_value: Option<String>,
+     theme: Theme,
+     state: Option<Entity<TextEditorState>>,
++    runs: Arc<Vec<Run>>,
++    highlights: Arc<Vec<SearchHighlight>>,
++    gutter: Option<Gutter>,
++    wrap: bool,
++    intercepted_keys: Arc<Vec<gpui::Keystroke>>,
+ }
+ 
+ impl TextEditorElement {
+@@ -326,11 +377,17 @@ impl TextEditorElement {
+             value: String::new(),
+             placeholder: String::new(),
+             read_only: false,
++            secure: false,
+             min_rows: 1,
+             max_rows: if multiline { 10 } else { 1 },
+             last_prop_value: None,
+             theme: Theme::dark(),
+             state: None,
++            runs: Arc::default(),
++            highlights: Arc::default(),
++            gutter: None,
++            wrap: true,
++            intercepted_keys: Arc::default(),
+         }
+     }
+ }
+@@ -347,6 +404,7 @@ impl CustomElement for TextEditorElement {
              .cloned()
              .unwrap_or_else(|| cx.focus_handle());
          let emits_change = ctx.events.contains("change");
@@ -52,7 +714,7 @@ index 0f98401..4815372 100644
          let emits_submit = ctx.events.contains("submit");
          let emits_key_down = ctx.events.contains("keyDown");
          let emits_key_up = ctx.events.contains("keyUp");
-@@ -362,14 +378,21 @@ impl CustomElement for TextEditorElement {
+@@ -362,14 +420,21 @@ impl CustomElement for TextEditorElement {
                  let min_rows = self.min_rows;
                  let max_rows = self.max_rows;
                  let caret_color = self.theme.caret;
@@ -74,7 +736,21 @@ index 0f98401..4815372 100644
                      emits_submit,
                      emits_key_down,
                      emits_key_up,
-@@ -399,6 +422,9 @@ impl CustomElement for TextEditorElement {
+@@ -378,6 +443,13 @@ impl CustomElement for TextEditorElement {
+                     placeholder: placeholder.into(),
+                     multiline,
+                     read_only,
++                    secure: false,
++                    runs: Arc::default(),
++                    highlights: Arc::default(),
++                    gutter: None,
++                    wrap: true,
++                    intercepted_keys: Arc::default(),
++                    reveal_range: None,
+                     min_rows,
+                     max_rows,
+                     selected_range: cursor..cursor,
+@@ -399,6 +471,9 @@ impl CustomElement for TextEditorElement {
                      content_width: 0.0,
                      display_is_placeholder: false,
                      caret_color,
@@ -84,7 +760,7 @@ index 0f98401..4815372 100644
                      blink_anchor: cx.background_executor().now(),
                      blink_task: None,
                      pending_values: VecDeque::new(),
-@@ -413,6 +439,7 @@ impl CustomElement for TextEditorElement {
+@@ -413,6 +488,7 @@ impl CustomElement for TextEditorElement {
          state.update(cx, |state, cx| {
              state.callback = callback;
              state.emits_change = emits_change;
@@ -92,8 +768,16 @@ index 0f98401..4815372 100644
              if state.emits_submit != emits_submit {
                  state.emits_submit = emits_submit;
                  cx.notify();
-@@ -423,8 +450,15 @@ impl CustomElement for TextEditorElement {
+@@ -421,10 +497,23 @@ impl CustomElement for TextEditorElement {
+             state.emits_key_up = emits_key_up;
+             state.placeholder = self.placeholder.clone().into();
              state.read_only = self.read_only;
++            state.secure = self.secure;
++            state.runs = self.runs.clone();
++            state.highlights = self.highlights.clone();
++            state.gutter = self.gutter.clone();
++            state.wrap = self.wrap;
++            state.intercepted_keys = self.intercepted_keys.clone();
              state.min_rows = self.min_rows.max(1);
              state.max_rows = self.max_rows.max(state.min_rows);
 -            if state.caret_color != self.theme.caret {
@@ -109,12 +793,62 @@ index 0f98401..4815372 100644
                  cx.notify();
              }
              if prop_changed {
-@@ -545,13 +579,56 @@ impl CustomElement for TextEditorElement {
+@@ -471,9 +560,12 @@ impl CustomElement for TextEditorElement {
+             gpui::Role::TextInput
+         };
+         editor = crate::accessibility::apply_accessibility(editor, ctx.props, Some(default_role));
+-        if ctx.props.get("aria-valuetext").is_none() && !self.value.is_empty() {
++        if !self.secure && ctx.props.get("aria-valuetext").is_none() && !self.value.is_empty() {
+             editor = editor.aria_value(self.value.clone());
+         }
++        if self.secure {
++            editor = editor.aria_value("•".repeat(self.value.chars().count()));
++        }
+         if !self.placeholder.is_empty() {
+             editor = editor.aria_placeholder(self.placeholder.clone());
+         }
+@@ -512,6 +604,7 @@ impl CustomElement for TextEditorElement {
+         }
+         editor =
+             crate::accessibility::apply_a11y_click(editor, ctx.events, ctx.id, ctx.event_callback);
++        editor = crate::renderer::wire_file_drag_events(editor, ctx.id, ctx.events, ctx.event_callback.clone());
+         editor.into_any_element()
+     }
+ 
+@@ -520,6 +613,15 @@ impl CustomElement for TextEditorElement {
+             "value" => self.value = value.as_str().unwrap_or_default().to_string(),
+             "placeholder" => self.placeholder = value.as_str().unwrap_or_default().to_string(),
+             "readOnly" => self.read_only = value.as_bool().unwrap_or(false),
++            "secure" => self.secure = value.as_bool().unwrap_or(false),
++            "runs" => self.runs = Arc::new(serde_json::from_value(value).unwrap_or_default()),
++            "highlights" => self.highlights = Arc::new(serde_json::from_value(value).unwrap_or_default()),
++            "gutter" => self.gutter = serde_json::from_value(value).ok(),
++            "wrap" => self.wrap = value.as_bool().unwrap_or(true),
++            "interceptedKeys" => {
++                let chords: Vec<String> = serde_json::from_value(value).unwrap_or_default();
++                self.intercepted_keys = Arc::new(chords.iter().filter_map(|chord| gpui::Keystroke::parse(chord).ok()).collect());
++            }
+             "minRows" => self.min_rows = value.as_u64().unwrap_or(1) as usize,
+             "maxRows" => {
+                 self.max_rows = value
+@@ -537,21 +639,79 @@ impl CustomElement for TextEditorElement {
+             "value",
+             "placeholder",
+             "readOnly",
++            "secure",
+             "minRows",
+             "maxRows",
+             "theme",
++            "runs", "highlights", "gutter", "wrap",
++            "interceptedKeys",
+         ]
+     }
  
      fn supported_events(&self) -> &'static [&'static str] {
          &[
 -            "change", "submit", "click", "keyDown", "keyUp", "focus", "blur", "fileDrop",
 +            "change", "selectionChange", "submit", "click", "keyDown", "keyUp", "focus", "blur", "fileDrop",
++            "fileDragEnter", "fileDragLeave", "fileDragMove",
          ]
      }
  
@@ -132,6 +866,17 @@ index 0f98401..4815372 100644
 +            .ok_or_else(|| "Native input has not rendered".to_string())?;
 +        state.update(cx, |state, cx| {
 +            match operation {
++                InputOperation::RevealRange { start, end } => {
++                    state.reveal_range = Some(state.range_from_utf16(&(start..end)));
++                    state.follow_cursor = false;
++                    cx.notify();
++                }
++                InputOperation::ScrollTo { x, y } => {
++                    state.scroll_left = x.max(0.0);
++                    state.scroll_top = y.max(0.0);
++                    state.follow_cursor = false;
++                    cx.notify();
++                }
 +                InputOperation::SetSelectionListener(callback) => {
 +                    state.selection_listener = callback;
 +                }
@@ -167,7 +912,7 @@ index 0f98401..4815372 100644
  }
  
  #[derive(Clone)]
-@@ -638,6 +715,9 @@ struct TextEditorState {
+@@ -638,6 +798,9 @@ struct TextEditorState {
      element_id: u64,
      callback: Option<EventCallback>,
      emits_change: bool,
@@ -177,7 +922,21 @@ index 0f98401..4815372 100644
      emits_submit: bool,
      emits_key_down: bool,
      emits_key_up: bool,
-@@ -667,6 +747,9 @@ struct TextEditorState {
+@@ -646,6 +809,13 @@ struct TextEditorState {
+     placeholder: SharedString,
+     multiline: bool,
+     read_only: bool,
++    secure: bool,
++    runs: Arc<Vec<Run>>,
++    highlights: Arc<Vec<SearchHighlight>>,
++    gutter: Option<Gutter>,
++    wrap: bool,
++    intercepted_keys: Arc<Vec<gpui::Keystroke>>,
++    reveal_range: Option<Range<usize>>,
+     min_rows: usize,
+     max_rows: usize,
+     selected_range: Range<usize>,
+@@ -667,6 +837,9 @@ struct TextEditorState {
      content_width: f32,
      display_is_placeholder: bool,
      caret_color: gpui::Hsla,
@@ -187,8 +946,36 @@ index 0f98401..4815372 100644
      blink_anchor: Instant,
      blink_task: Option<Task<()>>,
      pending_values: VecDeque<String>,
-@@ -678,6 +761,20 @@ struct TextEditorState {
+@@ -676,12 +849,52 @@ struct TextEditorState {
+ }
+ 
  impl TextEditorState {
++    fn gutter_width(&self) -> f32 {
++        self.gutter.as_ref().map_or(0.0, |gutter| gutter.width.unwrap_or(42.0) + gutter.gap.unwrap_or(12.0))
++    }
++    fn display_text(&self) -> SharedString {
++        if self.content.is_empty() { return self.placeholder.clone(); }
++        if self.secure {
++            self.content.chars().map(|ch| if ch == '\n' { '\n' } else { '•' }).collect::<String>().into()
++        } else { self.content.clone().into() }
++    }
++
++    fn display_offset(&self, offset: usize) -> usize {
++        if !self.secure { return offset; }
++        self.content.char_indices().take_while(|(index, _)| *index < offset)
++            .map(|(_, ch)| if ch == '\n' { 1 } else { '•'.len_utf8() }).sum()
++    }
++
++    fn content_offset(&self, offset: usize) -> usize {
++        if !self.secure { return offset.min(self.content.len()); }
++        let mut display_offset = 0;
++        for (index, ch) in self.content.char_indices() {
++            let width = if ch == '\n' { 1 } else { '•'.len_utf8() };
++            if display_offset + width > offset { return index; }
++            display_offset += width;
++        }
++        self.content.len()
++    }
      fn reset_blink(&mut self, cx: &Context<Self>) {
          self.blink_anchor = cx.background_executor().now();
 +        let selection = self.range_to_utf16(&self.selected_range);
@@ -208,7 +995,12 @@ index 0f98401..4815372 100644
      }
  
      fn caret_shown(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
-@@ -747,6 +844,9 @@ impl TextEditorState {
+-        if !self.focus_handle.is_focused(window) || !window.is_window_active() {
++        if self.read_only || !self.focus_handle.is_focused(window) || !window.is_window_active() {
+             self.blink_task = None;
+             return false;
+         }
+@@ -747,14 +960,19 @@ impl TextEditorState {
              }
              emit_event_full(&self.callback, self.element_id, "change", |payload| {
                  payload.value = Some(self.content.clone());
@@ -218,7 +1010,105 @@ index 0f98401..4815372 100644
              });
          }
      }
-@@ -1397,7 +1497,7 @@ impl TextEditorState {
+ 
+-    fn emit_submit(&self) {
++    fn emit_submit(&self, window: &Window) {
+         if self.emits_submit {
+             emit_event_full(&self.callback, self.element_id, "submit", |payload| {
+                 payload.value = Some(self.content.clone());
++                payload.key = Some("enter".to_string());
++                payload.modifiers = Some(window.modifiers().into());
+             });
+         }
+     }
+@@ -1080,7 +1298,7 @@ impl TextEditorState {
+     }
+ 
+     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+-        if !self.selected_range.is_empty() {
++        if !self.secure && !self.selected_range.is_empty() {
+             cx.write_to_clipboard(ClipboardItem::new_string(
+                 self.content[self.selected_range.clone()].to_string(),
+             ));
+@@ -1134,8 +1352,8 @@ impl TextEditorState {
+         }
+     }
+ 
+-    fn submit(&mut self, _: &Submit, _: &mut Window, _: &mut Context<Self>) {
+-        self.emit_submit();
++    fn submit(&mut self, _: &Submit, window: &mut Window, _: &mut Context<Self>) {
++        self.emit_submit(window);
+     }
+ 
+     fn vertical_target(&self, direction: f32) -> Option<usize> {
+@@ -1151,6 +1369,7 @@ impl TextEditorState {
+     }
+ 
+     fn point_for_index(&self, index: usize) -> Option<Point<Pixels>> {
++        let index = self.display_offset(index);
+         for (line_index, line) in self.last_lines.iter().enumerate() {
+             let line_start = *self.line_starts.get(line_index)?;
+             if index < line_start || index > line_start + line.len() {
+@@ -1181,7 +1400,7 @@ impl TextEditorState {
+                 let index = line
+                     .closest_index_for_position(local, self.line_height)
+                     .unwrap_or_else(|index| index);
+-                return (line_start + index).min(self.content.len());
++                return self.content_offset(line_start + index);
+             }
+             y -= height;
+         }
+@@ -1193,7 +1412,7 @@ impl TextEditorState {
+             return 0;
+         };
+         self.index_for_point(point(
+-            position.x - bounds.left() + px(self.scroll_left),
++            position.x - bounds.left() - px(self.gutter_width()) + px(self.scroll_left),
+             position.y - bounds.top() + px(self.scroll_top),
+         ))
+     }
+@@ -1332,18 +1551,17 @@ impl TextEditorState {
+         };
+         let viewport_height = f32::from(bounds.size.height);
+         let max_scroll = (self.content_height - viewport_height).max(0.0);
+-        if max_scroll == 0.0 {
+-            return;
+-        }
+-        let delta = f32::from(event.delta.pixel_delta(self.line_height).y);
+-        let next = (self.scroll_top - delta).clamp(0.0, max_scroll);
+-        if next == self.scroll_top {
+-            if delta != 0.0 {
+-                cx.stop_propagation();
+-            }
++        let delta = event.delta.pixel_delta(self.line_height);
++        let next = (self.scroll_top - f32::from(delta.y)).clamp(0.0, max_scroll);
++        let max_left = if self.multiline && self.wrap { 0.0 } else {
++            (self.content_width + self.gutter_width() - f32::from(bounds.size.width)).max(0.0)
++        };
++        let left = (self.scroll_left - f32::from(delta.x)).clamp(0.0, max_left);
++        if next == self.scroll_top && left == self.scroll_left {
+             return;
+         }
+         self.scroll_top = next;
++        self.scroll_left = left;
+         self.follow_cursor = false;
+         cx.stop_propagation();
+         cx.notify();
+@@ -1384,11 +1602,8 @@ impl TextEditorState {
+     }
+ 
+     fn layout_text(&mut self, width: Pixels, style: &TextStyle, window: &mut Window) -> f32 {
+-        let (display, is_placeholder) = if self.content.is_empty() {
+-            (self.placeholder.clone(), true)
+-        } else {
+-            (SharedString::from(self.content.clone()), false)
+-        };
++        let display = self.display_text();
++        let is_placeholder = self.content.is_empty();
+         let rem_size = window.rem_size();
+         let font_size = style.font_size.to_pixels(rem_size);
+         self.font_size = font_size;
+@@ -1397,34 +1612,36 @@ impl TextEditorState {
          // request_layout instead.
          self.line_height = style.line_height_in_pixels(rem_size);
          let color = if is_placeholder {
@@ -227,7 +1117,83 @@ index 0f98401..4815372 100644
          } else {
              style.color
          };
-@@ -1469,8 +1569,8 @@ impl TextEditorState {
+-        let run = |len: usize, underline: bool| TextRun {
+-            len,
+-            font: style.font(),
+-            color,
+-            background_color: None,
+-            underline: underline.then_some(UnderlineStyle {
+-                color: Some(color),
+-                thickness: px(1.0),
+-                wavy: false,
+-            }),
+-            strikethrough: None,
++        let mut runs = if is_placeholder || self.secure {
++            vec![TextRun { len: display.len(), font: style.font(), color, background_color: None, underline: None, strikethrough: None }]
++        } else {
++            styled_runs(&display, &self.runs, style.font(), color)
+         };
+-        let runs = match self.marked_range.as_ref() {
+-            Some(marked) if !is_placeholder => vec![
+-                run(marked.start, false),
+-                run(marked.len(), true),
+-                run(display.len() - marked.end, false),
+-            ]
+-            .into_iter()
+-            .filter(|run| run.len > 0)
+-            .collect(),
+-            _ => vec![run(display.len(), false)],
+-        };
+-        let wrap_width = self.multiline.then_some(width);
++        let marked_range = self.marked_range.as_ref().map(|range| self.display_offset(range.start)..self.display_offset(range.end));
++        if let Some(marked) = &marked_range {
++            let mut offset = 0;
++            runs = runs.into_iter().flat_map(|run| {
++                let end = offset + run.len;
++                let mut boundaries = vec![offset, end];
++                boundaries.extend([marked.start, marked.end].into_iter().filter(|index| *index > offset && *index < end));
++                boundaries.sort_unstable();
++                let parts: Vec<_> = boundaries.windows(2).map(|pair| {
++                    let mut part = run.clone();
++                    part.len = pair[1] - pair[0];
++                    if pair[0] >= marked.start && pair[1] <= marked.end {
++                        part.underline = Some(UnderlineStyle { color: Some(color), thickness: px(1.0), wavy: false });
++                    }
++                    part
++                }).collect();
++                offset = end;
++                parts
++            }).collect();
++        }
++        let wrap_width = (self.multiline && self.wrap).then_some((width - px(self.gutter_width())).max(px(1.0)));
+         let lines = window
+             .text_system()
+             .shape_text(display, font_size, &runs, wrap_width, None)
+@@ -1455,6 +1672,18 @@ impl TextEditorState {
+     }
+ 
+     fn clamp_scroll(&mut self, viewport_width: f32, viewport_height: f32) {
++        if let Some(range) = self.reveal_range.take() {
++            for index in [range.end, range.start] {
++                if let Some(position) = self.point_for_index(index) {
++                    let top = f32::from(position.y);
++                    self.scroll_top = self.scroll_top.min(top).max(top + f32::from(self.line_height) - viewport_height);
++                    if !self.wrap {
++                        let left = f32::from(position.x);
++                        self.scroll_left = self.scroll_left.min(left).max(left + f32::from(self.caret_width) - viewport_width);
++                    }
++                }
++            }
++        }
+         if self.follow_cursor {
+             if let Some(cursor) = self.point_for_index(self.cursor_offset()) {
+                 let cursor_top = f32::from(cursor.y);
+@@ -1465,12 +1694,12 @@ impl TextEditorState {
+                 {
+                     self.scroll_top = cursor_top + f32::from(self.line_height) - viewport_height;
+                 }
+-                if !self.multiline {
++                if !self.multiline || !self.wrap {
                      let cursor_left = f32::from(cursor.x);
                      if cursor_left < self.scroll_left {
                          self.scroll_left = cursor_left;
@@ -238,7 +1204,12 @@ index 0f98401..4815372 100644
                      }
                  }
              }
-@@ -1482,7 +1582,7 @@ impl TextEditorState {
+@@ -1478,11 +1707,11 @@ impl TextEditorState {
+         self.scroll_top = self
+             .scroll_top
+             .clamp(0.0, (self.content_height - viewport_height).max(0.0));
+-        self.scroll_left = if self.multiline {
++        self.scroll_left = if self.multiline && self.wrap {
              0.0
          } else {
              self.scroll_left
@@ -247,7 +1218,7 @@ index 0f98401..4815372 100644
          };
      }
  }
-@@ -1596,6 +1696,7 @@ impl EntityInputHandler for TextEditorState {
+@@ -1596,6 +1825,7 @@ impl EntityInputHandler for TextEditorState {
                      ..range.start + utf16_offset_to_utf8(&replacement, selected.end)
              })
              .unwrap_or_else(|| range.start + replacement.len()..range.start + replacement.len());
@@ -255,7 +1226,12 @@ index 0f98401..4815372 100644
          self.follow_cursor = true;
          self.reset_blink(cx);
          self.emit_change();
-@@ -1617,6 +1718,7 @@ impl EntityInputHandler for TextEditorState {
+@@ -1613,10 +1843,11 @@ impl EntityInputHandler for TextEditorState {
+         let start = self.point_for_index(range.start)?;
+         Some(caret_rect(
+             point(
+-                bounds.left() + start.x - px(self.scroll_left),
++                bounds.left() + px(self.gutter_width()) + start.x - px(self.scroll_left),
                  bounds.top() + start.y - px(self.scroll_top),
              ),
              self.line_height,
@@ -263,7 +1239,7 @@ index 0f98401..4815372 100644
          ))
      }
  
-@@ -1635,7 +1737,9 @@ impl EntityInputHandler for TextEditorState {
+@@ -1635,7 +1866,9 @@ impl EntityInputHandler for TextEditorState {
          _: &mut Window,
          cx: &mut Context<Self>,
      ) {
@@ -274,7 +1250,81 @@ index 0f98401..4815372 100644
          self.selection_reversed = false;
          self.follow_cursor = true;
          self.reset_blink(cx);
-@@ -1810,6 +1914,7 @@ impl gpui::Element for EditorTextElement {
+@@ -1656,6 +1889,7 @@ impl gpui::Render for TextEditorState {
+         let key_down_callback = self.callback.clone();
+         let key_up_callback = self.callback.clone();
+         let element_id = self.element_id;
++        let intercepted_keys = self.intercepted_keys.clone();
+         div()
+             .key_context(if !self.multiline {
+                 INPUT_KEY_CONTEXT
+@@ -1704,8 +1938,8 @@ impl gpui::Render for TextEditorState {
+             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
+             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+-            .when(self.emits_key_down, move |editor| {
+-                editor.on_key_down(move |event, _window, _cx| {
++            .when(self.emits_key_down || !intercepted_keys.is_empty(), move |editor| {
++                editor.capture_key_down(move |event, window, cx| {
+                     emit_key_event(
+                         &key_down_callback,
+                         element_id,
+@@ -1713,6 +1947,10 @@ impl gpui::Render for TextEditorState {
+                         &event.keystroke,
+                         Some(event.is_held),
+                     );
++                    if intercepted_keys.iter().any(|chord| chord.key == event.keystroke.key && chord.modifiers == event.keystroke.modifiers) {
++                        window.prevent_default();
++                        cx.stop_propagation();
++                    }
+                 })
+             })
+             .when(self.emits_key_up, move |editor| {
+@@ -1739,6 +1977,7 @@ struct EditorTextElement {
+ struct EditorPrepaint {
+     caret: Option<PaintQuad>,
+     selection: Vec<PaintQuad>,
++    highlights: Vec<PaintQuad>,
+ }
+ 
+ impl gpui::Element for EditorTextElement {
+@@ -1793,15 +2032,33 @@ impl gpui::Element for EditorTextElement {
+     ) -> EditorPrepaint {
+         self.input.update(cx, |input, _| {
+             input.last_bounds = Some(bounds);
+-            input.clamp_scroll(f32::from(bounds.size.width), f32::from(bounds.size.height));
++            input.clamp_scroll(f32::from(bounds.size.width) - input.gutter_width(), f32::from(bounds.size.height));
+         });
+         let input = self.input.read(cx);
+         let origin = point(
+-            bounds.left() - px(input.scroll_left),
++            bounds.left() + px(input.gutter_width()) - px(input.scroll_left),
+             bounds.top() - px(input.scroll_top),
+         );
+         let mut selection = Vec::new();
+         let mut caret = None;
++        let mut highlights = Vec::new();
++        let washes = input.runs.iter().filter_map(|run| run.wash.as_ref().map(|wash| (run.start, run.end, wash.color.as_str(), wash.radius.unwrap_or(3.0), wash.pad_x.unwrap_or(2.0), wash.inset_y.unwrap_or(2.0))));
++        let search = input.highlights.iter().map(|highlight| (highlight.start, highlight.end, if highlight.active.unwrap_or(false) { highlight.active_color.as_deref().unwrap_or(&highlight.color) } else { &highlight.color }, 2.0, 0.0, 0.0));
++        for (start, end, wash_color, radius, pad_x, inset_y) in washes.chain(search) {
++            let range = input.range_from_utf16(&(start..end));
++            let Some(color) = color(Some(wash_color)) else { continue; };
++            if let (Some(start), Some(end)) = (input.point_for_index(range.start), input.point_for_index(range.end)) {
++                let mut y = start.y;
++                while y <= end.y {
++                    let left = if y == start.y { start.x } else { px(0.0) };
++                    let right = if y == end.y { end.x } else { bounds.size.width - px(input.gutter_width()) + px(input.scroll_left) };
++                    if right > left {
++                        highlights.push(gpui::quad(Bounds::new(point(origin.x + left - px(pad_x), origin.y + y + px(inset_y)), size(right - left + px(pad_x * 2.0), (input.line_height - px(inset_y * 2.0)).max(px(0.0)))), px(radius), color, px(0.0), gpui::transparent_black(), gpui::BorderStyle::default()));
++                    }
++                    y += input.line_height;
++                }
++            }
++        }
+         if input.selected_range.is_empty() || input.display_is_placeholder {
+             let caret_point = input
+                 .point_for_index(input.cursor_offset())
+@@ -1810,6 +2067,7 @@ impl gpui::Element for EditorTextElement {
                  caret_rect(
                      point(origin.x + caret_point.x, origin.y + caret_point.y),
                      input.line_height,
@@ -282,7 +1332,7 @@ index 0f98401..4815372 100644
                  ),
                  input.caret_color,
              ));
-@@ -1817,7 +1922,7 @@ impl gpui::Element for EditorTextElement {
+@@ -1817,7 +2075,7 @@ impl gpui::Element for EditorTextElement {
              input.point_for_index(input.selected_range.start),
              input.point_for_index(input.selected_range.end),
          ) {
@@ -291,7 +1341,76 @@ index 0f98401..4815372 100644
              if start.y == end.y {
                  selection.push(fill(
                      Bounds::from_corners(
-@@ -2037,7 +2142,7 @@ mod tests {
+@@ -1852,7 +2110,7 @@ impl gpui::Element for EditorTextElement {
+                 ));
+             }
+         }
+-        EditorPrepaint { caret, selection }
++        EditorPrepaint { caret, selection, highlights }
+     }
+ 
+     fn paint(
+@@ -1878,16 +2136,18 @@ impl gpui::Element for EditorTextElement {
+             }
+         });
+         window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
++            let text_bounds = Bounds::new(point(bounds.left() + px(self.input.read(cx).gutter_width()), bounds.top()), size((bounds.size.width - px(self.input.read(cx).gutter_width())).max(px(0.0)), bounds.size.height));
++            window.with_content_mask(Some(gpui::ContentMask { bounds: text_bounds }), |window| {
++            for quad in prepaint.highlights.drain(..) {
++                window.paint_quad(quad);
++            }
+             for quad in prepaint.selection.drain(..) {
+                 window.paint_quad(quad);
+             }
++            });
+             let (lines, line_height, scroll_top, scroll_left, display) =
+                 self.input.update(cx, |input, _| {
+-                    let display = if input.content.is_empty() {
+-                        input.placeholder.clone()
+-                    } else {
+-                        input.content.clone().into()
+-                    };
++                    let display = input.display_text();
+                     (
+                         std::mem::take(&mut input.last_lines),
+                         input.line_height,
+@@ -1898,17 +2158,32 @@ impl gpui::Element for EditorTextElement {
+                 });
+             crate::text::log_painted_text(display);
+             let mut y = bounds.top() - px(scroll_top);
+-            for line in &lines {
++            let gutter_width = self.input.read(cx).gutter_width();
++            let gutter = self.input.read(cx).gutter.clone();
++            let active_line = self.input.read(cx).content[..self.input.read(cx).cursor_offset()].bytes().filter(|byte| *byte == b'\n').count();
++            for (line_number, line) in lines.iter().enumerate() {
+                 let height = line.size(line_height).height;
++                window.with_content_mask(Some(gpui::ContentMask { bounds: text_bounds }), |window| {
+                 line.paint(
+-                    point(bounds.left() - px(scroll_left), y),
++                    point(bounds.left() + px(gutter_width) - px(scroll_left), y),
+                     line_height,
+                     gpui::TextAlign::Left,
+-                    Some(bounds),
++                    Some(text_bounds),
+                     window,
+                     cx,
+                 )
+                 .ok();
++                });
++                if let Some(gutter) = &gutter {
++                    if let Some(number_color) = color(Some(if line_number == active_line { gutter.active_color.as_deref().unwrap_or(&gutter.color) } else { &gutter.color })) {
++                        let text = (line_number + 1).to_string();
++                        let mut font = window.text_style().font();
++                        font.weight = gpui::FontWeight::NORMAL;
++                        let run = TextRun { len: text.len(), font, color: number_color, background_color: None, underline: None, strikethrough: None };
++                        let number = window.text_system().shape_line(text.into(), px(gutter.font_size.unwrap_or(f32::from(self.input.read(cx).font_size))), &[run], None);
++                        number.paint(point(bounds.left() + px(gutter.width.unwrap_or(42.0)) - number.width, y), line_height, gpui::TextAlign::Left, None, window, cx).ok();
++                    }
++                }
+                 y += height;
+             }
+             self.input.update(cx, |input, _| input.last_lines = lines);
+@@ -2037,7 +2312,7 @@ mod tests {
  
      #[test]
      fn caret_matches_the_line_height() {
@@ -301,7 +1420,7 @@ index 0f98401..4815372 100644
          assert_eq!(bounds.size, size(px(2.0), px(20.0)));
      }
 diff --git i/packages/native/src/custom_elements/mod.rs w/packages/native/src/custom_elements/mod.rs
-index 158269f..dd6cc12 100644
+index 158269f..55d1b93 100644
 --- i/packages/native/src/custom_elements/mod.rs
 +++ w/packages/native/src/custom_elements/mod.rs
 @@ -19,6 +19,7 @@ pub mod diff;
@@ -321,7 +1440,15 @@ index 158269f..dd6cc12 100644
      /// `highlight` declared by the nearest ancestor, unresolved.
      ///
      /// A native element generates its text during `render()`, so the retained
-@@ -227,6 +230,16 @@ pub trait CustomElement: 'static {
+@@ -130,6 +133,7 @@ pub(crate) fn custom_surface(
+     }
+     el = crate::automation::track_host_bounds(el, ctx.id, None, None);
+     el = crate::accessibility::apply_accessibility(el, ctx.props, None);
++    el = crate::renderer::wire_file_drag_events(el, ctx.id, ctx.events, ctx.event_callback.clone());
+     wire_standard_events(el, ctx)
+ }
+ 
+@@ -227,6 +231,16 @@ pub trait CustomElement: 'static {
      /// Clean up resources (GPUI entities, subscriptions, etc.)
      fn destroy(&mut self);
  
@@ -338,7 +1465,7 @@ index 158269f..dd6cc12 100644
      /// Current live GPU image on `<img>`, if any.
      fn live_image(&self) -> Option<std::sync::Arc<gpui::RenderImage>> {
          None
-@@ -303,6 +316,7 @@ impl CustomElementEntry {
+@@ -303,6 +317,7 @@ impl CustomElementEntry {
  pub struct CustomElementRegistry {
      factories: HashMap<String, Box<dyn CustomElementFactory>>,
      instances: HashMap<u64, CustomElementEntry>,
@@ -346,7 +1473,7 @@ index 158269f..dd6cc12 100644
  }
  
  impl CustomElementRegistry {
-@@ -310,6 +324,7 @@ impl CustomElementRegistry {
+@@ -310,6 +325,7 @@ impl CustomElementRegistry {
          Self {
              factories: HashMap::new(),
              instances: HashMap::new(),
@@ -354,7 +1481,7 @@ index 158269f..dd6cc12 100644
          }
      }
  
-@@ -324,6 +339,7 @@ impl CustomElementRegistry {
+@@ -324,6 +340,7 @@ impl CustomElementRegistry {
          registry.register(Box::new(code::CodeFactory));
          registry.register(Box::new(diff::DiffFactory));
          registry.register(Box::new(markdown::MarkdownFactory));
@@ -362,7 +1489,7 @@ index 158269f..dd6cc12 100644
          registry
      }
  
-@@ -367,6 +383,7 @@ impl CustomElementRegistry {
+@@ -367,6 +384,7 @@ impl CustomElementRegistry {
      ) -> gpui::AnyElement {
          use gpui::IntoElement;
  
@@ -370,7 +1497,15 @@ index 158269f..dd6cc12 100644
          let Some(entry) = self.get_or_create(ctx.id, element_type) else {
              log::warn!("Unknown element type: {element_type}");
              return gpui::Empty.into_any_element();
-@@ -384,7 +401,31 @@ impl CustomElementRegistry {
+@@ -377,14 +395,38 @@ impl CustomElementRegistry {
+         let filtered: HashSet<String> = ctx
+             .events
+             .iter()
+-            .filter(|event| supported.contains(&event.as_str()))
++            .filter(|event| supported.contains(&event.as_str()) || matches!(event.as_str(), "fileDragEnter" | "fileDragLeave" | "fileDragMove"))
+             .cloned()
+             .collect();
+         let ctx = CustomRenderContext {
              events: &filtered,
              ..ctx
          };
@@ -403,7 +1538,7 @@ index 158269f..dd6cc12 100644
      }
  
      /// Store a decoded image on an `<img>` host node, creating the adapter if needed.
-@@ -401,6 +442,7 @@ impl CustomElementRegistry {
+@@ -401,6 +443,7 @@ impl CustomElementRegistry {
  
      /// Called when React destroys an element.
      pub fn destroy(&mut self, id: u64) {
@@ -413,33 +1548,33 @@ index 158269f..dd6cc12 100644
          }
 diff --git i/packages/native/src/custom_elements/rich_text.rs w/packages/native/src/custom_elements/rich_text.rs
 new file mode 100644
-index 0000000..0904e0b
+index 0000000..34fd4f0
 --- /dev/null
 +++ w/packages/native/src/custom_elements/rich_text.rs
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,102 @@
 +use gpui::{prelude::*, SharedString, TextRun};
 +use serde::Deserialize;
 +use super::{CustomElement, CustomElementFactory, CustomRenderContext};
 +
 +#[derive(Clone, Deserialize)]
 +#[serde(rename_all = "camelCase")]
-+struct Run {
-+    start: usize,
-+    end: usize,
-+    color: Option<String>,
-+    font_family: Option<String>,
-+    font_weight: Option<crate::style::FontWeightValue>,
-+    italic: Option<bool>,
-+    underline: Option<Decoration>,
-+    strikethrough: Option<Decoration>,
-+    background: Option<String>,
-+    wash: Option<Wash>,
++pub(super) struct Run {
++    pub(super) start: usize,
++    pub(super) end: usize,
++    pub(super) color: Option<String>,
++    pub(super) font_family: Option<String>,
++    pub(super) font_weight: Option<crate::style::FontWeightValue>,
++    pub(super) italic: Option<bool>,
++    pub(super) underline: Option<Decoration>,
++    pub(super) strikethrough: Option<Decoration>,
++    pub(super) background: Option<String>,
++    pub(super) wash: Option<Wash>,
 +}
 +#[derive(Clone, Deserialize)]
-+struct Decoration { color: Option<String>, thickness: Option<f32>, wavy: Option<bool> }
++pub(super) struct Decoration { pub(super) color: Option<String>, pub(super) thickness: Option<f32>, pub(super) wavy: Option<bool> }
 +#[derive(Clone, Deserialize)]
 +#[serde(rename_all = "camelCase")]
-+struct Wash { color: String, radius: Option<f32>, pad_x: Option<f32>, inset_y: Option<f32> }
++pub(super) struct Wash { pub(super) color: String, pub(super) radius: Option<f32>, pub(super) pad_x: Option<f32>, pub(super) inset_y: Option<f32> }
 +
 +pub struct RichTextFactory;
 +impl CustomElementFactory for RichTextFactory {
@@ -450,7 +1585,7 @@ index 0000000..0904e0b
 +struct RichText { text: SharedString, runs: Vec<Run> }
 +
 +// A UTF-16 offset within a surrogate pair resolves to that scalar's beginning.
-+fn byte_offset(text: &str, offset: usize) -> usize {
++pub(super) fn byte_offset(text: &str, offset: usize) -> usize {
 +    let mut units = 0;
 +    for (byte, ch) in text.char_indices() {
 +        if units + ch.len_utf16() > offset { return byte; }
@@ -458,33 +1593,36 @@ index 0000000..0904e0b
 +    }
 +    text.len()
 +}
-+fn color(value: Option<&str>) -> Option<gpui::Hsla> {
++pub(super) fn color(value: Option<&str>) -> Option<gpui::Hsla> {
 +    value.and_then(crate::color::parse_color_rgba).map(Into::into)
++}
++pub(super) fn styled_runs(text: &str, styles: &[Run], base_font: gpui::Font, base_color: gpui::Hsla) -> Vec<TextRun> {
++    let ranges: Vec<_> = styles.iter().map(|run| (byte_offset(text, run.start)..byte_offset(text, run.end), run)).collect();
++    let mut boundaries = vec![0, text.len()];
++    for (range, _) in &ranges { boundaries.extend([range.start, range.end]); }
++    boundaries.sort_unstable();
++    boundaries.dedup();
++    boundaries.windows(2).filter(|pair| pair[0] < pair[1]).map(|pair| {
++        let mut result = TextRun { len: pair[1] - pair[0], font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None };
++        for (range, run) in &ranges {
++            if range.start > pair[0] || range.end < pair[1] { continue; }
++            if let Some(value) = color(run.color.as_deref()) { result.color = value; }
++            if let Some(family) = &run.font_family { result.font.family = family.clone().into(); }
++            if let Some(weight) = &run.font_weight { result.font.weight = crate::renderer::parse_font_weight(weight); }
++            if let Some(italic) = run.italic { result.font.style = if italic { gpui::FontStyle::Italic } else { gpui::FontStyle::Normal }; }
++            if let Some(decoration) = &run.underline { result.underline = Some(gpui::UnderlineStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)), wavy: decoration.wavy.unwrap_or(false) }); }
++            if let Some(decoration) = &run.strikethrough { result.strikethrough = Some(gpui::StrikethroughStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)) }); }
++            if let Some(value) = color(run.background.as_deref()) { result.background_color = Some(value); }
++        }
++        result
++    }).collect()
 +}
 +impl CustomElement for RichText {
 +    fn render(&mut self, ctx: CustomRenderContext, _window: &mut gpui::Window, _: &mut gpui::Context<crate::renderer::GpuixView>) -> gpui::AnyElement {
 +        let base_font = ctx.font.clone();
 +        let base_color = ctx.color;
-+        let ranges: Vec<_> = self.runs.iter().map(|run| (byte_offset(&self.text, run.start)..byte_offset(&self.text, run.end), run)).collect();
-+        let mut boundaries = vec![0, self.text.len()];
-+        for (range, _) in &ranges { boundaries.extend([range.start, range.end]); }
-+        boundaries.sort_unstable();
-+        boundaries.dedup();
-+        let runs = boundaries.windows(2).filter(|pair| pair[0] < pair[1]).map(|pair| {
-+            let mut result = TextRun { len: pair[1] - pair[0], font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None };
-+            for (range, run) in &ranges {
-+                if range.start > pair[0] || range.end < pair[1] { continue; }
-+                if let Some(value) = color(run.color.as_deref()) { result.color = value; }
-+                if let Some(family) = &run.font_family { result.font.family = family.clone().into(); }
-+                if let Some(weight) = &run.font_weight { result.font.weight = crate::renderer::parse_font_weight(weight); }
-+                if let Some(italic) = run.italic { result.font.style = if italic { gpui::FontStyle::Italic } else { gpui::FontStyle::Normal }; }
-+                if let Some(decoration) = &run.underline { result.underline = Some(gpui::UnderlineStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)), wavy: decoration.wavy.unwrap_or(false) }); }
-+                if let Some(decoration) = &run.strikethrough { result.strikethrough = Some(gpui::StrikethroughStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)) }); }
-+                if let Some(value) = color(run.background.as_deref()) { result.background_color = Some(value); }
-+            }
-+            result
-+        }).collect();
-+        let washes: Vec<_> = ranges.iter().filter_map(|(range, run)| run.wash.clone().map(|wash| (range.clone(), wash))).collect();
++        let runs = styled_runs(&self.text, &self.runs, base_font, base_color);
++        let washes: Vec<_> = self.runs.iter().filter_map(|run| run.wash.clone().map(|wash| (byte_offset(&self.text, run.start)..byte_offset(&self.text, run.end), wash))).collect();
 +        let mut text = crate::text::SelectableText::new(ctx.id, 0, self.text.clone().into(), Some(runs), ctx.selection.clone(), ctx.selection_wash);
 +        text.selectable = ctx.selectable;
 +        text.highlight = ctx.highlight_set.clone().map(crate::text::HighlightSource::Native);
@@ -518,10 +1656,10 @@ index 0000000..0904e0b
 +}
 diff --git i/packages/native/src/desktop_api.rs w/packages/native/src/desktop_api.rs
 new file mode 100644
-index 0000000..6effe57
+index 0000000..75b4503
 --- /dev/null
 +++ w/packages/native/src/desktop_api.rs
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,251 @@
 +use gpui::{ClipboardEntry, ClipboardItem, Decorations, ResizeEdge, WindowAppearance, WindowDecorations};
 +use napi::bindgen_prelude::Buffer;
 +use napi::{Error, Result, Status};
@@ -557,8 +1695,55 @@ index 0000000..6effe57
 +    pub window_menu: bool,
 +}
 +
++#[napi(object)]
++pub struct NativeWindowBounds {
++    pub x: f64,
++    pub y: f64,
++    pub width: f64,
++    pub height: f64,
++    pub maximized: bool,
++    pub fullscreen: bool,
++    pub display_id: Option<String>,
++}
++
 +#[napi]
 +impl GpuixRenderer {
++    /// Normal window rectangle, retained while maximized or fullscreen.
++    #[napi]
++    pub fn window_bounds(&self) -> Result<NativeWindowBounds> {
++        self.with_native_window(|window, cx| {
++            let state = window.window_bounds();
++            let bounds = state.get_bounds();
++            NativeWindowBounds {
++                x: f32::from(bounds.origin.x) as f64,
++                y: f32::from(bounds.origin.y) as f64,
++                width: f32::from(bounds.size.width) as f64,
++                height: f32::from(bounds.size.height) as f64,
++                maximized: window.is_maximized(),
++                fullscreen: matches!(state, gpui::WindowBounds::Fullscreen(_)),
++                display_id: window.display(cx).and_then(|display| display.uuid().ok()).map(|uuid| uuid.to_string()),
++            }
++        })
++    }
++
++    #[napi]
++    pub fn close_window(&self) -> Result<()> {
++        self.with_native_window(|window, _cx| window.remove_window())
++    }
++
++    /// Read local paths advertised by the desktop clipboard, without converting them to text.
++    #[napi]
++    pub fn read_clipboard_paths(&self) -> Result<Option<Vec<String>>> {
++        self.with_native_window(|_window, cx| {
++            cx.read_from_clipboard().and_then(|item| {
++                item.into_entries().find_map(|entry| match entry {
++                    ClipboardEntry::ExternalPaths(paths) => crate::renderer::file_drop_paths(&paths),
++                    _ => None,
++                })
++            })
++        })
++    }
++
 +    /// Override native chrome appearance, or follow the system.
 +    /// GPUI applies this app-wide on macOS; other platforms leave it unchanged.
 +    #[napi]
@@ -727,7 +1912,7 @@ index 0000000..6effe57
 +    }
 +}
 diff --git i/packages/native/src/element_tree.rs w/packages/native/src/element_tree.rs
-index 1b0bdd2..945fa25 100644
+index 1b0bdd2..7ee4fab 100644
 --- i/packages/native/src/element_tree.rs
 +++ w/packages/native/src/element_tree.rs
 @@ -8,6 +8,18 @@
@@ -749,11 +1934,12 @@ index 1b0bdd2..945fa25 100644
  /// Event payload sent back to JS when a user interacts with an element.
  #[derive(Debug, Clone)]
  #[cfg_attr(
-@@ -101,6 +113,13 @@ pub struct EventPayload {
+@@ -101,6 +113,14 @@ pub struct EventPayload {
      /// absent when the selection is empty).
      pub value: Option<String>,
  
 +    /// UTF-16 offset hit by a rich-text pointer event.
++    #[cfg_attr(not(target_family = "wasm"), napi(ts_type = "number | null"))]
 +    pub char_index: PointerIndex,
 +
 +    /// UTF-16 selection endpoints for native input change and selectionChange.
@@ -763,7 +1949,7 @@ index 1b0bdd2..945fa25 100644
      /// Line number on the pre-change side. Populated for: `<diff>` lineClick.
      pub old_line: Option<f64>,
  
-@@ -162,6 +181,9 @@ impl Default for EventPayload {
+@@ -162,6 +182,9 @@ impl Default for EventPayload {
              touch_phase: None,
              hovered: None,
              value: None,
@@ -775,10 +1961,10 @@ index 1b0bdd2..945fa25 100644
              start_index: None,
 diff --git i/packages/native/src/input_api.rs w/packages/native/src/input_api.rs
 new file mode 100644
-index 0000000..338e338
+index 0000000..f2c5c77
 --- /dev/null
 +++ w/packages/native/src/input_api.rs
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,102 @@
 +//! Imperative native-editor operations use JavaScript UTF-16 offsets.
 +
 +use std::sync::Arc;
@@ -826,6 +2012,24 @@ index 0000000..338e338
 +        })
 +    }
 +
++    /// Reveal a UTF-16 range without modifying the editor selection.
++    #[napi]
++    pub fn input_reveal_range(&self, id: f64, start: f64, end: f64) -> Result<()> {
++        self.apply_input_operation(id, InputOperation::RevealRange {
++            start: index(start, "start")?,
++            end: index(end, "end")?,
++        })
++    }
++
++    /// Scroll the editor to pixel offsets, clamped to its content.
++    #[napi]
++    pub fn input_scroll_to(&self, id: f64, x: f64, y: f64) -> Result<()> {
++        if !x.is_finite() || !y.is_finite() {
++            return Err(Error::from_reason("Scroll offsets must be finite"));
++        }
++        self.apply_input_operation(id, InputOperation::ScrollTo { x: x as f32, y: y as f32 })
++    }
++
 +    /// Replace the current selection as one independent undoable edit.
 +    #[napi]
 +    pub fn input_replace_selection(&self, id: f64, text: String) -> Result<()> {
@@ -854,6 +2058,10 @@ index 0000000..338e338
 +        self.with_native_view(move |view, window, cx| {
 +            let is_input = view.tree.lock().map_err(|_| "Native tree lock poisoned".to_string())?
 +                .elements.get(&id).is_some_and(|element| matches!(element.element_type.as_str(), "input" | "textarea"));
++            // Passive framework cleanup runs after the host node is destroyed.
++            if !is_input && matches!(operation, InputOperation::SetSelectionListener(None)) {
++                return Ok(());
++            }
 +            if !is_input { return Err(format!("Native input {id} does not exist")); }
 +            view.custom_registry.input_operation(id, operation, window, cx)
 +        })?.map_err(Error::from_reason)
@@ -875,7 +2083,7 @@ index c5f4fa1..05fe77f 100644
  mod markdown;
  mod motion;
 diff --git i/packages/native/src/renderer.rs w/packages/native/src/renderer.rs
-index cc780fc..3542161 100644
+index cc780fc..fc82353 100644
 --- i/packages/native/src/renderer.rs
 +++ w/packages/native/src/renderer.rs
 @@ -392,6 +392,8 @@ enum ClockControl {
@@ -939,7 +2147,36 @@ index cc780fc..3542161 100644
  #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
  #[napi]
  impl GpuixRenderer {
-@@ -4210,6 +4250,8 @@ pub(crate) struct Inherited {
+@@ -1204,7 +1244,7 @@ impl GpuixRenderer {
+             );
+ 
+             match cx.open_window(
+-                to_gpui_window_options(&window_options, bounds),
++                to_gpui_window_options(&window_options, restore_window_bounds(&window_options, bounds, cx)),
+                 |_window, cx| {
+                     cx.new(|_| {
+                         GpuixView::new(tree.clone(), callback.clone(), title, selection.clone())
+@@ -1339,7 +1379,7 @@ impl GpuixRenderer {
+                                 gpui::Bounds::centered(None, size, cx)
+                             };
+                             let window = match cx.open_window(
+-                                to_gpui_window_options(&window_options, bounds),
++                                to_gpui_window_options(&window_options, restore_window_bounds(&window_options, bounds, cx)),
+                                 |_window, cx| {
+                                     cx.new(|_| GpuixView::new(tree, callback, title, selection))
+                                 },
+@@ -4096,10 +4136,6 @@ impl GpuixView {
+             return false;
+         }
+         queue_virtual_list_scroll(id, index, offset_in_item);
+-        emit_event_full(&self.event_callback, id, "visibleRange", |payload| {
+-            payload.start_index = Some(index as f64);
+-            payload.end_index = Some((index + 1) as f64);
+-        });
+         true
+     }
+ 
+@@ -4210,6 +4246,8 @@ pub(crate) struct Inherited {
      pub selectable: bool,
      /// Selection wash colour for this subtree.
      pub selection_wash: gpui::Hsla,
@@ -948,7 +2185,7 @@ index cc780fc..3542161 100644
      /// The nearest ancestor's `highlight`, resolved. `None` in every app that
      /// does not use search. It carries the declaring element id, which is what
      /// a virtual-list row re-resolves against: that row is built after the root
-@@ -4258,6 +4300,8 @@ impl Inherited {
+@@ -4258,6 +4296,8 @@ impl Inherited {
          Self {
              selectable: true,
              selection_wash: wash,
@@ -957,7 +2194,7 @@ index cc780fc..3542161 100644
              highlight: None,
          }
      }
-@@ -4265,6 +4309,9 @@ impl Inherited {
+@@ -4265,6 +4305,9 @@ impl Inherited {
      /// Apply the inheritable parts of `style` for the subtree below it.
      fn descend(mut self, style: Option<&StyleDesc>) -> Self {
          let Some(style) = style else { return self };
@@ -967,7 +2204,63 @@ index cc780fc..3542161 100644
          match style.user_select.as_deref() {
              Some("none") => self.selectable = false,
              Some("text") | Some("auto") => self.selectable = true,
-@@ -5183,6 +5230,8 @@ pub(crate) fn build_element(
+@@ -4825,6 +4868,7 @@ impl GpuixView {
+         // the rest of the tree is orders of magnitude larger.
+         //
+         // Create handles for elements that need focus but don't have one yet.
++        let mut auto_focus = None;
+         for &id in &tree.focusable_ids {
+             let Some(element) = tree.elements.get(&id) else {
+                 continue;
+@@ -4841,7 +4885,7 @@ impl GpuixView {
+                 // Focus once, at creation. Re-focusing every frame would
+                 // steal focus back from whatever the user clicked next.
+                 if element.auto_focus {
+-                    handle.focus(window, cx);
++                    auto_focus = Some(handle.clone());
+                 }
+                 self.focus_handles.insert(id, handle);
+             } else if let (Some(handle), Some(index)) =
+@@ -4854,16 +4898,6 @@ impl GpuixView {
+             }
+         }
+ 
+-        // Keep the request until the handle exists. A frame can render before
+-        // the batch that creates the element arrives (Solid flushes in a
+-        // microtask, Windows and Linux render on their own thread).
+-        if let Some(handle) = self
+-            .pending_focus_element
+-            .and_then(|pending| self.focus_handles.get(&pending.id).cloned())
+-        {
+-            handle.focus(window, cx);
+-            self.pending_focus_element = None;
+-        }
+ 
+         self.focus_subscriptions.retain(|(id, event), _| {
+             tree.elements
+@@ -4897,6 +4931,21 @@ impl GpuixView {
+                 self.focus_subscriptions.insert(blur_key, subscription);
+             }
+         }
++        // Subscribe before focusing so first-frame programmatic focus and
++        // autoFocus produce the same events as pointer and keyboard focus.
++        if let Some(handle) = auto_focus {
++            handle.focus(window, cx);
++        }
++        // Keep the request until the handle exists. A frame can render before
++        // the batch that creates the element arrives (Solid flushes in a
++        // microtask, Windows and Linux render on their own thread).
++        if let Some(handle) = self
++            .pending_focus_element
++            .and_then(|pending| self.focus_handles.get(&pending.id).cloned())
++        {
++            handle.focus(window, cx);
++            self.pending_focus_element = None;
++        }
+ 
+         // Clean up handles for elements that no longer exist.
+         self.focus_handles
+@@ -5183,6 +5232,8 @@ pub(crate) fn build_element(
                  selection: ctx.selection.clone(),
                  selectable: inherited.selectable,
                  selection_wash: inherited.selection_wash,
@@ -976,11 +2269,288 @@ index cc780fc..3542161 100644
                  highlight_set: inherited.highlight.clone(),
                  props: element.custom_props(),
              };
+@@ -5305,7 +5356,7 @@ fn build_virtual_list(
+     if element.events().contains("visibleRange") {
+         let callback = ctx.event_callback.clone();
+         let list_id = element.id;
+-        list_state.set_scroll_handler(move |event, _window, _cx| {
++        list_state.set_layout_handler(move |event, _window, _cx| {
+             emit_event_full(&callback, list_id, "visibleRange", |payload| {
+                 payload.start_index = Some(event.visible_range.start as f64);
+                 payload.end_index = Some(event.visible_range.end as f64);
+@@ -5478,6 +5529,26 @@ pub(crate) fn build_host_container(
+                 .entry(element.id)
+                 .or_insert_with(gpui::ScrollHandle::new);
+             el = el.track_scroll(handle);
++            SCROLL_HANDLES.with(|handles| {
++                handles.borrow_mut().insert(element.id, handle.clone());
++            });
++            let previous = Rc::new(std::cell::Cell::new(handle.offset()));
++            let handle = handle.clone();
++            // GPUI applies the wheel delta before this listener. Clamp now,
++            // consume movement, and bubble only when this viewport is at its edge.
++            el = el.on_scroll_wheel(move |_event, window, cx| {
++                let maximum = handle.max_offset();
++                let offset = handle.offset();
++                let next = gpui::point(
++                    offset.x.clamp(-maximum.x, gpui::px(0.0)),
++                    offset.y.clamp(-maximum.y, gpui::px(0.0)),
++                );
++                handle.set_offset(next);
++                if previous.replace(next) != next {
++                    cx.stop_propagation();
++                    window.refresh();
++                }
++            });
+         } else {
+             // Element is no longer scrollable — remove stale handle.
+             ctx.scroll_handles.remove(&element.id);
+@@ -5744,6 +5815,13 @@ pub(crate) fn build_host_container(
+         el = el.capture_pointer();
+     }
+ 
++    let copy_separator = element.custom_props().get("copySeparator")
++        .and_then(serde_json::Value::as_str)
++        .map(|separator| if separator == "\n\n" { 2 } else { 1 });
++    if let Some(newlines) = copy_separator {
++        el = el.child(crate::text::paint::copy_separator(newlines));
++    }
++
+     // Text content — selectable, same as a <text> leaf.
+     // An empty string paints no glyphs, so it must take no space: gpui's text
+     // layout still reserves a full line for "", and Solid's universal renderer
+@@ -5763,6 +5841,9 @@ pub(crate) fn build_host_container(
+             el.child(child)
+         };
+     }
++    if let Some(newlines) = copy_separator {
++        el = el.child(crate::text::paint::copy_separator(newlines));
++    }
+ 
+     // Last, so the thumb paints over the content.
+     if let (Some(style), Some(handle)) = (style, ctx.scroll_handles.get(&element.id)) {
+@@ -5775,6 +5856,7 @@ pub(crate) fn build_host_container(
+         }
+     }
+ 
++    el = wire_file_drag_events(el, element.id, element.events(), ctx.event_callback.clone());
+     el.into_any_element()
+ }
+ 
+@@ -6136,6 +6218,8 @@ pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
+     match style.display.as_deref() {
+         Some("flex") => el = el.flex(),
+         Some("grid") => el = el.grid(),
++        Some("none") => el = el.hidden(),
++        Some("block") => el = el.block(),
+         _ => {}
+     }
+     if let Some(cols) = style.grid_template_columns {
+@@ -6487,7 +6571,7 @@ pub(crate) fn point_to_xy(p: gpui::Point<gpui::Pixels>) -> (f64, f64) {
+ 
+ /// Paths that are valid UTF-8, or None when the drop is empty or not Unicode.
+ /// `to_string_lossy` would invent a path that does not exist on disk.
+-fn file_drop_paths(dropped: &gpui::ExternalPaths) -> Option<Vec<String>> {
++pub(crate) fn file_drop_paths(dropped: &gpui::ExternalPaths) -> Option<Vec<String>> {
+     let paths = dropped.paths();
+     if paths.is_empty() {
+         return None;
+@@ -6526,6 +6610,67 @@ pub(crate) fn mouse_button_to_u32(button: gpui::MouseButton) -> u32 {
+     }
+ }
+ 
++/// GPUI converts platform Entered/Pending into typed drag moves and refreshes
++/// after Exited/Ended. Retain hovered paths across frames to pair leave events.
++pub(crate) fn wire_file_drag_events(
++    mut element: gpui::Stateful<gpui::Div>,
++    id: u64,
++    events: &std::collections::HashSet<String>,
++    callback: Option<EventCallback>,
++) -> gpui::Stateful<gpui::Div> {
++    use gpui::prelude::*;
++    let enter = events.contains("fileDragEnter");
++    let leave = events.contains("fileDragLeave");
++    let moves = events.contains("fileDragMove");
++    if !enter && !leave && !moves { return element; }
++    let retained = Rc::new(RefCell::new(None::<gpui::Entity<Option<Vec<String>>>>));
++    let state_for_paint = retained.clone();
++    let callback_for_paint = callback.clone();
++    element = element.child(gpui::canvas(
++        move |_, window, cx| window.use_keyed_state(
++            gpui::SharedString::from(format!("__gpuix_file_drag_{id}")), cx, |_, _| None::<Vec<String>>
++        ),
++        move |bounds, state, window, cx| {
++            *state_for_paint.borrow_mut() = Some(state.clone());
++            if state.read(cx).is_some() && (!cx.has_active_drag() || !bounds.contains(&window.mouse_position())) {
++                let paths = state.update(cx, |paths, _| paths.take());
++                if leave {
++                    emit_file_drag(&callback_for_paint, id, "fileDragLeave", window.mouse_position(), paths, false);
++                }
++            }
++        },
++    ).absolute().size_full());
++    element.on_drag_move::<gpui::ExternalPaths>(move |event, _window, cx| {
++        let Some(state) = retained.borrow().clone() else { return; };
++        let inside = event.bounds.contains(&event.event.position);
++        let was_inside = state.read(cx).is_some();
++        if inside && (!was_inside || moves) {
++            let paths = file_drop_paths(event.drag(cx));
++            if !was_inside {
++                state.update(cx, |value, _| *value = paths.clone());
++                if enter { emit_file_drag(&callback, id, "fileDragEnter", event.event.position, paths.clone(), true); }
++            }
++            if moves { emit_file_drag(&callback, id, "fileDragMove", event.event.position, paths, true); }
++        } else if !inside && was_inside {
++            let paths = state.update(cx, |value, _| value.take());
++            if leave { emit_file_drag(&callback, id, "fileDragLeave", event.event.position, paths, false); }
++        }
++    })
++}
++
++fn emit_file_drag(
++    callback: &Option<EventCallback>, id: u64, kind: &str,
++    position: gpui::Point<gpui::Pixels>, paths: Option<Vec<String>>, hovered: bool,
++) {
++    emit_event_full(callback, id, kind, |payload| {
++        let (x, y) = point_to_xy(position);
++        payload.x = Some(x);
++        payload.y = Some(y);
++        payload.paths = paths;
++        payload.hovered = Some(hovered);
++    });
++}
++
+ /// The paint-driven events of one element, as one reporter for `on_painted`.
+ ///
+ /// `onLayout`: its border box after the first paint with the listener, then again
+@@ -7340,6 +7485,10 @@ pub struct WindowOptions {
+     pub app_name: Option<String>,
+     pub width: Option<f64>,
+     pub height: Option<f64>,
++    pub x: Option<f64>,
++    pub y: Option<f64>,
++    pub maximized: Option<bool>,
++    pub display_id: Option<String>,
+     pub min_width: Option<f64>,
+     pub min_height: Option<f64>,
+     pub resizable: Option<bool>,
+@@ -7375,6 +7524,10 @@ impl Default for WindowOptions {
+             app_name: None,
+             width: Some(800.0),
+             height: Some(600.0),
++            x: None,
++            y: None,
++            maximized: None,
++            display_id: None,
+             min_width: None,
+             min_height: None,
+             resizable: Some(true),
+@@ -7449,6 +7602,39 @@ fn to_layer_shell_options(options: &LayerShellOptions) -> gpui::layer_shell::Lay
+     }
+ }
+ 
++fn restore_window_bounds(
++    options: &WindowOptions,
++    mut bounds: gpui::Bounds<gpui::Pixels>,
++    cx: &gpui::App,
++) -> gpui::Bounds<gpui::Pixels> {
++    let (Some(x), Some(y)) = (options.x, options.y) else { return bounds; };
++    if !x.is_finite() || !y.is_finite() || options.layer_shell.is_some() { return bounds; }
++    let displays = cx.displays();
++    let saved_display = options.display_id.as_deref().and_then(|id| {
++        displays.iter().find(|display| display.uuid().ok().is_some_and(|uuid| uuid.to_string() == id)).cloned()
++    });
++    let display_missing = options.display_id.is_some() && saved_display.is_none();
++    let display = saved_display.or_else(|| {
++        if display_missing { return None; }
++        displays.iter().find(|display| display.bounds().contains(&gpui::point(gpui::px(x as f32), gpui::px(y as f32)))).cloned()
++    }).or_else(|| cx.primary_display());
++    let Some(display) = display else { return bounds; };
++    let visible = display.visible_bounds();
++    let width = f32::from(bounds.size.width);
++    let height = f32::from(bounds.size.height);
++    let left = f32::from(visible.left());
++    let top = f32::from(visible.top());
++    let right = f32::from(visible.right());
++    let bottom = f32::from(visible.bottom());
++    let (x, y) = if display_missing {
++        (left + (f32::from(visible.size.width) - width) / 2.0, top + (f32::from(visible.size.height) - height) / 2.0)
++    } else { (x as f32, y as f32) };
++    let min_x = left + width.min(160.0) - width;
++    let max_x = (right - width.min(160.0)).max(min_x);
++    bounds.origin = gpui::point(gpui::px(x.clamp(min_x, max_x)), gpui::px(y.clamp(top, (bottom - 22.0).max(top))));
++    bounds
++}
++
+ fn to_gpui_window_options(
+     options: &WindowOptions,
+     bounds: gpui::Bounds<gpui::Pixels>,
+@@ -7474,6 +7660,8 @@ fn to_gpui_window_options(
+     };
+     let window_bounds = if options.fullscreen.unwrap_or(false) {
+         gpui::WindowBounds::Fullscreen(bounds)
++    } else if options.maximized.unwrap_or(false) {
++        gpui::WindowBounds::Maximized(bounds)
+     } else {
+         gpui::WindowBounds::Windowed(bounds)
+     };
 diff --git i/packages/native/src/text/paint.rs w/packages/native/src/text/paint.rs
-index 23005b0..cd06471 100644
+index 23005b0..c3f1530 100644
 --- i/packages/native/src/text/paint.rs
 +++ w/packages/native/src/text/paint.rs
-@@ -219,6 +219,7 @@ pub struct SelectableText {
+@@ -12,7 +12,7 @@
+ //! `list()` or `uniform_list()` decides at paint time which rows exist. Comet
+ //! learned this the hard way; do not move registration into `build_element`.
+ 
+-use std::cell::RefCell;
++use std::cell::{Cell, RefCell};
+ use std::ops::Range;
+ use std::sync::Arc;
+ 
+@@ -41,6 +41,7 @@ struct RegEntry {
+     layout: TextLayout,
+     /// See [`selection::RegisteredText::group`].
+     group: Option<u64>,
++    copy_newlines_before: u8,
+ }
+ 
+ /// Full element box that owns whether a press may start a selection.
+@@ -73,6 +74,7 @@ pub struct PaintedHighlight {
+ 
+ thread_local! {
+     static REGISTRY: RefCell<Vec<RegEntry>> = const { RefCell::new(Vec::new()) };
++    static COPY_NEWLINES: Cell<u8> = const { Cell::new(1) };
+     static START_REGIONS: RefCell<Vec<StartRegion>> = const { RefCell::new(Vec::new()) };
+     /// Every string painted this frame, selectable or not, in paint order.
+     ///
+@@ -98,6 +100,7 @@ pub fn selection_frame_reset(
+         |_, _, _| (),
+         move |_, _, window, _| {
+             REGISTRY.with(|r| r.borrow_mut().clear());
++            COPY_NEWLINES.with(|pending| pending.set(1));
+             START_REGIONS.with(|r| r.borrow_mut().clear());
+             PAINTED.with(|p| p.borrow_mut().clear());
+             HIGHLIGHTS.with(|h| h.borrow_mut().clear());
+@@ -112,6 +115,18 @@ pub fn selection_frame_reset(
+     .h(px(0.0))
+ }
+ 
++/// Paint-order boundary, with no layout footprint. Adjacent block boundaries
++/// coalesce rather than inserting a blank line twice.
++pub fn copy_separator(newlines: u8) -> impl IntoElement {
++    canvas(
++        |_, _, _| (),
++        move |_, _, _, _| COPY_NEWLINES.with(|pending| pending.set(pending.get().max(newlines))),
++    )
++    .absolute()
++    .w(px(0.0))
++    .h(px(0.0))
++}
++
+ /// Record a selection-start region from an element's painted box.
+ ///
+ /// Only `track_host_bounds` and `bounds_tracker` call this, so a start region is
+@@ -219,6 +234,7 @@ pub struct SelectableText {
      /// that must never merge with its neighbour, which is every custom element.
      pub group: Option<u64>,
      pub highlight: Option<HighlightSource>,
@@ -988,7 +2558,7 @@ index 23005b0..cd06471 100644
  }
  
  impl SelectableText {
-@@ -243,6 +244,7 @@ impl SelectableText {
+@@ -243,6 +259,7 @@ impl SelectableText {
              selectable: true,
              group: None,
              highlight: None,
@@ -996,7 +2566,7 @@ index 23005b0..cd06471 100644
          }
      }
  }
-@@ -263,6 +265,7 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+@@ -263,6 +280,7 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
          selectable,
          group,
          highlight,
@@ -1004,7 +2574,7 @@ index 23005b0..cd06471 100644
      } = opts;
      let key = selection_key(element_id, sub);
  
-@@ -275,6 +278,9 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+@@ -275,6 +293,9 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
      let underlay = canvas(
          |_, _, _| (),
          move |_, _, window, _| {
@@ -1014,7 +2584,15 @@ index 23005b0..cd06471 100644
              if let Some(paint) = &extra_wash {
                  paint(&layout, window);
              }
-@@ -331,6 +337,45 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+@@ -312,6 +333,7 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+                         text: text.clone(),
+                         layout: layout.clone(),
+                         group,
++                        copy_newlines_before: COPY_NEWLINES.with(|pending| pending.replace(1)),
+                     })
+                 });
+             }
+@@ -331,6 +353,45 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
          .into_any_element()
  }
  
@@ -1060,6 +2638,104 @@ index 23005b0..cd06471 100644
  /// Paint one run's highlight washes and log their geometry.
  fn paint_highlight_washes(
      layout: &TextLayout,
+@@ -512,6 +573,7 @@ fn resolve_drag(selection: &SharedSelection, head: (usize, usize)) -> bool {
+                 key: e.key.as_ref(),
+                 text: e.text.as_ref(),
+                 group: e.group,
++                copy_newlines_before: e.copy_newlines_before,
+             })
+             .collect();
+         selection.lock().update_drag(&elements, head)
+diff --git i/packages/native/src/text/selection.rs w/packages/native/src/text/selection.rs
+index 89fa60a..d32c4c5 100644
+--- i/packages/native/src/text/selection.rs
++++ w/packages/native/src/text/selection.rs
+@@ -37,6 +37,8 @@ pub struct Span {
+     pub text: String,
+     /// See [`RegisteredText::group`].
+     pub group: Option<u64>,
++    /// Newlines at the preceding container boundary, retained across virtualization.
++    pub copy_newlines_before: u8,
+ }
+ 
+ /// One painted text element as the frame registry sees it.
+@@ -53,6 +55,7 @@ pub struct RegisteredText<'a> {
+     /// must join them with nothing. Anything else is a separate line and joins
+     /// with a newline.
+     pub group: Option<u64>,
++    pub copy_newlines_before: u8,
+ }
+ 
+ /// Live selection for one renderer.
+@@ -120,6 +123,7 @@ impl SelectionState {
+             range,
+             text: text.to_string(),
+             group: None,
++            copy_newlines_before: 1,
+         }];
+     }
+ 
+@@ -218,6 +222,7 @@ impl SelectionState {
+             span.range.start.hash(&mut hasher);
+             span.range.end.hash(&mut hasher);
+             span.group.hash(&mut hasher);
++            span.copy_newlines_before.hash(&mut hasher);
+             span.text.hash(&mut hasher);
+             any = true;
+         }
+@@ -294,6 +299,7 @@ pub fn resolve_spans(
+                 range: from..to,
+                 text: text.to_string(),
+                 group: entry.group,
++                copy_newlines_before: entry.copy_newlines_before,
+             });
+         }
+     }
+@@ -322,8 +328,10 @@ fn join_spans(spans: &[Span]) -> String {
+     for span in spans.iter().filter(|s| !s.range.is_empty()) {
+         if let Some(previous) = previous {
+             let same_group = span.group.is_some() && span.group == previous;
+-            if !same_group {
+-                out.push('\n');
++            if span.copy_newlines_before > 1 || !same_group {
++                for _ in 0..span.copy_newlines_before.max(1) {
++                    out.push('\n');
++                }
+             }
+         }
+         out.push_str(&span.text[span.range.clone()]);
+@@ -366,7 +374,7 @@ mod tests {
+     use super::*;
+ 
+     fn reg<'a>(key: &'a str, text: &'a str, group: Option<u64>) -> RegisteredText<'a> {
+-        RegisteredText { key, text, group }
++        RegisteredText { key, text, group, copy_newlines_before: 1 }
+     }
+ 
+     fn elems<'a>() -> Vec<RegisteredText<'a>> {
+@@ -427,6 +435,22 @@ mod tests {
+         assert_eq!(sel.identity(), 0);
+     }
+ 
++    #[test]
++    fn block_copy_separator_survives_virtualization_without_splitting_inline_runs() {
++        let mut elements = interpolated();
++        let mut next = reg("p2", "next block", None);
++        next.copy_newlines_before = 2;
++        elements.push(next);
++        let mut selection = SelectionState::default();
++        selection.arm("2:0", 0);
++        selection.promote_pending();
++        selection.update_drag(&elements, (3, 4));
++        assert_eq!(selection.selected_text().as_deref(), Some("Hello Tommy!\n\nnext"));
++        let shifted = [next, reg("p3", "last", None)];
++        selection.update_drag(&shifted, (1, 4));
++        assert_eq!(selection.end_active_drag().as_deref(), Some("Hello Tommy!\n\nnext block\nlast"));
++    }
++
+     #[test]
+     fn drag_survives_forward_virtualization() {
+         let mut sel = SelectionState::default();
 diff --git i/packages/native/src/theme.rs w/packages/native/src/theme.rs
 index e952167..6ed05ce 100644
 --- i/packages/native/src/theme.rs
@@ -1119,3 +2795,47 @@ index e952167..6ed05ce 100644
      pub code_text: Option<String>,
      pub code_wash: Option<String>,
      pub diff_add: Option<String>,
+diff --git i/packages/react/src/__tests__/selection.test.tsx w/packages/react/src/__tests__/selection.test.tsx
+index 9f0ce40..4dc619f 100644
+--- i/packages/react/src/__tests__/selection.test.tsx
++++ w/packages/react/src/__tests__/selection.test.tsx
+@@ -66,6 +66,33 @@ describe("text selection", () => {
+     expect(selected).toBe("first line\nsecond line\nthird line")
+   })
+ 
++  it.each(["div", "text"] as const)("copies coalesced %s boundaries after prop updates", (Block) => {
++    const { render, renderer, unmount } = createTestRoot()
++    function paragraphs(separator?: "\n" | "\n\n") {
++      return (
++        <div style={{ display: "flex", flexDirection: "column", padding: 20, gap: 8 }}>
++          <Block copySeparator={separator} style={{ fontSize: 20 }}>first paragraph</Block>
++          <Block copySeparator={separator} style={{ fontSize: 20 }}>second paragraph</Block>
++        </div>
++      )
++    }
++
++    try {
++      render(paragraphs("\n\n"))
++      expect(renderer.dragSelect(21, 30, 900, 300)).toBe("first paragraph\n\nsecond paragraph")
++      renderer.clearSelection()
++
++      render(paragraphs("\n"))
++      expect(renderer.dragSelect(21, 30, 900, 300)).toBe("first paragraph\nsecond paragraph")
++      renderer.clearSelection()
++
++      render(paragraphs())
++      expect(renderer.dragSelect(21, 30, 900, 300)).toBe("first paragraph\nsecond paragraph")
++    } finally {
++      unmount()
++    }
++  })
++
+   it("takes a partial span from the anchor element and whole spans below", () => {
+     const { render, renderer } = createTestRoot()
+     render(
+diff --git i/zed w/zed
+--- i/zed
++++ w/zed
+@@ -1 +1 @@
+-Subproject commit c2e9f882030ca95cee55d206512a0a3ee6cd72b0
++Subproject commit c2e9f882030ca95cee55d206512a0a3ee6cd72b0-dirty
