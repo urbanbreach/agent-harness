@@ -96,6 +96,7 @@ FORBIDDEN_PATTERNS: Final[list[re.Pattern[str]]] = [
         r"\b" + SOURCE_PREFIX + r"\b",
     )
 ]
+JS_MATH_PI: Final[re.Pattern[str]] = re.compile(r"\bMath\.PI\b")
 
 
 class ParsedArgs(argparse.Namespace):
@@ -229,8 +230,10 @@ def matches_for_file(path: Path, relative: Path) -> list[str]:
 
     matches: list[str] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
+        # The JavaScript circle constant is mathematics, not source-product branding.
+        scanned = JS_MATH_PI.sub("", line)
         for pattern in FORBIDDEN_PATTERNS:
-            if pattern.search(line):
+            if pattern.search(scanned):
                 if is_allowed_match(relative, line_number, line):
                     break
                 matches.append(f"{relative}:{line_number}: forbidden brand term")
