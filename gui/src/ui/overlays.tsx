@@ -211,6 +211,12 @@ export function Dialog({
           style={{
             display: 'flex',
             flexDirection: 'column',
+            flexShrink: 0,
+            width: 560,
+            minHeight: 0,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: colors.border,
             maxWidth: Math.max(0, size.width - 40),
             maxHeight: Math.max(0, size.height - 40),
             backgroundColor: colors.raised,

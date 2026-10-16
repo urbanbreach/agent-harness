@@ -36,6 +36,7 @@ export type DraftAttachment = Attachment & {
 };
 export type Draft = {
   text: string;
+  invocation?: string;
   attachments?: DraftAttachment[];
   fileTags?: Extract<Intent, { kind: 'submit' | 'followUp' }>['fileTags'];
   agentTags?: Extract<Intent, { kind: 'submit' | 'followUp' }>['agentTags'];
@@ -123,7 +124,7 @@ export class AppStore {
         if (update.kind === 'forked') {
           const parent = this.row(sessionId);
           if (parent) {
-            const refresh = this.loadSessions(parent.cwd);
+            const refresh = this.loadSessions(parent.projectCwd ?? parent.cwd);
             this.forkRefreshes.set(update.runId, refresh);
             const clear = () => {
               if (this.forkRefreshes.get(update.runId) === refresh)
@@ -179,6 +180,13 @@ export class AppStore {
             );
         }
         this.patch({ views, live, sessions });
+        if (update.kind === 'exited') {
+          const row = this.row(sessionId);
+          if (row)
+            void this.loadSessions(row.projectCwd ?? row.cwd).catch((error) =>
+              this.reportError(String(error)),
+            );
+        }
       }),
     ];
   }
@@ -275,11 +283,17 @@ export class AppStore {
     if (!existing) this.setProjects([...this.state.projects, project]);
     this.selectProject(existing?.id ?? project.id);
   }
-  newTask(projectId?: string) {
+  newTask(projectId = this.state.selectedProject) {
+    const current = this.state.selection;
+    const draft = this.getDraft(current);
+    const target: Selection = projectId ? { kind: 'project', projectId } : { kind: 'provisional' };
+    if (draft && current.projectId === projectId && draftKey(current) !== draftKey(target))
+      this.setDraft(target, draft);
     this.selectProject(projectId);
   }
-  selectProjectless() {
-    this.selectProject(undefined);
+  async selectProjectless() {
+    const { cwd } = await this.backend.call('projects.scratch', { prompt: '' });
+    this.addProject({ id: cwd, cwd, name: cwd.split('/').pop() || 'Scratch' });
     this.setLayout({ projectless: true });
   }
   private commitSelection(selection: Selection, persist = true) {
@@ -317,8 +331,8 @@ export class AppStore {
       if (generation !== this.selectionGeneration) return;
       const row = this.row(id);
       if (!row) throw new Error(`Unknown session ${id}`);
-      const projectId =
-        this.state.projects.find((project) => project.cwd === row.cwd)?.id ?? row.cwd;
+      const cwd = row.projectCwd ?? row.cwd;
+      const projectId = this.state.projects.find((project) => project.cwd === cwd)?.id ?? cwd;
       const target: Selection = { kind: 'session', sessionId: id, projectId };
       this.patch({ provisionalSelection: target });
       await this.flushDrafts();
@@ -461,17 +475,18 @@ export class AppStore {
     await this.backend.call('sessions.rename', { runDir: row.runDir, title });
     const view = this.state.views[id];
     if (view) this.patch({ views: { ...this.state.views, [id]: { ...view, title } } });
-    await this.loadSessions(row.cwd);
+    await this.loadSessions(row.projectCwd ?? row.cwd);
   }
   async pinTask(id: string, pinned: boolean) {
     const row = this.row(id);
     if (!row) throw new Error(`Unknown session ${id}`);
-    await this.backend.call('sessions.setPinned', { cwd: row.cwd, runId: id, pinned });
-    const pins = this.state.pins[row.cwd] ?? [];
+    const cwd = row.projectCwd ?? row.cwd;
+    await this.backend.call('sessions.setPinned', { cwd, runId: id, pinned });
+    const pins = this.state.pins[cwd] ?? [];
     this.patch({
       pins: {
         ...this.state.pins,
-        [row.cwd]: pinned
+        [cwd]: pinned
           ? [...pins.filter((value) => value !== id), id]
           : pins.filter((value) => value !== id),
       },
@@ -481,7 +496,7 @@ export class AppStore {
     const row = this.row(id);
     if (!row) throw new Error(`Unknown session ${id}`);
     if (this.state.live[id] || row.live) await this.closeSession(id);
-    if (this.state.pins[row.cwd]?.includes(id)) await this.pinTask(id, false);
+    if (this.state.pins[row.projectCwd ?? row.cwd]?.includes(id)) await this.pinTask(id, false);
     await this.backend.call('sessions.delete', { runDir: row.runDir });
     const selected =
       this.state.selectedTask === id ||
@@ -489,7 +504,8 @@ export class AppStore {
         this.state.provisionalSelection.sessionId === id);
     this.removed.add(id);
     if (selected) this.selectionGeneration++;
-    const projectId = this.state.projects.find((project) => project.cwd === row.cwd)?.id ?? row.cwd;
+    const cwd = row.projectCwd ?? row.cwd;
+    const projectId = this.state.projects.find((project) => project.cwd === cwd)?.id ?? cwd;
     this.consumeDraft({ kind: 'session', sessionId: id, projectId });
     this.loaded.delete(id);
     this.loadingUpdates.delete(id);
@@ -498,7 +514,7 @@ export class AppStore {
     delete views[id];
     delete live[id];
     this.patch({ views, live });
-    const rows = await this.loadSessions(row.cwd);
+    const rows = await this.loadSessions(cwd);
     if (selected) {
       const next = [...rows].sort((a, b) =>
         (b.catalog.last_updated_at ?? b.createdAt ?? '').localeCompare(
@@ -616,9 +632,18 @@ export class AppStore {
       this.backend.call('sessions.list', { cwd }),
       this.backend.call('sessions.pins', { cwd }),
     ]);
+    // Replace only views whose catalog changed, so unrelated transcripts keep their identity.
+    let views = this.state.views;
+    for (const row of rows) {
+      const view = views[row.runId];
+      if (view && JSON.stringify(view.meta) !== JSON.stringify(row.catalog)) {
+        views = { ...views, [row.runId]: { ...view, meta: row.catalog } };
+      }
+    }
     this.patch({
       sessions: { ...this.state.sessions, [cwd]: rows },
       pins: { ...this.state.pins, [cwd]: pins },
+      views,
     });
     return rows;
   }
@@ -635,7 +660,9 @@ export class AppStore {
       try {
         const events = await this.backend.call('sessions.events', { runDir: row.runDir });
         if (this.removed.has(id)) return;
-        let view = events.length ? projectEvents(events) : emptySessionView(row.catalog);
+        let view = events.length
+          ? { ...projectEvents(events), meta: row.catalog }
+          : emptySessionView(row.catalog);
         for (const update of this.loadingUpdates.get(id) || []) view = applyUpdate(view, update);
         this.loaded.add(id);
         this.loadingUpdates.delete(id);
@@ -654,10 +681,10 @@ export class AppStore {
       views: { ...this.state.views, [handle.sessionId]: emptySessionView() },
     });
     const projectId =
-      this.state.projects.find((project) => project.cwd === handle.cwd)?.id ?? handle.cwd;
+      this.state.projects.find((project) => project.cwd === params.cwd)?.id ?? params.cwd;
     this.selectionGeneration++;
     this.commitSelection({ kind: 'session', sessionId: handle.sessionId, projectId });
-    await this.loadSessions(handle.cwd);
+    await this.loadSessions(params.cwd);
     await this.loadSession(handle.sessionId);
     return handle;
   }
@@ -670,7 +697,7 @@ export class AppStore {
     await this.loadSession(id);
     const handle = await this.backend.call('session.continue', { runDir: row.runDir });
     this.patch({ live: { ...this.state.live, [id]: handle } });
-    await this.loadSessions(handle.cwd);
+    await this.loadSessions(row.projectCwd ?? row.cwd);
     return handle;
   }
   async closeSession(id: string) {
@@ -679,7 +706,19 @@ export class AppStore {
     delete live[id];
     this.patch({ live });
     const row = this.row(id);
-    if (row) await this.loadSessions(row.cwd);
+    if (row) await this.loadSessions(row.projectCwd ?? row.cwd);
+  }
+  async interruptSession(id: string) {
+    const view = this.state.views[id];
+    const taskIds = new Set(
+      Object.values(view?.tasks ?? {})
+        .filter((task) => task.state === 'started')
+        .map((task) => task.id),
+    );
+    for (const turn of view?.turns ?? []) {
+      if (turn.status === 'working') taskIds.add(turn.id);
+    }
+    await this.sendIntent(id, { kind: 'interrupt', taskIds: [...taskIds], reason: 'user' });
   }
   async sendIntent(id: string, intent: Intent) {
     if (!this.state.live[id]) await this.continueSession(id);

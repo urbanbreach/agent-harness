@@ -11,7 +11,7 @@ export type ActionInfo = {
   icon?: string;
   /** Hidden from the palette when false. */
   enabled?: () => boolean;
-  run: () => void;
+  run: (value?: string) => void;
 };
 
 const actions = new Map<ActionId, ActionInfo>();
@@ -26,10 +26,10 @@ export function registerAction(info: ActionInfo): () => void {
   };
 }
 
-export function runAction(id: ActionId): boolean {
+export function runAction(id: ActionId, value?: string): boolean {
   const action = actions.get(id);
   if (!action || action.enabled?.() === false) return false;
-  action.run();
+  action.run(value);
   return true;
 }
 

@@ -110,7 +110,7 @@ export function Sidebar(props: SidebarProps) {
     for (const task of tasks) {
       const project = isScratch(task.cwd)
         ? undefined
-        : state.projects.find((candidate) => candidate.cwd === task.cwd);
+        : state.projects.find((candidate) => candidate.cwd === (task.projectCwd ?? task.cwd));
       const key = project?.id ?? 'projectless';
       let group = byProject.get(key);
       if (!group) {
@@ -527,7 +527,7 @@ export function Sidebar(props: SidebarProps) {
                   key={group.key}
                   onMouseEnter={() => setHoverGroup(group.key)}
                   onMouseLeave={() => setHoverGroup(undefined)}
-                  style={{ ...row, height: 30, position: 'relative' }}
+                  style={{ ...row, height: 30, paddingRight: 8, position: 'relative' }}
                 >
                   {grouping === 'project' && !closed && (
                     <div
@@ -572,14 +572,14 @@ export function Sidebar(props: SidebarProps) {
                         size={14}
                         color={colors.text_secondary}
                       />
-                    ) : (
-                      <div style={{ width: closed || showCompose ? 14 : 0, overflow: 'hidden' }}>
-                        <Icon name={closed ? 'chevron-right' : 'chevron-down'} size={14} />
-                      </div>
-                    )}
+                    ) : closed || showCompose ? (
+                      <Icon name={closed ? 'chevron-right' : 'chevron-down'} size={14} />
+                    ) : null}
                     <text
                       style={{
                         ...ellipsis,
+                        position: 'relative',
+                        top: -1,
                         fontSize: sp(13),
                         fontWeight: 500,
                         color: colors.text_secondary,
@@ -653,15 +653,18 @@ export function Sidebar(props: SidebarProps) {
             const scratch = isScratch(task.cwd);
             const project = scratch
               ? undefined
-              : state.projects.find((candidate) => candidate.cwd === task.cwd);
+              : state.projects.find((candidate) => candidate.cwd === (task.projectCwd ?? task.cwd));
+            const branch = task.branch ?? props.branchLabels?.[task.cwd];
             const detail =
-              grouping === 'project'
-                ? scratch
-                  ? undefined
-                  : props.branchLabels?.[task.cwd]
-                : scratch
-                  ? 'No project'
-                  : (project?.name ?? 'Unknown project');
+              task.projectCwd && task.projectCwd !== task.cwd
+                ? branch
+                : grouping === 'project'
+                  ? scratch
+                    ? undefined
+                    : branch
+                  : scratch
+                    ? 'No project'
+                    : (project?.name ?? 'Unknown project');
             const editing = rename?.id === task.runId;
             function openContext(x?: number, y?: number) {
               const ref = taskRefs.current.get(task.runId);
@@ -763,6 +766,10 @@ export function Sidebar(props: SidebarProps) {
                           setRename((current) => current && { ...current, title })
                         }
                         onBlur={commitRename}
+                        onSubmit={() => {
+                          commitRename();
+                          props.onFocusComposer?.();
+                        }}
                         onKeyDown={(event) => {
                           event.stopPropagation();
                           if (event.key === 'escape') {
@@ -838,7 +845,15 @@ export function Sidebar(props: SidebarProps) {
                   <div style={{ ...row, height: sp(15), gap: 5 }}>
                     {detail && (
                       <>
-                        <Icon name={grouping === 'project' ? 'git-branch' : 'folder'} size={12.5} />
+                        <Icon
+                          name={
+                            grouping === 'project' ||
+                            (task.projectCwd && task.projectCwd !== task.cwd)
+                              ? 'git-branch'
+                              : 'folder'
+                          }
+                          size={12.5}
+                        />
                         <text
                           style={{
                             ...ellipsis,

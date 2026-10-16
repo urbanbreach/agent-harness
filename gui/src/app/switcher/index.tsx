@@ -25,28 +25,29 @@ export interface TaskSwitcherProps {
   tasks: readonly SwitcherTask[];
   onSelect: (id: string) => void;
   restoreFocusId?: number;
+  now?: number;
 }
 const providerColors: Record<string, string> = {
-  amp: '#F34E3F',
   claude: '#D97757',
   anthropic: '#D97757',
   deepseek: '#4D6BFE',
 };
 const providerIcons: Record<string, string> = {
-  amp: 'amp',
   claude: 'claude',
   anthropic: 'claude',
   deepseek: 'deepseek',
   openai: 'openai',
-  cursor: 'cursor',
-  fx: 'fx',
-  opencode: 'opencode',
+  codex: 'openai',
   grok: 'grok',
-  kimi: 'kimi',
-  ohmypi: 'ohmypi',
-  pi: 'pi',
+  xai: 'grok',
 };
-export function TaskSwitcher({ controller, tasks, onSelect, restoreFocusId }: TaskSwitcherProps) {
+export function TaskSwitcher({
+  controller,
+  tasks,
+  onSelect,
+  restoreFocusId,
+  now,
+}: TaskSwitcherProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const { colors, sp } = useTheme();
   const window = useWindowSize();
@@ -69,9 +70,21 @@ export function TaskSwitcher({ controller, tasks, onSelect, restoreFocusId }: Ta
       finalFocus={(previous) => restoreFocusId ?? previous}
       onEscapeKeyDown={() => controller.cancel()}
     >
-      <anchored position={{ x: 0, y: 0 }} deferred priority={6} occlude>
+      <anchored
+        position={{ x: 0, y: 0 }}
+        deferred
+        priority={6}
+        occlude={false}
+        style={{ backgroundColor: 'transparent' }}
+      >
         <div
-          style={{ ...row, width: window.width, height: window.height, justifyContent: 'center' }}
+          style={{
+            ...row,
+            width: window.width,
+            height: window.height,
+            justifyContent: 'center',
+            pointerEvents: 'auto',
+          }}
         >
           <div
             ref={panel}
@@ -136,7 +149,7 @@ export function TaskSwitcher({ controller, tasks, onSelect, restoreFocusId }: Ta
                   const seconds =
                     task.lastReplyMs === undefined
                       ? undefined
-                      : Math.max(0, Math.floor((Date.now() - task.lastReplyMs) / 1000));
+                      : Math.max(0, Math.floor(((now ?? Date.now()) - task.lastReplyMs) / 1000));
                   const age =
                     seconds === undefined
                       ? ''

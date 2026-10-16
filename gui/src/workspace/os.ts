@@ -106,6 +106,20 @@ async function clipboard(
     signal?.throwIfAborted();
     const command = await executable(name!);
     if (!command) continue;
+    if (operation === 'write') {
+      // Clipboard owners may fork and retain pipes after the launcher exits.
+      const proc = Bun.spawn([command, ...args], {
+        stdin: new Blob([text ?? '']),
+        stdout: 'ignore',
+        stderr: 'ignore',
+        signal,
+      });
+      const code = await proc.exited;
+      signal?.throwIfAborted();
+      if (code === 0) return '';
+      errors.push(`${name}: exited ${code}`);
+      continue;
+    }
     const result = await run([command, ...args], signal, text);
     if (result.code === 0) return result.stdout;
     errors.push(`${name}: ${result.stderr.trim()}`);

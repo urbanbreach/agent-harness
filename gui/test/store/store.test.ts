@@ -70,6 +70,47 @@ test('store routes live updates by session, retains unrelated views and persists
   }
 });
 
+test('new task carries the current draft without changing the saved session draft', async () => {
+  const store = new AppStore(new FixtureBackend(await conversation()));
+  try {
+    await store.initialize();
+    await store.selectTask('chat');
+    const previous = store.getSnapshot().selection;
+    store.setDraft(previous, {
+      text: 'Continue with the release checklist',
+      worktree: { name: 'release-checklist' },
+    });
+    store.newTask();
+    expect(store.getSnapshot().selectedTask).toBeUndefined();
+    expect(store.getDraft(store.getSnapshot().selection)).toEqual(store.getDraft(previous));
+    expect(store.getDraft(previous)?.text).toBe('Continue with the release checklist');
+  } finally {
+    await store.dispose();
+  }
+});
+
+test('populated replay sessions remain selectable with their read-only catalog notice', async () => {
+  const scenario = await conversation();
+  const chat = scenario.sessions.find((session) => session.row.runId === 'chat')!;
+  chat.row.catalog.is_resumable = false;
+  chat.row.catalog.resume_disabled_reason = 'Imported history is read-only';
+  const store = new AppStore(new FixtureBackend(scenario));
+  try {
+    await store.initialize();
+    await store.selectTask('chat');
+    const state = store.getSnapshot();
+    expect(state.selectedTask).toBe('chat');
+    expect(state.views.chat?.entries.length).toBeGreaterThan(0);
+    expect(state.views.chat?.meta).toMatchObject({
+      is_resumable: false,
+      resume_disabled_reason: 'Imported history is read-only',
+    });
+    expect(state.live.chat).toBeUndefined();
+  } finally {
+    await store.dispose();
+  }
+});
+
 test('hydration leaves the previous transcript visible and failed selection does not replace it', async () => {
   const backend = new GatedBackend(await conversation());
   const store = new AppStore(backend);
@@ -246,24 +287,37 @@ test('submission consumes persisted draft before create and a create failure pre
   }
 });
 
-test('deleting selection removes draft and pin then falls back within the same project', async () => {
+test('deleting a worktree selection removes its draft and parent-project pin then falls back', async () => {
   const scenario = await conversation();
   scenario.sessions = scenario.sessions.filter((session) => session.row.runId !== 'draft');
   const chat = scenario.sessions.find((session) => session.row.runId === 'chat')!;
   const notes = scenario.sessions.find((session) => session.row.runId === 'notes')!;
   notes.row.cwd = chat.row.cwd;
+  const projectCwd = chat.row.cwd;
+  chat.row.projectCwd = projectCwd;
+  chat.row.cwd = '/fixture/worktrees/release';
+  chat.row.branch = 'release';
+  chat.row.worktree = true;
   const backend = new FixtureBackend(scenario);
   const store = new AppStore(backend);
   try {
     await store.initialize();
     await store.selectTask('chat');
     const target = store.getSnapshot().selection;
+    expect(target.projectId).toBe(
+      store.getSnapshot().projects.find((project) => project.cwd === projectCwd)?.id,
+    );
+    await store.renameTask('chat', 'Release worktree');
+    expect(
+      store.getSnapshot().sessions[projectCwd]?.find((row) => row.runId === 'chat')?.catalog
+        .run_name,
+    ).toBe('Release worktree');
     store.setDraft(target, { text: 'unsent' });
     await store.pinTask('chat', true);
     await store.removeTask('chat');
     expect(store.getSnapshot().selectedTask).toBe('notes');
     expect(store.getDraft(target)).toBeUndefined();
-    expect(store.getSnapshot().pins[chat.row.cwd]).not.toContain('chat');
+    expect(store.getSnapshot().pins[projectCwd]).not.toContain('chat');
     await store.removeTask('notes');
     expect(store.getSnapshot().selectedTask).toBeUndefined();
     expect(store.getSnapshot().selectedProject).toBe(target.projectId);

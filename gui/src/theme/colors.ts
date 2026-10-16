@@ -72,9 +72,8 @@ export const darkColors: ThemeColors = {
 
 export function providerColor(provider: string, colors: ThemeColors): string {
   switch (provider.toLowerCase()) {
-    case 'amp':
-      return '#F34E3F';
     case 'claude':
+    case 'anthropic':
       return '#D97757';
     case 'deepseek':
       return '#4D6BFE';

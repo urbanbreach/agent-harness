@@ -276,15 +276,12 @@ export async function commitState(cwd: string, signal?: AbortSignal): Promise<Co
   const trees = await captureTrees(root, true, signal);
   const head = await headTree(root, signal);
   const staged = await summaryBetween(root, head, trees.index, signal);
-  // Commit dialog totals describe tracked changes; untracked presence still enables staging.
-  const tracked = (
-    await gitCommand(root, ['diff', '--no-ext-diff', '--numstat', '-z', head, '--'], { signal })
-  ).stdout;
-  const trackedTotals = totals(parseSummary(tracked));
+  const current = await summaryBetween(root, head, trees.current, signal);
   return {
     branch,
     detached,
-    ...trackedTotals,
+    additions: current.additions,
+    deletions: current.deletions,
     stagedAdditions: staged.additions,
     stagedDeletions: staged.deletions,
     hasStaged: staged.files.length > 0,

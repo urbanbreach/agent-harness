@@ -270,6 +270,7 @@ export function ProjectPicker(
             <TextField
               ref={input}
               value={query}
+              onSubmit={() => choose(cursor < 0 ? 0 : cursor)}
               placeholder="Search projects"
               icon="search"
               iconSize={12}
@@ -356,6 +357,7 @@ export function ProjectSelector(props: ProjectSelectorProps) {
   const { colors, sp } = useTheme();
   const [open, setOpen] = useState(false);
   const trigger = useRef<PublicInstance>(null);
+  const [triggerWidth, setTriggerWidth] = useState(0);
   const project = props.projects.find((item) => item.id === props.currentProjectId);
   const label =
     props.label ??
@@ -367,18 +369,32 @@ export function ProjectSelector(props: ProjectSelectorProps) {
       {props.site === 'empty' ? (
         <Button
           ref={trigger}
+          onLayout={(event) => setTriggerWidth(event.width ?? 0)}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
           style={{
             borderRadius: 6,
-            paddingLeft: 3,
-            paddingRight: 3,
+            paddingLeft: 0,
+            paddingRight: 0,
+            position: 'relative',
             backgroundColor: open ? colors.overlay : undefined,
           }}
         >
           <text style={{ ...ellipsis, fontSize: sp(20), fontWeight: 500, color: colors.text }}>
             {label}
           </text>
+          {triggerWidth > 0 && (
+            <svg
+              source={`<svg xmlns="http://www.w3.org/2000/svg" width="${triggerWidth}" height="1"><path d="M0 .5H${triggerWidth}" stroke="black" stroke-dasharray="1 2"/></svg>`}
+              style={{
+                position: 'absolute',
+                bottom: -3,
+                width: triggerWidth,
+                height: 1,
+                color: colors.text_tertiary,
+              }}
+            />
+          )}
         </Button>
       ) : (
         <MenuChip

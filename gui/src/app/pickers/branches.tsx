@@ -109,7 +109,9 @@ export function BranchSelector(props: BranchSelectorProps) {
         await props.onBranchChange?.(next, branch);
       }
     } catch (error) {
-      props.onError?.(`Could not change branch: ${String(error)}`);
+      props.onError?.(
+        `Could not change branch: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       operation.current = false;
       setPending(false);
@@ -236,6 +238,9 @@ export function BranchSelector(props: BranchSelectorProps) {
                     autoFocus
                     value={name}
                     onChange={setName}
+                    onSubmit={() => {
+                      if (name.trim()) void change(name.trim(), true);
+                    }}
                     placeholder="New branch name"
                     style={{
                       height: 36,
@@ -260,6 +265,10 @@ export function BranchSelector(props: BranchSelectorProps) {
                       ref={input}
                       autoFocus
                       value={query}
+                      onSubmit={() => {
+                        const at = enabled.includes(cursor) ? cursor : enabled[0];
+                        if (at !== undefined) choose(at);
+                      }}
                       onChange={(value) => {
                         setQuery(value);
                         const matches = snapshot ? filterBranches(snapshot, value) : [];

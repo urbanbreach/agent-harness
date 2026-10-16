@@ -428,6 +428,7 @@ export function Workspace(props: AppProps) {
           display: props.settings ? 'none' : 'flex',
           width: '100%',
           height: '100%',
+          flexShrink: 0,
           backgroundColor: colors.canvas,
           fontFamily: '.SystemUIFont',
           fontSize: sp(14),
@@ -585,7 +586,20 @@ export function Workspace(props: AppProps) {
           <ToastHost />
         </div>
       )}
-      {props.overlay}
+      {props.overlay && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+          }}
+        >
+          {props.overlay}
+        </div>
+      )}
     </div>
   );
 }

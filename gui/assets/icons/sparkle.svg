@@ -7,11 +7,11 @@
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
-  stroke-width="2"
+  stroke-width="1.4"
   stroke-linecap="round"
   stroke-linejoin="round"
 >
-  <g transform="translate(-6 -6) scale(1.5)" stroke-width="1.333333">
+  <g transform="translate(-6 -6) scale(1.5)" stroke-width="0.933333">
   <path d="M12 6v12" />
   <path d="M17.196 9 6.804 15" />
   <path d="m6.804 9 10.392 6" />

@@ -138,7 +138,7 @@ test('commit normalizes the subject, respects staged-only versus stageAll, and e
   await Bun.write(join(root, 'untracked.txt'), 'new\n');
   const state = await commitState(root);
   expect(state).toMatchObject({
-    additions: 2,
+    additions: 3,
     deletions: 1,
     stagedAdditions: 1,
     stagedDeletions: 1,

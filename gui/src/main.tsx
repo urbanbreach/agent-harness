@@ -170,8 +170,10 @@ function Application() {
     focusComposer();
   };
   const selectProjectless = () => {
-    store.selectProjectless();
-    focusComposer();
+    void store
+      .selectProjectless()
+      .then(focusComposer)
+      .catch((error) => store.reportError(String(error)));
   };
   const navigate = (direction: number) => {
     const index = historyIndex + direction;
@@ -223,6 +225,53 @@ function Application() {
         run: () => newTask(),
       }),
       registerAction({
+        id: 'task.new',
+        label: 'action.newTask',
+        run: () => newTask(),
+      }),
+      ...['task.quit', 'app.quit'].map((id) =>
+        registerAction({
+          id,
+          label: 'action.quit',
+          run: () => {
+            void quit().catch((error) =>
+              store.reportError(t('notice.saveFailed', { error: String(error) })),
+            );
+          },
+        }),
+      ),
+      registerAction({
+        id: 'settings.open',
+        label: 'action.settings',
+        shortcut: 'Ctrl+,',
+        run: (page) => setSettings(page ?? 'general'),
+      }),
+      registerAction({
+        id: 'palette.open',
+        label: 'action.palette',
+        run: (page) => {
+          if (page === 'help') setSettings('help');
+          else setPalette(true);
+        },
+      }),
+      registerAction({
+        id: 'panel.open',
+        label: 'action.rightPanel',
+        run: (surface) => {
+          if (surface) runAction(`panel.${surface}`);
+        },
+      }),
+      ...['showReasoning', 'showMessageTimes'].map((preference) =>
+        registerAction({
+          id: `theme.${preference}`,
+          label: `action.${preference}`,
+          run: () => {
+            const value = store.getSnapshot().preferences[preference];
+            store.setPreferences({ [preference]: value === false });
+          },
+        }),
+      ),
+      registerAction({
         id: 'shell.openProject',
         label: 'action.newProject',
         shortcut: 'Ctrl+O',
@@ -265,12 +314,14 @@ function Application() {
       registerAction({
         id: 'shell.back',
         label: 'navigation.back',
+        shortcut: 'Ctrl+[',
         enabled: () => historyIndex > 0 && !settings,
         run: () => navigate(-1),
       }),
       registerAction({
         id: 'shell.forward',
         label: 'navigation.forward',
+        shortcut: 'Ctrl+]',
         enabled: () => historyIndex + 1 < history.length && !settings,
         run: () => navigate(1),
       }),
@@ -284,6 +335,8 @@ function Application() {
         'skills',
         'usage',
         'diagnostics',
+        'worktrees',
+        'help',
       ].map((page) =>
         registerAction({
           id: `settings.${page}`,
@@ -407,11 +460,9 @@ function Application() {
           stop.current.turn === turn &&
           stop.current.expires > Date.now()
         ) {
-          void store.sendIntent(state.selectedTask, {
-            kind: 'interrupt',
-            taskIds: [],
-            reason: 'user',
-          });
+          void store
+            .interruptSession(state.selectedTask)
+            .catch((error) => store.reportError(String(error)));
           stop.current = undefined;
           store.setLayout({ stopArmed: false });
         } else {
@@ -529,16 +580,35 @@ function Application() {
           <CommandPalette open={palette} onClose={() => setPalette(false)} />
           <TaskSwitcher
             controller={taskSwitcher}
-            tasks={rows.map((task) => ({
-              id: task.runId,
-              title: taskTitle(task, state.views[task.runId]),
-              projectName: state.projects.find((value) => value.cwd === task.cwd)?.name,
-              model: task.catalog.provider_model ?? undefined,
-              lastReplyMs: task.catalog.last_updated_at
-                ? Date.parse(task.catalog.last_updated_at)
-                : undefined,
-              status: store.sessionStatus(task.runId),
-            }))}
+            now={
+              typeof state.preferences.referenceNow === 'number'
+                ? state.preferences.referenceNow
+                : undefined
+            }
+            tasks={rows.map((task) => {
+              const catalog = state.models[task.cwd] ?? state.models[task.projectCwd ?? task.cwd];
+              const model = catalog?.models.find(
+                (entry) =>
+                  entry.model === task.catalog.provider_model ||
+                  `${entry.provider}/${entry.model}` === task.catalog.provider_model,
+              );
+              return {
+                id: task.runId,
+                title: taskTitle(task, state.views[task.runId]),
+                projectName: state.projects.find(
+                  (value) => value.cwd === (task.projectCwd ?? task.cwd),
+                )?.name,
+                model:
+                  model?.modelLabel ?? model?.label ?? task.catalog.provider_model ?? undefined,
+                provider: model?.provider,
+                providerName: model?.providerLabel,
+                branch: task.branch ?? undefined,
+                lastReplyMs: task.catalog.last_updated_at
+                  ? Date.parse(task.catalog.last_updated_at)
+                  : undefined,
+                status: store.sessionStatus(task.runId),
+              };
+            })}
             onSelect={selectSwitcherTask}
           />
         </>
