@@ -24,7 +24,7 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
   if (checkpoint?.state !== 'ready' || !checkpoint.files.length) return null;
   const count = checkpoint.files.length;
   const files = checkpoint.files.slice(0, expanded ? 12 : 3);
-  const textStyle = { fontSize: sp(12.5), lineHeight: sp(14) };
+  const textStyle = { fontSize: sp(12.5), lineHeight: sp(18) };
   return (
     <div
       style={{

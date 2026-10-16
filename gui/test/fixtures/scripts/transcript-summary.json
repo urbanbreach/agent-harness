@@ -1,0 +1,9 @@
+[
+  [
+    {
+      "kind": "text",
+      "text": "Reviewed release readiness, rollback ownership, monitoring and deployment approval. Continue with the approved release checklist."
+    },
+    { "kind": "stop" }
+  ]
+]

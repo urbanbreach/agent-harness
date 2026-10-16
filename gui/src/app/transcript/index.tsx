@@ -70,6 +70,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
   const [visible, setVisible] = useState({ start: 0, end: 0 });
   const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
   const [scrollTop, setScrollTop] = useState(0);
+  const [following, setFollowing] = useState(true);
   const [anchoredTurn, setAnchoredTurn] = useState<string>();
   const [railHover, setRailHover] = useState<number>();
   const [now, setNow] = useState(Date.now());
@@ -123,10 +124,13 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     activeColor: colors.is_dark ? '#ff8000c7' : '#ff8a14b3',
     matches: { total: matches.length, indexOffset: 0 },
   });
+  useEffect(() => setFollowing(true), [sessionId]);
   function reveal(index: number) {
+    setFollowing(false);
     if (list.current) renderer?.scrollToItem?.(list.current.id, index, -24);
   }
   function followTail() {
+    setFollowing(true);
     setAnchoredTurn(undefined);
     if (list.current) renderer?.scrollToItem?.(list.current.id, rows.length, 0);
   }
@@ -287,11 +291,12 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
       <virtual-list
         ref={list}
         alignment="bottom"
-        followTail
+        followTail={following && !detached}
         estimatedItemHeight={110}
         onVisibleRange={(event) => {
           const start = event.startIndex ?? 0;
           const end = event.endIndex ?? 0;
+          if (end > 0 && end < rows.length) setFollowing(false);
           setVisible((current) =>
             current.start === start && current.end === end ? current : { start, end },
           );
@@ -333,7 +338,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                 paddingLeft: 20,
                 paddingRight: 20,
                 paddingTop: row.kind === 'footer' ? 0 : index === 0 ? 22 : newTurn ? 48 : 8,
-                paddingBottom: index === rows.length - 1 ? 27 : 8,
+                paddingBottom: index === rows.length - 1 ? 25 : 8,
                 alignItems: 'center',
               }}
             >
@@ -470,6 +475,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
         content={contentHeight}
         offset={scrollTop}
         onScroll={(offset) => {
+          setFollowing(false);
           let index = offsets.findIndex((value) => value > offset) - 1;
           if (index < 0) index = rows.length - 1;
           if (list.current)

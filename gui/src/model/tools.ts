@@ -500,7 +500,11 @@ export function presentTool(
             'agent.send_message': 'Send subagent message',
           } as Record<string, string>
         )[id] || title;
-      detail = target || custom || title;
+      action = title;
+      detail =
+        target ||
+        custom ||
+        (Array.isArray(input.task_ids) ? input.task_ids.map(String).join(', ') : '');
       break;
     case 'session':
       target = string(input, 'query', 'session_id', 'run_id');
@@ -515,7 +519,8 @@ export function presentTool(
         : title;
       break;
     case 'eval':
-      title = string(input, 'title', 'i') || 'Evaluate code';
+      action = 'Evaluate';
+      title = string(input, 'summary', 'title', 'i') || 'Evaluate code';
       target = string(input, 'language');
       detail = target || title;
       break;

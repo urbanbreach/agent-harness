@@ -129,7 +129,7 @@ export function ResponseFooter({
     if (view.turns.at(-1)?.id !== turn.id) return;
     return registerAction({
       id: 'session.fork',
-      label: 'session.fork_task',
+      label: 'Fork task',
       enabled: () => eligible && !busy,
       run: () => void fork(),
     });
@@ -138,7 +138,7 @@ export function ResponseFooter({
     () =>
       registerAction({
         id: `session.fork:${turn.id}`,
-        label: 'session.fork_task',
+        label: 'Fork task',
         enabled: () => eligible && !busy,
         run: () => void fork(),
       }),

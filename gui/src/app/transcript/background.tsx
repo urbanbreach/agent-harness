@@ -19,16 +19,24 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
   const [expanded, setExpanded] = useState<string>();
   const [error, setError] = useState('');
   const rows = [
-    ...Object.values(view.subagents).map((task) => ({ task, child: true })),
+    ...Object.values(view.subagents)
+      .filter((task) => task.background || childSession(task))
+      .map((task) => ({ task, child: true })),
     ...Object.values(view.tasks)
       .filter(
         (task) =>
+          task.scope !== 'tool_call' &&
+          task.scope !== 'agent_turn' &&
+          !view.tools[task.id] &&
+          !view.subagents[childSession(task) ?? ''] &&
           !view.entries.some((entry) => entry.kind === 'user' && entry.requestId === task.id),
       )
       .map((task) => ({ task, child: !!childSession(task) })),
   ];
   const active = (task: TaskView) =>
-    !['completed', 'failed', 'cancelled', 'succeeded', 'done', 'finished'].includes(task.state);
+    !['completed', 'failed', 'cancelled', 'succeeded', 'done', 'finished', 'stopped'].includes(
+      task.state,
+    );
   const send = (intent: Intent) => {
     void getAppStore()
       .sendIntent(sessionId, intent)

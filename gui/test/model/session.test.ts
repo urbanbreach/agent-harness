@@ -65,6 +65,45 @@ const answer = event(3, {
 });
 
 describe('session projection', () => {
+  test('child-agent conversation stays out of the parent transcript while lifecycle remains visible', () => {
+    const childPrompt = event(4, {
+      event_type: 'user_message_submitted',
+      data: { request_id: 'child-turn', text: 'Review the delegated change' },
+    });
+    childPrompt.actor = { kind: 'worker', agent_id: 'child' };
+    const view = projectEvents([
+      event(1, {
+        event_type: 'agent_spawned',
+        data: { agent_id: 'parent', profile: 'default', parent_agent_id: null },
+      }),
+      { ...prompt, seq: 2, event_id: 'parent-prompt' },
+      event(3, {
+        event_type: 'agent_spawned',
+        data: { agent_id: 'child', profile: 'reviewer', parent_agent_id: 'parent' },
+      }),
+      childPrompt,
+      {
+        ...event(5, {
+          event_type: 'assistant_message_finished',
+          data: {
+            request_id: 'child-provider',
+            tool_call_count: 0,
+            parts: [{ kind: 'text', text: 'Delegated review passed' }],
+            provenance: null,
+            assistant_message: null,
+          },
+        }),
+        actor: { kind: 'worker', agent_id: 'child' },
+      },
+      { ...answer, seq: 6, event_id: 'parent-answer' },
+    ]);
+    expect(view.entries.map((entry) => ('text' in entry ? entry.text : entry.kind))).toEqual([
+      'Explain this synthetic example',
+      'An example answer.',
+    ]);
+    expect(view.subagents.child).toMatchObject({ id: 'child', state: 'running' });
+  });
+
   test('plain exchange settles a reusable turn and drops duplicate durable delivery without changing references', () => {
     const view = projectEvents([
       prompt,

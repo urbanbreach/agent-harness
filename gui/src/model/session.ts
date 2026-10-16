@@ -124,6 +124,7 @@ export interface TodoItem {
 export interface SessionView {
   meta?: SessionCatalogEntry;
   runId?: string;
+  rootAgentId?: string;
   title: string;
   workspaceRoot?: string;
   status: RunStatus;
@@ -439,6 +440,16 @@ function reduceEvent(
 ): SessionView {
   let view = initial;
   const event = envelope.payload;
+  const agentId = 'agent_id' in envelope.actor ? envelope.actor.agent_id : undefined;
+  if (
+    view.rootAgentId &&
+    agentId &&
+    agentId !== view.rootAgentId &&
+    /^(user_message_|provider_|assistant_message_|tool_call_|task_|eval_|session_title_updated$)/.test(
+      event.event_type,
+    )
+  )
+    return view;
   const ms = envelope.mono_ms,
     seq = 'seq' in envelope ? envelope.seq : undefined;
   const base = { id: envelope.event_id, startedMs: ms, timestamp: envelope.ts ?? undefined, seq };
@@ -984,6 +995,7 @@ function reduceEvent(
     case 'agent_spawned':
       return {
         ...view,
+        rootAgentId: event.data.parent_agent_id ? view.rootAgentId : event.data.agent_id,
         subagents: {
           ...view.subagents,
           [event.data.agent_id]: {

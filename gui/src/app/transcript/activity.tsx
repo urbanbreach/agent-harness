@@ -57,10 +57,12 @@ function DetailViewport({
   children,
   revision,
   follow = false,
+  padded = false,
 }: {
   children: ReactNode;
   revision: unknown;
   follow?: boolean;
+  padded?: boolean;
 }) {
   const { colors } = useTheme();
   const { renderer } = useGpuix();
@@ -96,7 +98,12 @@ function DetailViewport({
       >
         <div
           onLayout={(e) => setSize((s) => ({ ...s, content: e.height ?? 0 }))}
-          style={{ ...column, paddingTop: 4, paddingBottom: 4, paddingRight: 8 }}
+          style={{
+            ...column,
+            paddingTop: padded ? 4 : 0,
+            paddingBottom: padded ? 4 : 0,
+            paddingRight: padded ? 8 : 0,
+          }}
         >
           {children}
         </div>
@@ -149,7 +156,13 @@ function CopySection({
     <div style={{ ...column, gap: 3 }}>
       <div style={{ ...row, height: 20, gap: 8 }}>
         <text
-          style={{ flexGrow: 1, color: colors.text_secondary, fontWeight: 500, fontSize: sp(12.5) }}
+          style={{
+            flexGrow: 1,
+            color: colors.text_secondary,
+            fontFamily: label === 'Command' || command ? CODE_FONT_FAMILY : undefined,
+            fontWeight: 500,
+            fontSize: sp(12.5),
+          }}
         >
           {label}
         </text>
@@ -170,7 +183,7 @@ function CopySection({
         )}
       </div>
       {command ? (
-        <DetailViewport revision={content} follow={live}>
+        <DetailViewport revision={content} follow={live} padded>
           {body}
         </DetailViewport>
       ) : (
@@ -208,7 +221,6 @@ function ActivityCard({
       <text style={{ fontWeight: 600, flexShrink: 0 }}>{action}</text>
       <text style={{ ...ellipsis, flexGrow: 1 }}>{detail}</text>
       {failed ? <Icon name="x" size={10} color={colors.danger} /> : running ? <Pulse /> : null}
-      {children && <Icon name={open ? 'chevron-down' : 'chevron-right'} size={10} />}
     </>
   );
   return (
@@ -262,6 +274,11 @@ function ActivityCard({
           </div>
         )}
         {extras}
+        {children && (
+          <div style={{ ...row, paddingRight: 8 }}>
+            <Icon name={open ? 'chevron-down' : 'chevron-right'} size={10} />
+          </div>
+        )}
       </div>
       {children && open && (
         <div style={{ ...column, borderTopWidth: 1, borderColor: colors.border_strong }}>
@@ -536,10 +553,15 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
               >
                 <text
                   style={{
-                    width: 50,
+                    width: 52,
                     paddingRight: 10,
                     textAlign: 'right',
-                    color: colors.text_tertiary,
+                    color:
+                      line.kind === '+'
+                        ? colors.success
+                        : line.kind === '-'
+                          ? colors.danger
+                          : colors.text_tertiary,
                   }}
                 >
                   {line.number}
@@ -815,6 +837,7 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
 }
 
 function ContextCard({ entry }: { entry: CompactionEntry }) {
+  const { colors, sp } = useTheme();
   const event = entry.event;
   const data = object(event.data);
   const summary = [data.short_summary, data.summary, data.message, data.reason].find(
@@ -844,8 +867,8 @@ function ContextCard({ entry }: { entry: CompactionEntry }) {
       {summary || entry.warning || (before !== undefined && after !== undefined) ? (
         <div style={{ ...column, padding: 12, gap: 8 }}>
           {before !== undefined && after !== undefined && (
-            <text>
-              {before.toLocaleString()} → {after.toLocaleString()} tokens
+            <text style={{ color: colors.text_secondary, fontSize: sp(12.5) }}>
+              {`${before.toLocaleString()} → ${after.toLocaleString()} tokens`}
             </text>
           )}
           {summary && <Markdown source={summary} context="compact" />}
@@ -946,6 +969,7 @@ export function ActivityGroup({
             width: 'auto',
             marginTop: 4,
             marginLeft: 6,
+            marginRight: -6,
             paddingLeft: 12,
             paddingBottom: 2,
             borderLeftWidth: 1,
