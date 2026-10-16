@@ -50,7 +50,7 @@
       "current": {
         "profile": "default",
         "provider": "codex",
-        "providerLabel": "Codex",
+        "providerLabel": "Codex CLI",
         "model": "gpt-6.1-sol",
         "modelLabel": "GPT-6.1-Sol",
         "variant": "low",
@@ -102,7 +102,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6.1-sol",
           "modelLabel": "GPT-6.1-Sol",
           "variant": "low",
@@ -113,7 +113,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6.1-sol",
           "modelLabel": "GPT-6.1-Sol",
           "variant": "medium",
@@ -124,7 +124,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6.1-sol",
           "modelLabel": "GPT-6.1-Sol",
           "variant": "high",
@@ -135,7 +135,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6.1-sol",
           "modelLabel": "GPT-6.1-Sol",
           "variant": "extra-high",
@@ -146,7 +146,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6.1-sol",
           "modelLabel": "GPT-6.1-Sol",
           "variant": "max",
@@ -157,7 +157,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6.1-sol",
           "modelLabel": "GPT-6.1-Sol",
           "variant": "ultra",
@@ -168,7 +168,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6-astra",
           "modelLabel": "GPT-6-Astra",
           "variant": "low",
@@ -179,7 +179,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6-sol",
           "modelLabel": "GPT-6-Sol",
           "variant": "low",
@@ -190,7 +190,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-6-luna",
           "modelLabel": "GPT-6-Luna",
           "variant": "low",
@@ -201,7 +201,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-5.6-sol",
           "modelLabel": "GPT-5.6-Sol",
           "variant": "low",
@@ -212,7 +212,7 @@
         {
           "profile": "default",
           "provider": "codex",
-          "providerLabel": "Codex",
+          "providerLabel": "Codex CLI",
           "model": "gpt-5.6-terra",
           "modelLabel": "GPT-5.6-Terra",
           "variant": "low",
