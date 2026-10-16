@@ -38,7 +38,8 @@ import {
 import { FileIcon } from './shared';
 
 export { CommitDialog } from './commit';
-type Selection = { cwd: string } | { sessionId: string; turnId: string };
+type Selection =
+  { cwd: string; source: 'uncommitted' | 'branch' } | { sessionId: string; turnId: string };
 const selections = new Set<(selection: Selection) => void>();
 let queuedSelection: Selection | undefined;
 export function openReviewTurn(sessionId: string, turnId: string) {
@@ -47,7 +48,12 @@ export function openReviewTurn(sessionId: string, turnId: string) {
   for (const listener of selections) listener(selection);
 }
 export function openUncommittedReview(cwd: string) {
-  const selection = { cwd };
+  const selection: Selection = { cwd, source: 'uncommitted' };
+  queuedSelection = selection;
+  for (const listener of selections) listener(selection);
+}
+export function openBranchReview(cwd: string) {
+  const selection: Selection = { cwd, source: 'branch' };
   queuedSelection = selection;
   for (const listener of selections) listener(selection);
 }
@@ -294,7 +300,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
       if ('cwd' in selection) {
         if (selection.cwd === cwd) {
           queuedSelection = undefined;
-          choose('uncommitted');
+          choose(selection.source);
         }
       } else if (selection.sessionId === sessionId) {
         queuedSelection = undefined;

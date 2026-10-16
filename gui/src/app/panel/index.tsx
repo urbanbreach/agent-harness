@@ -17,7 +17,7 @@ import { getAppStore } from '../../store';
 import { registerAction, runAction } from '../actions';
 import { BrowserView } from './browser';
 import { FilesView, createFilesState, saveFileState, type FilesState } from './files';
-import { Review, openReviewTurn } from './review';
+import { Review, openBranchReview, openReviewTurn } from './review';
 import { CommitDialog } from './commit';
 import { TerminalView } from './terminal';
 import { SessionSurface, TodosSurface, PlanSurface } from './session';
@@ -199,6 +199,17 @@ export function RightPanel({
         run: () => {
           runAction('shell.showRightPanel');
           setCommit(true);
+        },
+      }),
+      registerAction({
+        id: 'git.compareBranch',
+        label: t('diff.source_branch'),
+        enabled: () => !!currentState().cwd,
+        run: () => {
+          const cwd = currentState().cwd;
+          if (!cwd) return;
+          openBranchReview(cwd);
+          openPanelSurface('review');
         },
       }),
       ...Object.keys(surfaceInfo).map((kind) =>

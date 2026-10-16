@@ -83,6 +83,13 @@ bun run format                     # Prettier
 
 ### Workspace panels
 
+The header information button opens **Environment and background work**, not
+usage. It refreshes the current branch and working-tree line counts when opened,
+offers **Commit or push** and **Compare branch**, and shows the task's background
+work with the same inspect/cancel controls as the transcript. Commit progress
+remains visible after dismissing its dialog; completion still produces a toast.
+Usage remains available through Ctrl+U and the composer's usage meter.
+
 Review opens on **Uncommitted** changes; the Review button on a transcript turn
 opens that turn's checkpoint instead. File headers and the changed-file tree keep
 their counts and status badges aligned to the trailing edge. Review scrollbars
@@ -90,6 +97,8 @@ appear during scrolling or pointer interaction and fade at rest.
 Diff body and gutter tints are separate layers, so additions and deletions retain
 their distinct contrast. Diff source uses the same language-aware syntax palette
 as the editor, including Markdown headings, emphasis and link labels.
+The `git.compareBranch` action opens Review on Branch for the selected workspace,
+including when the Review surface has not yet mounted.
 The surface chooser centers Browser, Terminal, Files and Review; Session, Todos
 and Plan remain available in the auxiliary row below and in the add-tab menu.
 
@@ -97,6 +106,8 @@ The file editor supports Ctrl+Home/End and Ctrl+Shift+Home/End for document-edge
 navigation and selection. Find keeps its case, whole-word and regular-expression
 options inside the query field; Enter/Shift+Enter navigate matches. Empty
 regular-expression matches are not replacement targets.
+Ctrl+Alt+F opens replacement. Enter in the replacement field replaces the current
+match; Ctrl+Alt+Enter replaces all matches.
 The find query owns keyboard focus independently from the editor. When find
 is focused, the editor's inactive selection cannot cover the current-match wash.
 

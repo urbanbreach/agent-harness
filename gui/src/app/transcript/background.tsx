@@ -16,7 +16,17 @@ function childSession(task: TaskView): string | undefined {
   const id = lineage.child_session_id ?? route?.child_session_id;
   return typeof id === 'string' ? id : undefined;
 }
-export function BackgroundWork({ sessionId, view }: { sessionId: string; view: SessionView }) {
+export function BackgroundWork({
+  sessionId,
+  view,
+  registerActions = true,
+  embedded = false,
+}: {
+  sessionId: string;
+  view: SessionView;
+  registerActions?: boolean;
+  embedded?: boolean;
+}) {
   const locale = useLocale();
   const { colors, sp, codeFontSize } = useTheme();
   const [expanded, setExpanded] = useState<string>();
@@ -58,6 +68,7 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
     }
   }
   useEffect(() => {
+    if (!registerActions) return;
     const stops = rows.map(({ task, child }) =>
       registerAction({
         id: `transcript.background:${task.id}`,
@@ -72,16 +83,16 @@ export function BackgroundWork({ sessionId, view }: { sessionId: string; view: S
       }),
     );
     return () => stops.forEach((stop) => stop());
-  }, [sessionId, view.tasks, view.subagents, locale]);
+  }, [sessionId, view.tasks, view.subagents, locale, registerActions]);
   if (!rows.length) return null;
   return (
     <div
       style={{
         marginTop: 8,
-        borderRadius: 9,
-        borderWidth: 1,
+        borderRadius: embedded ? 0 : 9,
+        borderWidth: embedded ? 0 : 1,
         borderColor: colors.border_strong,
-        backgroundColor: colors.overlay,
+        backgroundColor: embedded ? undefined : colors.overlay,
         overflow: 'hidden',
       }}
     >

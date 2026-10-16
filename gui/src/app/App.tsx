@@ -22,6 +22,7 @@ export interface AppProps {
   renderSidebar?(header: ReactNode): ReactNode;
   overlay?: ReactNode;
   headerActions?: ReactNode;
+  environment?: ReactNode;
   fps?: ReactNode;
   onKeyDown?(event: KeyEvent): void;
   onKeyUp?(event: KeyEvent): void;
@@ -383,7 +384,6 @@ export function Workspace(props: AppProps) {
           height,
           flexShrink: 0,
           borderRadius: 6,
-          marginRight: icon === 'info' ? 1 : 0,
           cursor: 'default',
           opacity: disabled ? 0.35 : 1,
           display: 'flex',
@@ -393,7 +393,7 @@ export function Workspace(props: AppProps) {
           active: { backgroundColor: colors.overlay_strong },
         }}
       >
-        <Icon name={icon} size={icon === 'info' ? 15 : 14} color={colors.text_tertiary} />
+        <Icon name={icon} size={14} color={colors.text_tertiary} />
       </Button>
     </Tooltip>
   );
@@ -523,7 +523,7 @@ export function Workspace(props: AppProps) {
             <div {...titlebar} style={{ flexGrow: 1, height: '100%' }} />
             {props.headerActions}
             {!layout.rightVisible && props.fps}
-            {chromeButton('info', t('navigation.usage'), () => runAction('usage.toggle'))}
+            {props.environment}
             {!layout.rightVisible &&
               chromeButton('panel-right', t('action.rightPanel'), toggleRight)}
             {!layout.rightVisible && windowControls}
