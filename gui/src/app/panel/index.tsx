@@ -27,7 +27,6 @@ export type PanelKind = 'browser' | 'terminal' | 'files' | 'review' | 'session' 
 interface Tab {
   id: number;
   kind: PanelKind;
-  title?: string;
 }
 interface PanelState {
   tabs: Tab[];
@@ -237,6 +236,7 @@ export function RightPanel({
                       paddingLeft: 8,
                       paddingRight: 8,
                       borderRadius: 6,
+                      borderWidth: 0,
                       gap: 6,
                       flexShrink: 0,
                       backgroundColor: tab.id === state.active ? colors.overlay_strong : undefined,
@@ -245,7 +245,7 @@ export function RightPanel({
                     {path ? (
                       <FileIcon path={path} size={13} />
                     ) : (
-                      <Icon name={info.icon} size={13} />
+                      <Icon name={info.icon} size={13} color={colors.text_secondary} />
                     )}
                     <text
                       style={{
@@ -255,7 +255,7 @@ export function RightPanel({
                         fontSize: sp(12.5),
                       }}
                     >
-                      {path?.split('/').pop() ?? tab.title?.replace(/[\r\n]+/g, ' ') ?? info.label}
+                      {path?.split('/').pop() ?? info.label}
                     </text>
                     {dirty && (
                       <Tooltip content="Unsaved changes — Ctrl+S to save">
@@ -496,12 +496,6 @@ export function RightPanel({
               <TerminalView
                 cwd={task.cwd ?? null}
                 active={key === activeKey && tab.id === task.active}
-                onTitle={(title) => {
-                  if (tab.title !== title) {
-                    tab.title = title;
-                    changed();
-                  }
-                }}
               />
             </div>
           )),

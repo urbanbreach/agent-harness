@@ -202,7 +202,7 @@ export function CommitDialog({
         }}
       >
         <div style={{ ...row, height: 48, paddingLeft: 16, paddingRight: 16, gap: 9 }}>
-          <Icon name="git-branch" size={15} />
+          <Icon name="git-branch" size={15} color={colors.text} />
           <text style={{ ...ellipsis, fontSize: sp(14), color: colors.text }}>
             {state?.branch ?? 'HEAD'}
           </text>
@@ -221,6 +221,7 @@ export function CommitDialog({
             textMuted: colors.text_ghost,
             caret: colors.accent,
             bg: colors.composer,
+            ...{ placeholder: colors.text_ghost },
           }}
           style={{
             height: 112,
@@ -235,7 +236,7 @@ export function CommitDialog({
             selectionColor: colors.selection,
           }}
         />
-        <div style={{ paddingLeft: 8, paddingRight: 8 }}>
+        <div style={{ paddingLeft: 7, paddingRight: 9 }}>
           <Button
             role="checkbox"
             aria-label="Include unstaged changes"
@@ -334,8 +335,8 @@ export function CommitDialog({
               style={{
                 height: 38,
                 borderRadius: 9,
-                paddingLeft: 10,
-                paddingRight: 10,
+                paddingLeft: 9,
+                paddingRight: 11,
                 gap: 10,
                 justifyContent: 'flex-start',
                 hover: { backgroundColor: colors.overlay_strong },

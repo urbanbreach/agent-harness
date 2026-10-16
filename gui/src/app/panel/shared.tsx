@@ -81,8 +81,8 @@ export function FileIcon({
   };
   const name = /^readme(?:\.md)?$/i.test(path.split('/').at(-1) ?? '')
     ? 'readme'
-    : names[extension ?? ''];
-  return name ? (
+    : (names[extension ?? ''] ?? 'text');
+  return (
     <svg
       src={new URL(`../../../assets/file-icons/${name}.svg`, import.meta.url).pathname}
       style={{
@@ -95,11 +95,11 @@ export function FileIcon({
             ? '#ff7043'
             : ['markdown', 'readme'].includes(name)
               ? '#42a5f5'
-              : undefined),
+              : name === 'text'
+                ? '#90a4ae'
+                : undefined),
       }}
     />
-  ) : (
-    <Icon name="file" size={size} color={color} />
   );
 }
 export function Toolbar({ children }: { children: ReactNode }) {

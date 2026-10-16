@@ -650,12 +650,9 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
           ...row,
           alignItems: 'stretch',
           minHeight: special ? 24 : lineHeight,
-          backgroundColor:
-            added || removed
-              ? `rgba(${hue},${colors.is_dark ? '.20' : '.12'})`
-              : line.kind === 'hunk'
-                ? colors.overlay
-                : undefined,
+          borderLeftWidth: added || removed ? 2 : 0,
+          borderColor: added ? colors.success : removed ? colors.danger : undefined,
+          backgroundColor: line.kind === 'hunk' ? colors.overlay : undefined,
         }}
       >
         <div
@@ -664,24 +661,11 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
             flexShrink: 0,
             borderRightWidth: 1,
             borderColor: colors.border,
-            position: 'relative',
             paddingRight: 9,
             backgroundColor:
               added || removed ? `rgba(${hue},${colors.is_dark ? '.15' : '.09'})` : undefined,
           }}
         >
-          {(added || removed) && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 2,
-                backgroundColor: added ? colors.success : colors.danger,
-              }}
-            />
-          )}
           <text
             style={{
               fontFamily: CODE_FONT_FAMILY,
@@ -694,28 +678,38 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
             {special ? '' : (line.next ?? line.old)}
           </text>
         </div>
-        <rich-text
-          text={line.text || ' '}
-          runs={
-            special ? [] : highlightCode(line.text, file.path.split('.').at(-1), colors.is_dark)
-          }
+        <div
           style={{
+            display: 'flex',
+            flexDirection: 'column',
             flexGrow: 1,
             minWidth: 0,
             flexShrink: 1,
-            paddingLeft: 14,
+            paddingLeft: 12,
             paddingRight: 10,
             paddingTop: special ? 4 : 0,
             paddingBottom: special ? 4 : 0,
-            fontFamily: CODE_FONT_FAMILY,
-            fontSize: special ? 12.5 : codeFontSize,
-            lineHeight: special ? 16 : lineHeight,
-            color: special ? colors.text_tertiary : colors.text_secondary,
-            whiteSpace: 'normal',
-            userSelect: 'text',
-            selectionColor: colors.selection,
+            backgroundColor:
+              added || removed ? `rgba(${hue},${colors.is_dark ? '.20' : '.12'})` : undefined,
           }}
-        />
+        >
+          <rich-text
+            text={line.text || ' '}
+            runs={
+              special ? [] : highlightCode(line.text, file.path.split('.').at(-1), colors.is_dark)
+            }
+            style={{
+              minWidth: 0,
+              fontFamily: CODE_FONT_FAMILY,
+              fontSize: special ? 12.5 : codeFontSize,
+              lineHeight: special ? 16 : lineHeight,
+              color: special ? colors.text_tertiary : colors.text_secondary,
+              whiteSpace: 'normal',
+              userSelect: 'text',
+              selectionColor: colors.selection,
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -744,7 +738,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
           ...row,
           height: 44,
           flexShrink: 0,
-          paddingLeft: 12,
+          paddingLeft: 11,
           paddingRight: 12,
           gap: 8,
           borderBottomWidth: 1,

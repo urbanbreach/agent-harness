@@ -87,6 +87,9 @@ Review opens on **Uncommitted** changes; the Review button on a transcript turn
 opens that turn's checkpoint instead. File headers and the changed-file tree keep
 their counts and status badges aligned to the trailing edge. Review scrollbars
 appear during scrolling or pointer interaction and fade at rest.
+Diff body and gutter tints are separate layers, so additions and deletions retain
+their distinct contrast. Diff source uses the same language-aware syntax palette
+as the editor, including Markdown headings, emphasis and link labels.
 The surface chooser centers Browser, Terminal, Files and Review; Session, Todos
 and Plan remain available in the auxiliary row below and in the add-tab menu.
 
@@ -102,6 +105,9 @@ terminal cells; Ctrl+Shift+V pastes clipboard text, respecting bracketed paste a
 normalizing line endings. Word/line selections can be extended with dragging.
 Panel resizing reflows output and resizes the PTY; shell exit preserves output
 and marks the status dot red.
+Shell title escape sequences update the terminal toolbar, not its tab label.
+The terminal grid measures the difference between two long monospace samples,
+avoiding rounded single-glyph bounds and the native text layout's caret overhang.
 
 `test/fixtures/scripts/panel.json` exercises a local edit, todo updates and a
 saved rollout plan through the scripted mock backend, without provider calls.
