@@ -99,9 +99,10 @@ export function Panel({
           position: 'absolute',
           top: 0,
           bottom: 0,
-          width: side === 'left' ? 10 : 8,
-          ...(side === 'left' ? { right: -5 } : { left: -7 }),
+          width: 10,
+          ...(side === 'left' ? { right: -5 } : { left: -5 }),
           cursor: 'col-resize',
+          userSelect: 'none',
         }}
       >
         <div

@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
-import { Button, Icon, IconButton, Menu, Tooltip, ellipsis, row, useToast } from '../../ui';
+import {
+  Button,
+  Icon,
+  IconButton,
+  Menu,
+  Tooltip,
+  ellipsis,
+  row,
+  useToast,
+  type IconName,
+} from '../../ui';
 import { getAppStore } from '../../store';
 import { registerAction, runAction } from '../actions';
 import { BrowserView } from './browser';
@@ -29,7 +39,7 @@ const states = new Map<string, PanelState>();
 let serial = 0;
 let activeKey = '';
 const listeners = new Set<() => void>();
-const surfaceInfo: Record<PanelKind, { label: string; icon: string; description: string }> = {
+const surfaceInfo: Record<PanelKind, { label: string; icon: IconName; description: string }> = {
   browser: { label: 'Browser', icon: 'globe', description: 'Open a local app or URL' },
   terminal: { label: 'Terminal', icon: 'terminal', description: 'Start a shell in this workspace' },
   files: { label: 'Files', icon: 'folder', description: 'Browse and read workspace files' },
@@ -156,7 +166,14 @@ export function RightPanel({
           void saveActivePanelFile().catch((error) => showToast(String(error)));
         },
       }),
-      registerAction({ id: 'git.commit', label: 'Commit or push', run: () => setCommit(true) }),
+      registerAction({
+        id: 'git.commit',
+        label: 'Commit or push',
+        run: () => {
+          runAction('shell.showRightPanel');
+          setCommit(true);
+        },
+      }),
       ...Object.keys(surfaceInfo).map((kind) =>
         registerAction({
           id: `panel.${kind}`,
@@ -335,6 +352,7 @@ export function RightPanel({
             paddingLeft: 20,
             paddingRight: 20,
             paddingBottom: 32,
+            position: 'relative',
           }}
         >
           <text style={{ color: colors.text, fontSize: sp(13), fontWeight: 500 }}>
@@ -353,9 +371,9 @@ export function RightPanel({
               marginTop: 18,
             }}
           >
-            {(['browser', 'files', 'session', 'plan'] as PanelKind[]).map((first, index) => (
+            {(['browser', 'files'] as PanelKind[]).map((first, index) => (
               <div key={first} style={{ ...row, alignItems: 'stretch', gap: 8 }}>
-                {[first, ['terminal', 'review', 'todos'][index]].filter(Boolean).map((kind) => {
+                {[first, ['terminal', 'review'][index]].map((kind) => {
                   const info = surfaceInfo[kind as PanelKind];
                   return (
                     <Button
@@ -404,6 +422,30 @@ export function RightPanel({
                   );
                 })}
               </div>
+            ))}
+          </div>
+          <div
+            style={{
+              ...row,
+              position: 'absolute',
+              bottom: 24,
+              width: 420,
+              maxWidth: '100%',
+              gap: 8,
+              justifyContent: 'center',
+            }}
+          >
+            {(['session', 'todos', 'plan'] as PanelKind[]).map((kind) => (
+              <Button
+                key={kind}
+                onClick={() => openPanelSurface(kind)}
+                style={{ height: 30, paddingLeft: 10, paddingRight: 10, gap: 6, borderRadius: 6 }}
+              >
+                <Icon name={surfaceInfo[kind].icon} size={14} color={colors.text_secondary} />
+                <text style={{ fontSize: sp(12.5), color: colors.text_secondary }}>
+                  {surfaceInfo[kind].label}
+                </text>
+              </Button>
             ))}
           </div>
         </div>

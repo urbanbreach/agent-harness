@@ -180,6 +180,7 @@ export function CommitDialog({
         width: 420,
         maxWidth: 420,
         borderRadius: 18,
+        borderWidth: 0,
         backgroundColor: colors.composer,
         overflow: 'hidden',
         boxShadow: { offsetX: 0, offsetY: 24, blurRadius: 48, spreadRadius: 0, color: '#00000040' },

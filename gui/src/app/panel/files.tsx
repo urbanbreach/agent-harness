@@ -55,6 +55,7 @@ export function FilesView({
   const [replace, setReplace] = useState(false);
   const [query, setQuery] = useState('');
   const [queryFocused, setQueryFocused] = useState(false);
+  const [editorFocused, setEditorFocused] = useState(false);
   const [replacement, setReplacement] = useState('');
   const [options, setOptions] = useState<SearchOptions>({
     caseSensitive: false,
@@ -143,6 +144,8 @@ export function FilesView({
     setTimeout(() => {
       if (queryInput.current && renderer) {
         renderer.focusElement?.(queryInput.current.id);
+        setQueryFocused(true);
+        setEditorFocused(false);
         nativeRenderer(renderer).inputSetSelection(queryInput.current.id, 0, seed.length);
       }
     }, 0);
@@ -283,6 +286,11 @@ export function FilesView({
                 >
                   <input
                     ref={queryInput}
+                    tabIndex={0}
+                    onMouseDown={() => {
+                      setQueryFocused(true);
+                      setEditorFocused(false);
+                    }}
                     value={query}
                     onChange={(event) => setQuery(event.value ?? '')}
                     placeholder="Find"
@@ -290,6 +298,7 @@ export function FilesView({
                     onFocus={() => setQueryFocused(true)}
                     onBlur={() => setQueryFocused(false)}
                     theme={{
+                      appearance: colors.is_dark ? 'dark' : 'light',
                       text: colors.text,
                       caret: colors.accent,
                       ...{ placeholder: colors.text_ghost },
@@ -300,6 +309,7 @@ export function FilesView({
                       height: sp(16),
                       fontSize: sp(12.5),
                       lineHeight: sp(16),
+                      color: colors.text,
                       backgroundColor: 'transparent',
                     }}
                     onKeyDown={(event) => {
@@ -320,7 +330,7 @@ export function FilesView({
                       content={['Match case', 'Whole word', 'Regular expression'][i]}
                     >
                       <IconButton
-                        name={['case-sensitive', 'whole-word', 'regex'][i]!}
+                        name={(['case-sensitive', 'whole-word', 'regex'] as const)[i]!}
                         size={12}
                         style={{
                           width: 18,
@@ -439,11 +449,12 @@ export function FilesView({
                 paddingBottom: 24,
               }}
             >
-              <Markdown source={text} />
+              <Markdown source={text} context="document" />
             </div>
           ) : (
             <textarea
               ref={input}
+              tabIndex={0}
               value={text}
               interceptedKeys={['ctrl-home', 'ctrl-end', 'ctrl-shift-home', 'ctrl-shift-end']}
               onKeyDown={(event) => {
@@ -469,20 +480,24 @@ export function FilesView({
                 native.inputRevealRange(input.current.id, target, target);
               }}
               onMouseDown={() => {
+                setEditorFocused(true);
+                setQueryFocused(false);
                 documentSelectionAnchor.current = undefined;
               }}
               onBlur={() => {
+                setEditorFocused(false);
                 documentSelectionAnchor.current = undefined;
               }}
               theme={{
                 text: colors.text_secondary,
                 caret: colors.accent,
                 bg: colors.surface,
-                ...{ selectionWash: colors.selection },
+                ...{ selectionWash: find && !editorFocused ? 'transparent' : colors.selection },
               }}
               readOnly={!buffer?.loaded || !!buffer?.error}
               onChange={(event) => edit(event.value ?? '')}
               onFocus={() => {
+                setEditorFocused(true);
                 const path = state.selected;
                 if (path && buffer?.loaded && !buffer.error && buffer.text === buffer.saved) {
                   const saved = buffer.saved;
@@ -510,7 +525,7 @@ export function FilesView({
               }
               gutter={{
                 color: colors.text_ghost,
-                width: 20 + Math.ceil(codeFontSize * 0.6) * String(text.split('\n').length).length,
+                width: 12 + Math.ceil(codeFontSize * 0.6) * String(text.split('\n').length).length,
                 gap: 8,
                 fontSize: codeFontSize,
               }}
@@ -525,6 +540,7 @@ export function FilesView({
                 paddingTop: 6,
                 paddingBottom: 6,
                 paddingRight: 10,
+                paddingLeft: 0,
               }}
             />
           )}

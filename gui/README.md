@@ -62,6 +62,10 @@ visibility notifications. To change native code, edit the checkout, export the
 diff over the patch file, and rerun the script; `native/smoke/app.tsx`
 exercises every native addition.
 
+Virtual-list rows keep their retained identity when a commit inserts siblings
+between root rendering and row layout. Rendering shifted rows as short
+placeholders would erase the top anchor and jump a bottom-aligned list to its end.
+
 ## Development
 
 ```bash
@@ -84,11 +88,15 @@ Review opens on **Uncommitted** changes; the Review button on a transcript turn
 opens that turn's checkpoint instead. File headers and the changed-file tree keep
 their counts and status badges aligned to the trailing edge. Review scrollbars
 appear during scrolling or pointer interaction and fade at rest.
+The surface chooser centers Browser, Terminal, Files and Review; Session, Todos
+and Plan remain available in the auxiliary row below and in the add-tab menu.
 
 The file editor supports Ctrl+Home/End and Ctrl+Shift+Home/End for document-edge
 navigation and selection. Find keeps its case, whole-word and regular-expression
 options inside the query field; Enter/Shift+Enter navigate matches. Empty
 regular-expression matches are not replacement targets.
+The find query owns keyboard focus independently from the editor. When find
+is focused, the editor's inactive selection cannot cover the current-match wash.
 
 Each Terminal tab owns an independent shell. Ctrl+Shift+C copies the selected
 terminal cells; Ctrl+Shift+V pastes clipboard text, respecting bracketed paste and
@@ -100,3 +108,7 @@ and marks the status dot red.
 saved rollout plan through the scripted mock backend, without provider calls.
 Use an isolated `HARNESS_HOME`; `test/fixtures/repos/panel.ts` resets only its
 dedicated `/tmp/harness-panel-repos` fixture repositories.
+For the plan-writing proof, copy the fixture workspace to `<HARNESS_HOME>/repo`.
+The scripted eval cell derives the isolated home from that workspace's parent
+and requires its GUI and session directories before writing a plan; eval does
+not inherit the `HARNESS_HOME` environment variable.

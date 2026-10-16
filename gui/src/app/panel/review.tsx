@@ -177,7 +177,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
   const [visible, setVisible] = useState(initial?.visible ?? 0);
   const [pinnedTop, setPinnedTop] = useState(0);
   const fileHeaders = useRef(new Map<string, PublicInstance>());
-  const [treeWidth, setTreeWidth] = useState(initial?.treeWidth ?? 220);
+  const [treeWidth, setTreeWidth] = useState(initial?.treeWidth ?? 219);
   const drag = useRef<{ x: number; width: number } | undefined>(undefined);
   const list = useRef<PublicInstance>(null);
   const tree = useRef<PublicInstance>(null);
@@ -703,7 +703,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
             flexGrow: 1,
             minWidth: 0,
             flexShrink: 1,
-            paddingLeft: 12,
+            paddingLeft: 14,
             paddingRight: 10,
             paddingTop: special ? 4 : 0,
             paddingBottom: special ? 4 : 0,
@@ -1051,7 +1051,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                   overflowY: 'scroll',
                   scrollbarColor: colors.text_ghost,
                   scrollbarWidth: 0,
-                  paddingTop: 4,
+                  paddingTop: 3,
                   paddingBottom: 4,
                   borderWidth: 1,
                   borderColor: 'transparent',
@@ -1098,8 +1098,8 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                         style={{
                           height: 26,
                           justifyContent: 'flex-start',
-                          paddingLeft: (item.directory ? 7 : 23) + item.depth * 14,
-                          paddingRight: 7,
+                          paddingLeft: (item.directory ? 7 : 21) + item.depth * 14,
+                          paddingRight: 5,
                           gap: 6,
                           borderRadius: 5,
                           backgroundColor:

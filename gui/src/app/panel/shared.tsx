@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTheme } from '../../theme';
-import { Icon, row } from '../../ui';
+import { Icon, row, type IconName } from '../../ui';
 export function EmptyMessage({
   title,
   description,
@@ -10,7 +10,7 @@ export function EmptyMessage({
 }: {
   title: string;
   description?: string;
-  icon?: string;
+  icon?: IconName;
   children?: ReactNode;
   bottomPadding?: number;
 }) {
@@ -54,10 +54,15 @@ export function EmptyMessage({
     </div>
   );
 }
-export function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
-  if (/^readme(?:\.md)?$/i.test(path.split('/').at(-1) ?? '')) {
-    return <Icon name="info" size={size} color="#57a7da" />;
-  }
+export function FileIcon({
+  path,
+  size = 14,
+  color,
+}: {
+  path: string;
+  size?: number;
+  color?: string;
+}) {
   const extension = path.split('.').pop()?.toLowerCase();
   const names: Record<string, string> = {
     ts: 'typescript',
@@ -74,7 +79,9 @@ export function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
     yml: 'yaml',
     yaml: 'yaml',
   };
-  const name = names[extension ?? ''];
+  const name = /^readme(?:\.md)?$/i.test(path.split('/').at(-1) ?? '')
+    ? 'readme'
+    : names[extension ?? ''];
   return name ? (
     <svg
       src={new URL(`../../../assets/file-icons/${name}.svg`, import.meta.url).pathname}
@@ -82,11 +89,17 @@ export function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
         width: size,
         height: size,
         flexShrink: 0,
-        color: name === 'rust' ? '#e2795b' : name === 'markdown' ? '#57a7da' : undefined,
+        color:
+          color ??
+          (name === 'rust'
+            ? '#ff7043'
+            : ['markdown', 'readme'].includes(name)
+              ? '#42a5f5'
+              : undefined),
       }}
     />
   ) : (
-    <Icon name="file" size={size} />
+    <Icon name="file" size={size} color={color} />
   );
 }
 export function Toolbar({ children }: { children: ReactNode }) {
