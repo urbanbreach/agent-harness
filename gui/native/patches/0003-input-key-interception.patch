@@ -1,0 +1,108 @@
+diff --git a/packages/native/src/custom_elements/input.rs b/packages/native/src/custom_elements/input.rs
+--- a/packages/native/src/custom_elements/input.rs
++++ b/packages/native/src/custom_elements/input.rs
+@@ -452,6 +452,7 @@
+                     gutter: None,
+                     wrap: true,
+                     intercepted_keys: Arc::default(),
++                    key_interceptor: None,
+                     reveal_range: None,
+                     min_rows,
+                     max_rows,
+@@ -507,6 +508,34 @@
+             state.gutter = self.gutter.clone();
+             state.wrap = self.wrap;
+             state.intercepted_keys = self.intercepted_keys.clone();
++            if state.intercepted_keys.is_empty() {
++                state.key_interceptor = None;
++            } else if state.key_interceptor.is_none() {
++                let editor = cx.weak_entity();
++                // GPUI dispatches bound actions before element capture listeners.
++                state.key_interceptor = Some(cx.intercept_keystrokes(move |event, window, cx| {
++                    let Some(editor) = editor.upgrade() else { return; };
++                    let state = editor.read(cx);
++                    if !state.focus_handle.is_focused(window)
++                        || !state.intercepted_keys.iter().any(|chord| {
++                            chord.key == event.keystroke.key
++                                && chord.modifiers == event.keystroke.modifiers
++                        })
++                    {
++                        return;
++                    }
++                    crate::renderer::next_keystroke_id();
++                    emit_key_event(
++                        &state.callback,
++                        state.element_id,
++                        "keyDown",
++                        &event.keystroke,
++                        None,
++                    );
++                    window.prevent_default();
++                    cx.stop_propagation();
++                }));
++            }
+             state.min_rows = self.min_rows.max(1);
+             state.max_rows = self.max_rows.max(state.min_rows);
+             if state.caret_color != self.theme.caret
+@@ -822,6 +851,7 @@
+     gutter: Option<Gutter>,
+     wrap: bool,
+     intercepted_keys: Arc<Vec<gpui::Keystroke>>,
++    key_interceptor: Option<gpui::Subscription>,
+     reveal_range: Option<Range<usize>>,
+     min_rows: usize,
+     max_rows: usize,
+@@ -1926,7 +1956,6 @@
+         let key_down_callback = self.callback.clone();
+         let key_up_callback = self.callback.clone();
+         let element_id = self.element_id;
+-        let intercepted_keys = self.intercepted_keys.clone();
+         div()
+             .key_context(if !self.multiline {
+                 INPUT_KEY_CONTEXT
+@@ -1975,8 +2004,8 @@
+             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
+             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+-            .when(self.emits_key_down || !intercepted_keys.is_empty(), move |editor| {
+-                editor.capture_key_down(move |event, window, cx| {
++            .when(self.emits_key_down, move |editor| {
++                editor.capture_key_down(move |event, _window, _cx| {
+                     emit_key_event(
+                         &key_down_callback,
+                         element_id,
+@@ -1984,10 +2013,6 @@
+                         &event.keystroke,
+                         Some(event.is_held),
+                     );
+-                    if intercepted_keys.iter().any(|chord| chord.key == event.keystroke.key && chord.modifiers == event.keystroke.modifiers) {
+-                        window.prevent_default();
+-                        cx.stop_propagation();
+-                    }
+                 })
+             })
+             .when(self.emits_key_up, move |editor| {
+diff --git a/packages/native/src/renderer.rs b/packages/native/src/renderer.rs
+--- a/packages/native/src/renderer.rs
++++ b/packages/native/src/renderer.rs
+@@ -3700,7 +3700,7 @@
+     });
+ }
+ 
+-fn next_keystroke_id() {
++pub(crate) fn next_keystroke_id() {
+     KEYSTROKE_ID.with(|id| id.set(id.get() + 1));
+ }
+ 
+diff --git a/packages/native/js/host.ts b/packages/native/js/host.ts
+--- a/packages/native/js/host.ts
++++ b/packages/native/js/host.ts
+@@ -547,7 +547,7 @@
+   highlights?: { start: number; end: number; color: string; active?: boolean; activeColor?: string }[]
+   gutter?: { color: string; activeColor?: string; width?: number; gap?: number; fontSize?: number }
+   wrap?: boolean
+-  /** Exact GPUI key chords intercepted natively before editor defaults; capture key events still fire. */
++  /** Exact GPUI key chords intercepted before key-bound editor actions; emits onKeyDown once. */
+   interceptedKeys?: string[]
+ }
+ 

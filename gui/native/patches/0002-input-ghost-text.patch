@@ -1,0 +1,153 @@
+diff --git a/packages/native/src/custom_elements/input.rs b/packages/native/src/custom_elements/input.rs
+--- a/packages/native/src/custom_elements/input.rs
++++ b/packages/native/src/custom_elements/input.rs
+@@ -356,6 +356,7 @@
+     multiline: bool,
+     value: String,
+     placeholder: String,
++    ghost_text: SharedString,
+     read_only: bool,
+     secure: bool,
+     min_rows: usize,
+@@ -376,6 +377,7 @@
+             multiline,
+             value: String::new(),
+             placeholder: String::new(),
++            ghost_text: SharedString::default(),
+             read_only: false,
+             secure: false,
+             min_rows: 1,
+@@ -441,6 +443,7 @@
+                     focus_handle: state_focus_handle,
+                     content: value,
+                     placeholder: placeholder.into(),
++                    ghost_text: SharedString::default(),
+                     multiline,
+                     read_only,
+                     secure: false,
+@@ -496,6 +499,7 @@
+             state.emits_key_down = emits_key_down;
+             state.emits_key_up = emits_key_up;
+             state.placeholder = self.placeholder.clone().into();
++            state.ghost_text = self.ghost_text.clone();
+             state.read_only = self.read_only;
+             state.secure = self.secure;
+             state.runs = self.runs.clone();
+@@ -612,6 +616,7 @@
+         match key {
+             "value" => self.value = value.as_str().unwrap_or_default().to_string(),
+             "placeholder" => self.placeholder = value.as_str().unwrap_or_default().to_string(),
++            "ghostText" => self.ghost_text = value.as_str().unwrap_or_default().to_owned().into(),
+             "readOnly" => self.read_only = value.as_bool().unwrap_or(false),
+             "secure" => self.secure = value.as_bool().unwrap_or(false),
+             "runs" => self.runs = Arc::new(serde_json::from_value(value).unwrap_or_default()),
+@@ -638,6 +643,7 @@
+         &[
+             "value",
+             "placeholder",
++            "ghostText",
+             "readOnly",
+             "secure",
+             "minRows",
+@@ -807,6 +813,7 @@
+     focus_handle: FocusHandle,
+     content: String,
+     placeholder: SharedString,
++    ghost_text: SharedString,
+     multiline: bool,
+     read_only: bool,
+     secure: bool,
+@@ -848,11 +855,29 @@
+     last_edit: Option<LastEdit>,
+ }
+ 
++fn can_show_ghost_text(content_len: usize, selection: &Range<usize>, secure: bool, composing: bool) -> bool {
++    !secure && !composing && selection.is_empty() && selection.end == content_len
++}
++
+ impl TextEditorState {
+     fn gutter_width(&self) -> f32 {
+         self.gutter.as_ref().map_or(0.0, |gutter| gutter.width.unwrap_or(42.0) + gutter.gap.unwrap_or(12.0))
+     }
++    fn visible_ghost_text(&self) -> &str {
++        if can_show_ghost_text(self.content.len(), &self.selected_range, self.secure, self.marked_range.is_some()) {
++            &self.ghost_text
++        } else {
++            ""
++        }
++    }
+     fn display_text(&self) -> SharedString {
++        let ghost = self.visible_ghost_text();
++        if !ghost.is_empty() {
++            let mut display = String::with_capacity(self.content.len() + ghost.len());
++            display.push_str(&self.content);
++            display.push_str(ghost);
++            return display.into();
++        }
+         if self.content.is_empty() { return self.placeholder.clone(); }
+         if self.secure {
+             self.content.chars().map(|ch| if ch == '\n' { '\n' } else { '•' }).collect::<String>().into()
+@@ -1603,7 +1628,9 @@
+ 
+     fn layout_text(&mut self, width: Pixels, style: &TextStyle, window: &mut Window) -> f32 {
+         let display = self.display_text();
+-        let is_placeholder = self.content.is_empty();
++        let ghost = self.visible_ghost_text();
++        let ghost_len = ghost.len();
++        let is_placeholder = self.content.is_empty() && ghost_len == 0;
+         let rem_size = window.rem_size();
+         let font_size = style.font_size.to_pixels(rem_size);
+         self.font_size = font_size;
+@@ -1619,8 +1646,18 @@
+         let mut runs = if is_placeholder || self.secure {
+             vec![TextRun { len: display.len(), font: style.font(), color, background_color: None, underline: None, strikethrough: None }]
+         } else {
+-            styled_runs(&display, &self.runs, style.font(), color)
++            styled_runs(&display[..display.len() - ghost_len], &self.runs, style.font(), color)
+         };
++        if ghost_len > 0 {
++            runs.push(TextRun {
++                len: ghost_len,
++                font: style.font(),
++                color: self.placeholder_color,
++                background_color: None,
++                underline: None,
++                strikethrough: None,
++            });
++        }
+         let marked_range = self.marked_range.as_ref().map(|range| self.display_offset(range.start)..self.display_offset(range.end));
+         if let Some(marked) = &marked_range {
+             let mut offset = 0;
+@@ -2211,6 +2248,20 @@
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn ghost_text_requires_an_unselected_nonsecure_end_caret_outside_composition() {
++        for (selection, secure, composing, visible) in [
++            (4..4, false, false, true),
++            (0..0, false, false, false),
++            (0..4, false, false, false),
++            (4..4, true, false, false),
++            (4..4, false, true, false),
++        ] {
++            assert_eq!(can_show_ghost_text(4, &selection, secure, composing), visible);
++        }
++        assert!(can_show_ghost_text(0, &(0..0), false, false));
++    }
++
+     fn has_binding(bindings: &[KeyBinding], keystroke: &str, action: &dyn gpui::Action) -> bool {
+         let keystroke = gpui::Keystroke::parse(keystroke).unwrap();
+         bindings.iter().any(|binding| {
+diff --git a/packages/native/js/host.ts b/packages/native/js/host.ts
+--- a/packages/native/js/host.ts
++++ b/packages/native/js/host.ts
+@@ -537,6 +537,8 @@
+   /** External editor value. Native edits apply immediately and report through onChange. */
+   value?: string
+   placeholder?: string
++  /** Visual-only completion suffix at an unselected end caret; hidden for secure inputs and IME composition. */
++  ghostText?: string
+   readOnly?: boolean
+   /** Mask display/accessibility value and prevent copying; onChange still returns the actual value. */
+   secure?: boolean
