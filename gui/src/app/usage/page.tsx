@@ -183,8 +183,8 @@ export function UsagePage({ cwd }: { cwd?: string }) {
         width: '100%',
         maxWidth: 1088,
         alignSelf: 'center',
-        paddingLeft: 32,
-        paddingRight: 32,
+        paddingLeft: 0,
+        paddingRight: 0,
         paddingBottom: view === 'daily' ? 48 : 16,
         gap: 6,
         color: colors.text,
@@ -341,14 +341,14 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                   style={segmentStyle}
                   itemStyle={{ ...itemStyle, height: 22, paddingLeft: 9, paddingRight: 9 }}
                 />
-              </div>
-              <div style={{ ...row, justifyContent: 'flex-end', gap: 14 }}>
-                {providers.map((p) => (
-                  <div key={p} style={{ ...row, gap: 5 }}>
-                    <ProviderMark provider={p} />
-                    <text style={text}>{labels[p] ?? p}</text>
-                  </div>
-                ))}
+                <div style={{ ...row, justifyContent: 'flex-end', gap: 14 }}>
+                  {providers.map((p) => (
+                    <div key={p} style={{ ...row, gap: 5 }}>
+                      <ProviderMark provider={p} />
+                      <text style={text}>{labels[p] ?? p}</text>
+                    </div>
+                  ))}
+                </div>
               </div>
               <DailyChart data={data} metric={metric} />
             </div>

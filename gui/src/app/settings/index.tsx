@@ -10,6 +10,8 @@ import { ProvidersPage } from './providers';
 import { RuntimePage } from './runtime';
 import { DataPage } from './data';
 import { useSettingsText } from './strings';
+import { HelpPage } from './help';
+import { WorktreesPage } from './worktrees';
 
 export type SettingsPageId = string;
 export const settingsPages = [
@@ -21,7 +23,9 @@ export const settingsPages = [
   ['memory', 'Memory', 'file-text'],
   ['skills', 'Skills', 'package'],
   ['usage', 'Usage', 'chart-column'],
+  ['worktrees', 'Worktrees', 'folder'],
   ['diagnostics', 'Diagnostics', 'alert'],
+  ['help', 'Help', 'file-text'],
 ] as const;
 
 export function SettingsCard({ children }: { children: ReactNode }) {
@@ -320,7 +324,7 @@ export function SettingsPage({
           height: '100%',
         }}
       >
-        <div style={{ height: 48, flexShrink: 0 }} />
+        {current !== 'skills' && <div style={{ height: 48, flexShrink: 0 }} />}
         {current === 'skills' ? (
           <SkillsPage cwd={cwd} />
         ) : (
@@ -359,6 +363,10 @@ export function SettingsPage({
                 <RuntimePage cwd={cwd} />
               ) : current === 'usage' ? (
                 <UsagePage cwd={cwd} />
+              ) : current === 'help' ? (
+                <HelpPage cwd={cwd} />
+              ) : current === 'worktrees' ? (
+                <WorktreesPage cwd={cwd} />
               ) : (
                 <DataPage page={current} cwd={cwd} />
               )}

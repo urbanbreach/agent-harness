@@ -13,17 +13,6 @@ import { pathToFileURL } from 'node:url';
 type Catalog = Methods['skills.list']['result'];
 type Skill = Catalog['skills'][number];
 const column: StyleDesc = { display: 'flex', flexDirection: 'column', minWidth: 0 };
-const sources = ['Shared', 'Claude', 'Codex', 'Cursor', 'Fx', 'OpenCode', 'Pi', 'Oh My Pi', 'Amp'];
-const sourceIcons: Record<string, string> = {
-  Claude: 'provider-claude',
-  Codex: 'provider-openai',
-  Cursor: 'provider-cursor',
-  Fx: 'provider-fx',
-  OpenCode: 'provider-opencode',
-  Pi: 'provider-pi',
-  'Oh My Pi': 'provider-ohmypi',
-  Amp: 'provider-amp',
-};
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 function updatedLabel(value: number) {
   const seconds = Math.max(0, (Date.now() - value) / 1000);
@@ -315,15 +304,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
           opacity: skill.enabled ? 1 : 0.45,
         }}
       >
-        <Icon
-          name={
-            skill.installs.length > 1
-              ? 'package'
-              : (sourceIcons[skill.installs[0]?.source ?? ''] ?? 'package')
-          }
-          size={large ? 18 : 13}
-          color={colors.text_secondary}
-        />
+        <Icon name="package" size={large ? 18 : 13} color={colors.text_secondary} />
       </div>
     );
   }
@@ -407,12 +388,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
     );
   const disabled = skills.filter((skill) => !skill.enabled).length;
   const filterSources = [
-    ...sources,
-    ...new Set(
-      skills
-        .flatMap((skill) => skill.installs.map((install) => install.source))
-        .filter((name) => !sources.includes(name)),
-    ),
+    ...new Set(skills.flatMap((skill) => skill.installs.map((install) => install.source))),
   ];
   return (
     <div style={shell}>
@@ -464,7 +440,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
           />
           <Dropdown
             outlined
-            icon={sourceIcons[source] ?? 'package'}
+            icon="package"
             label={source || 'All skills'}
             style={{ width: '100%', height: 26, justifyContent: 'space-between' }}
             items={[
@@ -485,7 +461,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                 return {
                   id: name,
                   label: `${name}${count ? ` · ${count}` : ''}`,
-                  icon: sourceIcons[name] ?? 'package',
+                  icon: 'package',
                   selected: source === name,
                   onSelect: () => {
                     setSource(name);

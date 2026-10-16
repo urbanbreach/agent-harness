@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Provider } from '../../backend/protocol';
+import { useEffect, useRef, useState } from 'react';
+import type { Notification, Provider } from '../../backend/protocol';
 import { getAppStore } from '../../store';
 import { Button, Icon, TextField } from '../../ui';
 import { useTheme } from '../../theme';
@@ -19,6 +19,9 @@ export function ProvidersPage() {
   const [apiKeyProvider, setApiKeyProvider] = useState<string>();
   const [accountId, setAccountId] = useState('');
   const [accountName, setAccountName] = useState('');
+  const activeAttempt = useRef<number | undefined>(undefined);
+  const starting = useRef(false);
+  const earlyUpdates = useRef<Extract<Notification, { method: 'auth.update' }>['params'][]>([]);
   function report(error: unknown) {
     setError(String(error));
   }
@@ -36,27 +39,39 @@ export function ProvidersPage() {
   useEffect(() => {
     void refresh();
   }, []);
+  function applyUpdate(update: Extract<Notification, { method: 'auth.update' }>['params']) {
+    if (update.attempt !== activeAttempt.current) return;
+    setMessage(update.message);
+    if (update.kind === 'result') {
+      activeAttempt.current = undefined;
+      setAttempt(undefined);
+      setInput('');
+      if (update.success) void refresh();
+    }
+  }
   useEffect(
     () =>
       backend.subscribe((notification) => {
-        if (notification.method !== 'auth.update' || notification.params.attempt !== attempt)
-          return;
-        setMessage(notification.params.message);
-        if (notification.params.kind === 'result') {
-          setAttempt(undefined);
-          setInput('');
-          if (notification.params.success) void refresh();
-        }
+        if (notification.method !== 'auth.update') return;
+        if (starting.current) earlyUpdates.current.push(notification.params);
+        else applyUpdate(notification.params);
       }),
-    [backend, attempt],
+    [backend],
   );
   async function start(args: string[], stdin?: string) {
+    starting.current = true;
+    earlyUpdates.current = [];
     try {
       setMessage('Starting sign-in…');
       const result = await backend.call('auth.start', { args, stdin });
+      activeAttempt.current = result.attempt;
       setAttempt(result.attempt);
+      for (const update of earlyUpdates.current) applyUpdate(update);
     } catch (error) {
       report(error);
+    } finally {
+      starting.current = false;
+      earlyUpdates.current = [];
     }
   }
   const url = message.match(/https?:\/\/[^\s<>]+/)?.[0];
@@ -106,17 +121,17 @@ export function ProvidersPage() {
               <div style={{ display: 'flex', flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                 {provider.methods.map((method) => (
                   <Button
-                    key={method}
+                    key={method.id}
                     disabled={attempt !== undefined}
                     onClick={() => {
-                      if (method === 'api-key') {
+                      if (method.id === 'api-key') {
                         setApiKeyProvider(provider.id);
                         setInput('');
-                      } else void start(['login', provider.id, '--method', method]);
+                      } else void start(['login', provider.id, '--method', method.id]);
                     }}
                     style={{ padding: 8, borderRadius: 7, borderColor: colors.border_strong }}
                   >
-                    {method}
+                    {method.label}
                   </Button>
                 ))}
                 {provider.connected && (
@@ -133,7 +148,7 @@ export function ProvidersPage() {
                   </Button>
                 )}
               </div>
-              {(provider.id.includes('claude') || provider.id.includes('anthropic')) && (
+              {provider.id === 'anthropic-subscription' && (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'row', gap: 8 }}>
                     <Button
@@ -248,6 +263,7 @@ export function ProvidersPage() {
                     <Button
                       onClick={() => {
                         void backend.call('auth.input', { attempt, line: null }).catch(report);
+                        activeAttempt.current = undefined;
                         setAttempt(undefined);
                       }}
                       style={{ padding: 8 }}

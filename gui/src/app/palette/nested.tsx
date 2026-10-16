@@ -243,10 +243,8 @@ export function NestedPalette({
           <TextField
             value={source}
             onChange={setSource}
+            onSubmit={() => setScan((value) => value + 1)}
             placeholder="Folder containing foreign sessions"
-            onKeyDown={(event) => {
-              if (event.key === 'enter') setScan((value) => value + 1);
-            }}
           />
           <Button onClick={() => setScan((value) => value + 1)} style={{ padding: 6 }}>
             Scan folder
@@ -283,9 +281,38 @@ export function NestedPalette({
       {error && page !== 'resume' && (
         <div style={{ padding: 16, color: colors.danger, fontSize: sp(12.5) }}>{error}</div>
       )}
-      {news !== undefined && (
+      {page === 'news' && (
         <Dialog open onClose={onClose} title="What's new">
-          <Markdown source={news} />
+          <div
+            style={{ display: 'flex', flexDirection: 'column', padding: 20, gap: 16, minHeight: 0 }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <text style={{ fontSize: sp(18), fontWeight: 500 }}>What's new</text>
+              <Button
+                aria-label="Close release notes"
+                onClick={onClose}
+                style={{ width: 28, height: 28 }}
+              >
+                <Icon name="x" size={14} />
+              </Button>
+            </div>
+            {error ? (
+              <text style={{ color: colors.danger }}>{error}</text>
+            ) : news === undefined ? (
+              <text style={{ color: colors.text_secondary }}>Loading release notes…</text>
+            ) : (
+              <div style={{ maxHeight: 480, overflowY: 'scroll' }}>
+                <Markdown source={news} />
+              </div>
+            )}
+          </div>
         </Dialog>
       )}
     </>

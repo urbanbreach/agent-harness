@@ -9,8 +9,7 @@ import { settingsPages } from '../settings';
 import { matchScore } from './search';
 import { NestedPalette, type PalettePage } from './nested';
 import type { Draft } from '../../store/store';
-import { writeClipboard } from '../../workspace/os';
-import type { Run } from '../../native';
+import { writeClipboardText, type Run } from '../../native';
 
 export interface PaletteRow {
   id: string;
@@ -99,7 +98,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
         runAction('composer.focus');
       },
     });
-    const removePages = (['rewind', 'resume', 'history', 'stash'] as const).map((page) =>
+    const removePages = (['rewind', 'resume', 'tree', 'history', 'stash'] as const).map((page) =>
       registerAction({
         id: `session.${page}`,
         label:
@@ -107,9 +106,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
             ? 'Rewind conversation…'
             : page === 'resume'
               ? 'Resume…'
-              : page === 'history'
-                ? 'Prompt history…'
-                : 'Stashed drafts…',
+              : page === 'tree'
+                ? 'Session tree'
+                : page === 'history'
+                  ? 'Prompt history…'
+                  : 'Stashed drafts…',
         run: () => {
           requestedPage.current = page;
           runAction('shell.openPalette');
@@ -223,6 +224,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
     'composer.cancelEdit',
     'session.rewind',
     'session.resume',
+    'session.tree',
     'session.history',
     'session.stash',
   ];
@@ -265,9 +267,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
       section: 'Commands',
       run: () =>
         execute(() => {
-          void writeClipboard(state.selectedTask!)
-            .then(() => showToast('Task ID copied', 'success'))
-            .catch((error) => showToast(String(error)));
+          if (!renderer) return;
+          writeClipboardText(renderer, state.selectedTask!);
+          showToast('Task ID copied', 'success');
         }),
     });
   const selectedSession = Object.values(state.sessions)
@@ -291,9 +293,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                     : [],
               )
               .join('\n\n') ?? '';
-          void writeClipboard(transcript)
-            .then(() => showToast('Transcript copied', 'success'))
-            .catch((error) => showToast(String(error)));
+          if (!renderer) return;
+          writeClipboardText(renderer, transcript);
+          showToast('Transcript copied', 'success');
         }),
     });
     rows.push({
@@ -344,6 +346,13 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
     ['news', "What's new", 'file-text'],
   ] as const)
     rows.push({ id, label, icon, section: 'Commands', run: () => nested(id) });
+  rows.push({
+    id: 'help',
+    label: 'Help',
+    icon: 'circle-help',
+    section: 'Commands',
+    run: () => execute(() => runAction('settings.help')),
+  });
   for (const [id, label, icon] of settingsPages)
     rows.push({
       id: `settings.${id}`,
@@ -438,13 +447,31 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
   const [nestedRows, setNestedRows] = useState<PaletteRow[]>([]);
   const displayed = page === 'root' ? rows : nestedRows;
   const active = Math.min(selected, Math.max(0, displayed.length - 1));
+  if (page === 'news')
+    return (
+      <NestedPalette
+        page={page}
+        query=""
+        onRows={setNestedRows}
+        onClose={onClose}
+        onPage={nested}
+      />
+    );
   return (
     <DismissableLayer
       onEscapeKeyDown={escape}
       initialFocus={() => input.current?.id ?? null}
       finalFocus={(previous) => previousFocus.current ?? previous}
     >
-      <anchored position={{ x: 0, y: 0 }} fit="snap" snapMargin={0} deferred priority={3}>
+      <anchored
+        position={{ x: 0, y: 0 }}
+        fit="snap"
+        snapMargin={0}
+        deferred
+        priority={3}
+        occlude={false}
+        style={{ backgroundColor: 'transparent' }}
+      >
         <div
           onMouseDown={(event) => {
             const bounds = card.current && renderer?.getElementBounds?.(card.current.id);
@@ -461,6 +488,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               onClose();
           }}
           style={{
+            pointerEvents: 'auto',
             display: 'flex',
             flexDirection: 'column',
             width: window.width,
@@ -475,6 +503,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
           <div
             ref={card}
             style={{
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
               width: Math.min(680, window.width - 48),
               maxHeight: Math.min(480, window.height - 108),
               backgroundColor: colors.raised,
@@ -493,10 +524,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
           >
             <TextField
               ref={input}
-              icon="search"
-              iconSize={18}
               value={query}
               onChange={setQuery}
+              onSubmit={() => displayed[active]?.run()}
               placeholder={
                 page === 'root'
                   ? 'Search tasks or run a command…'
@@ -505,6 +535,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                     : 'Search…'
               }
               style={{
+                flexShrink: 0,
                 height: 60,
                 paddingLeft: 19,
                 paddingRight: 19,
@@ -518,17 +549,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               onKeyDown={(event) => {
                 const key = event.key ?? '';
                 if (
-                  ![
-                    'down',
-                    'up',
-                    'tab',
-                    'home',
-                    'end',
-                    'pagedown',
-                    'pageup',
-                    'enter',
-                    'escape',
-                  ].includes(key) &&
+                  !['down', 'up', 'tab', 'home', 'end', 'pagedown', 'pageup', 'escape'].includes(
+                    key,
+                  ) &&
                   !(event.modifiers?.ctrl && ['n', 'p'].includes(key))
                 )
                   return;
@@ -536,10 +559,6 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                 event.stopPropagation();
                 if (key === 'escape') {
                   escape();
-                  return;
-                }
-                if (key === 'enter') {
-                  displayed[active]?.run();
                   return;
                 }
                 if (!displayed.length) return;
@@ -571,7 +590,16 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                 onPage={nested}
               />
             )}
-            <div style={{ overflowY: 'scroll', padding: 8, minHeight: 0, flexShrink: 1 }}>
+            <div
+              style={{
+                overflowY: 'scroll',
+                paddingLeft: 8,
+                paddingRight: 8,
+                paddingBottom: 8,
+                minHeight: 0,
+                flexShrink: 1,
+              }}
+            >
               {displayed.map((row, index) => (
                 <div key={row.id}>
                   {index === 0 || displayed[index - 1]?.section !== row.section ? (
@@ -623,7 +651,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                             textOverflow: 'ellipsis',
                           }}
                         >
-                          {row.label}
+                          {row.label.replace(/\s+/g, ' ')}
                         </text>
                         {row.detail && (
                           <text
@@ -664,7 +692,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                   </Button>
                 </div>
               ))}
-              {!displayed.length && page !== 'resume' && page !== 'news' && (
+              {!displayed.length && page !== 'resume' && (
                 <div
                   style={{ height: 180, alignItems: 'center', justifyContent: 'center', gap: 12 }}
                 >

@@ -5,6 +5,7 @@ import { useTheme } from '../../theme';
 import { Button, Switch, TextField, useToast } from '../../ui';
 import { Markdown } from '../../markdown';
 import { SettingsCard, SettingsRow } from './index';
+import { MaintenanceActions } from './maintenance';
 
 export function DataPage({ page, cwd }: { page: string; cwd: string }) {
   const { colors, sp } = useTheme();
@@ -188,6 +189,7 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
           />
         ))}
       </SettingsCard>
+      <MaintenanceActions cwd={cwd} />
     </>
   );
 }
