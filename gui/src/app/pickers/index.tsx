@@ -62,6 +62,7 @@ export function filterProjects(
 export function PickerRow({
   label,
   icon,
+  iconColor,
   checked,
   highlighted,
   disabled,
@@ -71,6 +72,7 @@ export function PickerRow({
 }: {
   label: string;
   icon?: IconName;
+  iconColor?: string;
   checked?: boolean;
   highlighted?: boolean;
   disabled?: boolean;
@@ -110,7 +112,11 @@ export function PickerRow({
       }}
     >
       {icon && (
-        <Icon name={icon} size={12} color={disabled ? colors.text_ghost : colors.text_secondary} />
+        <Icon
+          name={icon}
+          size={12}
+          color={disabled ? colors.text_ghost : (iconColor ?? colors.text_secondary)}
+        />
       )}
       <text
         style={{
@@ -235,6 +241,7 @@ export function ProjectPicker(
         side={props.site === 'composer' ? 'top' : 'bottom'}
         align="start"
         gap={4}
+        offset={{ x: 1, y: 0 }}
         fit="switch"
         snapMargin={8}
         deferred

@@ -162,7 +162,7 @@ export function Menu({
         position={position}
         side={side}
         align="start"
-        gap={side === 'right' ? -4 : 4}
+        gap={position ? 0 : side === 'right' ? -4 : 4}
         fit="switch"
         snapMargin={8}
         deferred
@@ -258,7 +258,7 @@ export function Menu({
                 style={{
                   ...row,
                   position: 'relative',
-                  minHeight: 30,
+                  minHeight: 26,
                   marginLeft: 4,
                   marginRight: 4,
                   paddingLeft: 8,
@@ -274,8 +274,8 @@ export function Menu({
                       : colors.text_secondary,
                   backgroundColor: !disabled && highlight === i ? colors.overlay_strong : undefined,
                   hover: disabled ? undefined : { backgroundColor: colors.overlay },
-                  fontSize: sp(13),
-                  lineHeight: sp(16),
+                  fontSize: sp(12.5),
+                  lineHeight: sp(15),
                   fontWeight: item.selected ? 500 : 400,
                   ...itemStyle,
                 }}

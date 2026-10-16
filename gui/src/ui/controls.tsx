@@ -153,12 +153,25 @@ export interface MenuChipProps extends ButtonProps {
   label?: string;
   icon?: IconName;
   iconColor?: string;
+  iconSize?: number;
   outlined?: boolean;
   open?: boolean;
   chevron?: boolean;
 }
 export const MenuChip = forwardRef<PublicInstance, MenuChipProps>(function MenuChip(
-  { label, icon, iconColor, outlined, open, chevron = true, children, style, disabled, ...props },
+  {
+    label,
+    icon,
+    iconColor,
+    iconSize = 12,
+    outlined,
+    open,
+    chevron = true,
+    children,
+    style,
+    disabled,
+    ...props
+  },
   ref,
 ) {
   const { colors, sp } = useTheme();
@@ -181,9 +194,14 @@ export const MenuChip = forwardRef<PublicInstance, MenuChipProps>(function MenuC
         ...style,
       }}
     >
-      {icon && <Icon name={icon} size={12} color={iconColor} />}
+      {icon && <Icon name={icon} size={iconSize} color={iconColor} />}
       <text
-        style={{ ...ellipsis, color: colors.text_secondary, fontSize: sp(13), lineHeight: sp(16) }}
+        style={{
+          ...ellipsis,
+          color: colors.text_secondary,
+          fontSize: style?.fontSize ?? sp(13),
+          lineHeight: style?.lineHeight ?? sp(16),
+        }}
       >
         {label ?? children}
       </text>

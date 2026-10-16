@@ -30,7 +30,7 @@ export function Welcome({
         justifyContent: 'center',
         paddingLeft: noProject ? 32 : 34,
         paddingRight: 32,
-        paddingBottom: noProject ? 47 : 51,
+        paddingBottom: noProject ? 46 : 51,
       }}
     >
       <Icon name="sparkle" size={noProject ? 24 : 20} color={colors.accent} />

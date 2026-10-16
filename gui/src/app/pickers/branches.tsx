@@ -192,6 +192,7 @@ export function BranchSelector(props: BranchSelectorProps) {
             side="top"
             align="start"
             gap={4}
+            offset={{ x: 1, y: 0 }}
             fit="switch"
             snapMargin={8}
             deferred
@@ -228,7 +229,14 @@ export function BranchSelector(props: BranchSelectorProps) {
                 <div style={{ padding: 14, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ ...row, gap: 8 }}>
                     <Icon name="plus" size={14} />
-                    <text style={{ fontSize: sp(13), fontWeight: 500, color: colors.text }}>
+                    <text
+                      style={{
+                        fontSize: sp(13),
+                        lineHeight: sp(16),
+                        fontWeight: 500,
+                        color: colors.text,
+                      }}
+                    >
                       Create and checkout new branch
                     </text>
                   </div>
@@ -250,9 +258,17 @@ export function BranchSelector(props: BranchSelectorProps) {
                       paddingRight: 10,
                       borderRadius: 9,
                       backgroundColor: colors.surface,
+                      borderColor: colors.border_strong,
                     }}
                   />
-                  <text style={{ marginTop: 9, fontSize: sp(12.5), color: colors.text_tertiary }}>
+                  <text
+                    style={{
+                      marginTop: 9,
+                      fontSize: sp(12.5),
+                      lineHeight: sp(16),
+                      color: colors.text_tertiary,
+                    }}
+                  >
                     Press Return to create · Esc to cancel
                   </text>
                 </div>
@@ -320,6 +336,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                       branches.map((branch, index) => (
                         <PickerRow
                           key={branch.name}
+                          iconColor={colors.text}
                           rowRef={(instance) => {
                             if (instance) rows.current.set(index, instance);
                             else rows.current.delete(index);

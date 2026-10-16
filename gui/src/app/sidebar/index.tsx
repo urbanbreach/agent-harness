@@ -410,6 +410,8 @@ export function Sidebar(props: SidebarProps) {
   }>();
   const actionStyle: StyleDesc = {
     height: 32,
+    borderWidth: 0,
+    focusVisible: { borderWidth: 1 },
     paddingLeft: 4,
     paddingRight: 4,
     borderRadius: 7,
@@ -462,7 +464,7 @@ export function Sidebar(props: SidebarProps) {
           </div>
         </div>
       )}
-      <div style={{ paddingLeft: 9, paddingRight: 11, flexShrink: 0 }}>
+      <div style={{ paddingLeft: 10, paddingRight: 10, flexShrink: 0 }}>
         <Button onClick={() => props.onNewTask(state.selectedProject)} style={actionStyle}>
           <div style={{ ...row, width: 20, justifyContent: 'center' }}>
             <Icon name="compose" size={14} color={colors.text_secondary} />
@@ -494,7 +496,7 @@ export function Sidebar(props: SidebarProps) {
               setOffset(top);
             }
           }}
-          style={{ flexGrow: 1, minHeight: 0, paddingLeft: 9, paddingRight: 11 }}
+          style={{ flexGrow: 1, minHeight: 0, paddingLeft: 10, paddingRight: 10 }}
         >
           {entries.map((entry, index) => {
             if (entry.kind === 'space')
@@ -556,7 +558,13 @@ export function Sidebar(props: SidebarProps) {
                   key={group.key}
                   onMouseEnter={() => setHoverGroup(group.key)}
                   onMouseLeave={() => setHoverGroup(undefined)}
-                  style={{ ...row, height: 30, paddingRight: 8, position: 'relative' }}
+                  style={{
+                    ...row,
+                    height: 30,
+                    paddingBottom: 2,
+                    paddingRight: 8,
+                    position: 'relative',
+                  }}
                 >
                   {grouping === 'project' && !closed && (
                     <div
@@ -585,6 +593,8 @@ export function Sidebar(props: SidebarProps) {
                     }}
                     style={{
                       height: 28,
+                      borderWidth: 0,
+                      focusVisible: { borderWidth: 1 },
                       flexGrow: 1,
                       minWidth: 0,
                       paddingLeft: 8,
@@ -607,8 +617,6 @@ export function Sidebar(props: SidebarProps) {
                     <text
                       style={{
                         ...ellipsis,
-                        position: 'relative',
-                        top: -1,
                         fontSize: sp(13),
                         fontWeight: 500,
                         color: colors.text_secondary,
@@ -623,6 +631,7 @@ export function Sidebar(props: SidebarProps) {
                         name="compose"
                         label={`New task in ${group.label}`}
                         size={14}
+                        color={colors.text_secondary}
                         onFocus={() => setFocusGroup(group.key)}
                         onBlur={() => setFocusGroup(undefined)}
                         onClick={() => props.onNewTask(group.project?.id)}
@@ -644,6 +653,7 @@ export function Sidebar(props: SidebarProps) {
                             name="list-filter"
                             label="Sidebar options"
                             size={14}
+                            color={colors.text_secondary}
                             onClick={() => setOptions(!options)}
                             style={{
                               width: 20,
@@ -665,6 +675,7 @@ export function Sidebar(props: SidebarProps) {
                           name="folder-new"
                           label="New project"
                           size={14}
+                          color={colors.text_secondary}
                           onClick={props.onOpenProject}
                           style={{ width: 20, height: 22, marginLeft: 2 }}
                         />
@@ -775,6 +786,8 @@ export function Sidebar(props: SidebarProps) {
                     alignItems: 'stretch',
                     justifyContent: 'center',
                     height: 51,
+                    borderWidth: 0,
+                    focusVisible: { borderWidth: 1 },
                     gap: 4,
                     borderRadius: 7,
                     paddingLeft: grouping === 'project' ? 28 : 8,
@@ -942,7 +955,7 @@ export function Sidebar(props: SidebarProps) {
           }}
         />
       </div>
-      <div style={{ ...row, height: 40, paddingLeft: 9, paddingRight: 11, flexShrink: 0 }}>
+      <div style={{ ...row, height: 40, paddingLeft: 10, paddingRight: 10, flexShrink: 0 }}>
         <Tooltip content="Settings">
           <IconButton
             name="settings"

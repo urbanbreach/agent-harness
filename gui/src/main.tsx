@@ -587,20 +587,26 @@ function Application() {
             }
             tasks={rows.map((task) => {
               const catalog = state.models[task.cwd] ?? state.models[task.projectCwd ?? task.cwd];
-              const model = catalog?.models.find(
-                (entry) =>
-                  entry.model === task.catalog.provider_model ||
-                  `${entry.provider}/${entry.model}` === task.catalog.provider_model,
-              );
+              const storedModel = task.catalog.provider_model ?? '';
+              const bareModel = storedModel.includes('/')
+                ? storedModel.slice(storedModel.indexOf('/') + 1)
+                : storedModel;
+              const model =
+                catalog?.models.find(
+                  (entry) => `${entry.provider}/${entry.model}` === storedModel,
+                ) ?? catalog?.models.find((entry) => entry.model === bareModel);
               return {
                 id: task.runId,
                 title: taskTitle(task, state.views[task.runId]),
                 projectName: state.projects.find(
                   (value) => value.cwd === (task.projectCwd ?? task.cwd),
                 )?.name,
-                model:
-                  model?.modelLabel ?? model?.label ?? task.catalog.provider_model ?? undefined,
-                provider: model?.provider,
+                model: model?.model ?? (bareModel || undefined),
+                provider:
+                  model?.provider ??
+                  (storedModel.includes('/')
+                    ? storedModel.slice(0, storedModel.indexOf('/'))
+                    : undefined),
                 providerName: model?.providerLabel,
                 branch: task.branch ?? undefined,
                 lastReplyMs: task.catalog.last_updated_at
@@ -621,6 +627,7 @@ render(<Application />, {
   ...initialWindow,
   title: 'Harness',
   appId: 'Harness',
+  keyboardFocusDim: false,
   minWidth: 980,
   minHeight: 680,
 });

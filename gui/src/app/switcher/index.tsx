@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { DismissableLayer, useWindowSize, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
+import { providerColor as providerTint } from '../../theme/colors';
 import { Icon, ellipsis, row } from '../../ui';
 import type { IconName } from '../../ui/icon-names';
 import { TaskSwitcherController } from './controller';
@@ -28,11 +29,6 @@ export interface TaskSwitcherProps {
   restoreFocusId?: number;
   now?: number;
 }
-const providerColors: Record<string, string> = {
-  claude: '#D97757',
-  anthropic: '#D97757',
-  deepseek: '#4D6BFE',
-};
 const providerIcons: Record<string, IconName> = {
   claude: 'provider-claude',
   anthropic: 'provider-claude',
@@ -101,6 +97,7 @@ export function TaskSwitcher({
               flexShrink: 0,
               padding: 8,
               borderRadius: 26,
+              keyboardFocusDim: false,
               borderWidth: 1,
               borderColor: colors.border_strong,
               backgroundColor: colors.raised,
@@ -124,7 +121,7 @@ export function TaskSwitcher({
                   const highlighted = id === state.highlightedId;
                   const provider = (task.provider || '').toLowerCase();
                   const providerName = task.providerName || task.provider || 'Harness';
-                  const providerColor = providerColors[provider] || colors.text;
+                  const providerColor = providerTint(provider, colors);
                   const providerIcon = providerIcons[provider] ?? 'sparkle';
                   const status = task.status || 'idle';
                   const statusIcon =

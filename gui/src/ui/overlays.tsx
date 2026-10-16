@@ -113,7 +113,7 @@ export function Toast({
         position={position}
         side="bottom"
         align="center"
-        gap={56}
+        gap={55.5}
         fit="snap"
         snapMargin={20}
         deferred

@@ -44,10 +44,15 @@ export function Scrollbar({
       previous.current = offset;
       return;
     }
-    if (Math.abs(previous.current - offset) <= 0.5) return;
-    previous.current = offset;
-    revealUntil.current = Date.now() + 900;
-    setOpacity(1);
+    if (Math.abs(previous.current - offset) > 0.5) {
+      previous.current = offset;
+      revealUntil.current = Date.now() + 900;
+      setOpacity(1);
+    }
+    if (Date.now() >= revealUntil.current + 350) {
+      setOpacity(0);
+      return;
+    }
     const timer = setInterval(() => {
       const next = Math.max(0, Math.min(1, 1 - (Date.now() - revealUntil.current) / 350));
       setOpacity(next);
