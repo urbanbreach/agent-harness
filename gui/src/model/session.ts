@@ -299,9 +299,13 @@ export function applyUpdate(view: SessionView, update: Update): SessionView {
     case 'status':
       return view.statusText === update.text ? view : { ...view, statusText: update.text };
     case 'notice':
-      return notice(view, `notice:${view.entries.length}`, update.level, update.message, 0);
+      return view.turns.some((turn) => turn.status === 'working' || turn.status === 'queued')
+        ? notice(view, `notice:${view.entries.length}`, update.level, update.message, 0)
+        : view;
     case 'modelNotice':
-      return notice(view, `model:${view.entries.length}`, 'info', update.message, 0, 'model');
+      return view.turns.some((turn) => turn.status === 'working' || turn.status === 'queued')
+        ? notice(view, `model:${view.entries.length}`, 'info', update.message, 0, 'model')
+        : view;
     case 'yolo':
       return { ...view, yolo: update.enabled };
     case 'yoloFailed':

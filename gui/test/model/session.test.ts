@@ -65,6 +65,25 @@ const answer = event(3, {
 });
 
 describe('session projection', () => {
+  test('startup notices do not alter a completed transcript on continuation', () => {
+    const completed = projectEvents([
+      prompt,
+      start,
+      answer,
+      event(4, {
+        event_type: 'task_completed',
+        data: { task_id: 'turn', result_summary: 'done', result_digest: '', metadata: null },
+      }),
+    ]);
+    for (const update of [
+      { kind: 'modelNotice', message: 'Selected prompt: default' },
+      { kind: 'notice', level: 'info', message: 'Session resumed' },
+    ] as const) {
+      expect(applyUpdate(completed, update).entries).toEqual(completed.entries);
+      const active = projectEvents([prompt, start]);
+      expect(applyUpdate(active, update).entries.at(-1)?.kind).toBe('notice');
+    }
+  });
   test('child-agent conversation stays out of the parent transcript while lifecycle remains visible', () => {
     const childPrompt = event(4, {
       event_type: 'user_message_submitted',
