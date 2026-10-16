@@ -2,20 +2,16 @@ use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
 
-use harness_core::event::{
-    ActorKind, EventActor, EventV1, SessionTitleUpdatedEvent, SCHEMA_VERSION,
-};
+use harness_core::event::EventV1;
 use harness_core::session::AssistantPart;
 use harness_core::store::{
-    create_private_dir, open_private_file, validate_session_id, write_private_atomic,
-    EventEnvelopeWithoutSeqV1, EventStore, Journal,
+    create_private_dir, open_private_file, validate_session_id, write_private_atomic, Journal,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::Server;
+use super::{required, Server};
 use crate::replay::{inspect_session_catalog, read_bounded_history};
 
 // Serialize read-modify-write across concurrent pin requests, without creating a lock file.
@@ -38,12 +34,6 @@ pub(super) async fn handle(
     })
 }
 
-fn string<'a>(params: &'a Value, key: &str) -> Result<&'a str, String> {
-    params[key]
-        .as_str()
-        .ok_or_else(|| format!("invalid_params: {key} must be a string"))
-}
-
 fn absolute_path(value: &str, key: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(value);
     if !path.is_absolute() {
@@ -53,11 +43,11 @@ fn absolute_path(value: &str, key: &str) -> Result<PathBuf, String> {
 }
 
 fn cwd(params: &Value) -> Result<PathBuf, String> {
-    absolute_path(string(params, "cwd")?, "cwd")
+    absolute_path(required(params, "cwd")?, "cwd")
 }
 
 fn run_dir(params: &Value) -> Result<PathBuf, String> {
-    absolute_path(string(params, "runDir")?, "runDir")
+    absolute_path(required(params, "runDir")?, "runDir")
 }
 
 async fn blocking<T: Send + 'static>(
@@ -103,7 +93,7 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
 }
 
 async fn state(server: &Server, method: &str, params: &Value) -> Result<Value, String> {
-    let name = string(params, "name")?;
+    let name = required(params, "name")?;
     // Reject names before resolving settings or touching storage.
     let relative = state_path(Path::new(""), name)?;
     let value = if method == "state.write" {
@@ -192,7 +182,7 @@ async fn events(params: &Value) -> Result<Value, String> {
 }
 
 async fn search(server: &Server, params: &Value) -> Result<Value, String> {
-    let query = string(params, "query")?.to_lowercase();
+    let query = required(params, "query")?.to_lowercase();
     let limit = params["limit"]
         .as_u64()
         .and_then(|value| usize::try_from(value).ok())
@@ -291,7 +281,7 @@ fn snippet(text: &str, query: &str) -> Option<String> {
 
 async fn rename(server: &Server, params: &Value) -> Result<Value, String> {
     let path = run_dir(params)?;
-    let title = string(params, "title")?.to_owned();
+    let title = required(params, "title")?.to_owned();
     if title.trim().is_empty() || title.len() > 1024 {
         return Err("invalid_params: invalid session title".into());
     }
@@ -309,40 +299,39 @@ async fn rename(server: &Server, params: &Value) -> Result<Value, String> {
             .await
             .map_err(|error| error.to_string())?;
     } else {
-        blocking(move || rename_idle(&path, title)).await?;
+        let inspect_path = path.clone();
+        let workspace = blocking(move || {
+            Ok(crate::replay::inspect_session(&inspect_path)?
+                .catalog
+                .workspace_root)
+        })
+        .await?
+        .map(PathBuf::from)
+        .unwrap_or_else(|| server.config_context.discovery.current_dir.clone());
+        let settings = server.settings(&workspace).await?;
+        blocking(move || {
+            let deps = harness::CliDeps::real()
+                .with_current_dir(workspace)
+                .with_env("HARNESS_HOME", settings.data_dir.to_string_lossy());
+            let config = settings.config.unwrap_or_default();
+            rename_idle(&path, title, &config, &deps)
+        })
+        .await?;
     }
     Ok(Value::Null)
 }
 
-fn rename_idle(path: &Path, title: String) -> Result<(), String> {
+fn rename_idle(
+    path: &Path,
+    title: String,
+    config: &harness_core::config::HarnessConfig,
+    deps: &harness::CliDeps,
+) -> Result<(), String> {
     let (parent, id) = session_location(path)?;
-    let journal = Journal::open_existing(parent, id, false).map_err(|error| error.to_string())?;
-    let events = read_bounded_history(path)?;
-    let last = events.last().ok_or("session journal is empty")?;
-    if last.run_id.as_str() != id {
-        return Err("session directory and journal identity disagree".into());
-    }
-    let timestamp = humantime::format_rfc3339_millis(SystemTime::now()).to_string();
-    let identity = format!(
-        "{id}:{}:{timestamp}:{title}",
-        journal.next_seq().map_err(|error| error.to_string())?
-    );
-    journal
-        .append(EventEnvelopeWithoutSeqV1 {
-            schema_version: SCHEMA_VERSION,
-            event_id: uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, identity.as_bytes())
-                .to_string(),
-            run_id: last.run_id.clone(),
-            mono_ms: last.mono_ms.saturating_add(1),
-            ts: Some(timestamp),
-            actor: EventActor::new(ActorKind::System, None),
-            correlation_id: None,
-            causation_id: None,
-            stream_key: None,
-            payload: EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent { title }),
-        })
-        .map_err(|error| error.to_string())?;
-    Ok(())
+    let store = harness_core::auth::CredentialStore::from_lookup(&|name| deps.env_var_value(name));
+    let secrets = crate::bootstrap::secret_values(config, deps, store.as_ref())?;
+    harness_core::session_title::update_offline_title(parent, id, title, secrets)
+        .map_err(|error| error.to_string())
 }
 
 fn session_location(path: &Path) -> Result<(&Path, &str), String> {
@@ -410,7 +399,7 @@ fn load_pins(path: &Path) -> Result<BTreeSet<String>, String> {
 async fn pins(server: &Server, method: &str, params: &Value) -> Result<Value, String> {
     let cwd = cwd(params)?;
     let change = if method == "sessions.setPinned" {
-        let run_id = string(params, "runId")?.to_owned();
+        let run_id = required(params, "runId")?.to_owned();
         validate_session_id(&run_id).map_err(|error| format!("invalid_params: {error}"))?;
         let pinned = params["pinned"]
             .as_bool()
@@ -445,77 +434,5 @@ async fn pins(server: &Server, method: &str, params: &Value) -> Result<Value, St
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn state_documents_are_lazy_and_names_cannot_escape_storage() -> Result<(), String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
-        for name in [
-            "",
-            "../outside",
-            "a/b",
-            "Uppercase",
-            "a.json",
-            "1state",
-            &"a".repeat(33),
-        ] {
-            assert!(
-                state_path(directory.path(), name).is_err(),
-                "accepted {name:?}"
-            );
-        }
-        let path = state_path(directory.path(), "workspace-2")?;
-        assert_eq!(read_json(&path)?, None);
-        assert!(!directory.path().join("gui").exists());
-        write_json(&path, &json!({"tabs": ["one"]}))?;
-        write_json(&path, &json!({"tabs": ["two"]}))?;
-        assert_eq!(read_json(&path)?, Some(json!({"tabs": ["two"]})));
-        Ok(())
-    }
-
-    #[test]
-    fn idle_rename_appends_without_rewriting_history() -> Result<(), String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
-        let journal = Journal::open(directory.path(), "saved-run", false)
-            .map_err(|error| error.to_string())?;
-        let original = journal
-            .append(EventEnvelopeWithoutSeqV1 {
-                schema_version: SCHEMA_VERSION,
-                event_id: "original-title".into(),
-                run_id: "saved-run".into(),
-                mono_ms: 10,
-                ts: None,
-                actor: EventActor::new(ActorKind::System, None),
-                correlation_id: None,
-                causation_id: None,
-                stream_key: None,
-                payload: EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
-                    title: "Original".into(),
-                }),
-            })
-            .map_err(|error| error.to_string())?;
-        drop(journal);
-        let path = directory.path().join("saved-run");
-        rename_idle(&path, "Renamed".into())?;
-        let events = read_bounded_history(&path)?;
-        assert_eq!(events.len(), 2);
-        assert_eq!(events.first(), Some(&original));
-        let renamed = events.get(1).ok_or("missing title update")?;
-        assert_eq!(renamed.seq, original.seq + 1);
-        assert_eq!(
-            renamed.payload,
-            EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
-                title: "Renamed".into(),
-            })
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn search_excerpt_keeps_unicode_matches_in_context() {
-        let text = format!("{}İstanbul needle after", "界".repeat(300));
-        let excerpt = snippet(&text, "needle");
-        assert!(excerpt.is_some_and(|value| value.contains("needle") && value.starts_with("...")));
-    }
-}
+#[path = "admin_tests.rs"]
+mod tests;

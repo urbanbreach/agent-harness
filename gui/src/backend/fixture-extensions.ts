@@ -67,6 +67,11 @@ export class FixtureExtensions {
       ],
     });
     switch (method) {
+      case 'sessions.attachment': {
+        const blob = this.blobs.get(p.ref);
+        if (!blob) throw new Error('Fixture attachment not found');
+        return { dataBase64: blob.dataBase64 };
+      }
       case 'worktrees.list':
         return { repository_root: p.cwd, managed_count: 0, worktrees: [] };
       case 'worktrees.remove': {

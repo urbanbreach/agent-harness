@@ -1,13 +1,8 @@
-// allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::coord::{spawn_coordinator, CoordinatorHandle};
-use harness_core::proj::SessionModeSource;
-use harness_core::redact::DefaultRedactor;
-use harness_core::session_title::create_default_title;
+use harness_core::coord::CoordinatorHandle;
 use harness_tui::app::{
     prompt_history_path_for_session_dir, set_pending_live_launch_metadata,
     set_pending_settings_project_config, LaunchMetadata,
@@ -19,14 +14,10 @@ use harness_tui::{
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::cli_config::apply_runtime_metadata;
-use crate::logging;
-use crate::scenarios::{supervisor_actor, ScenarioName};
+use crate::scenarios::ScenarioName;
 
 use super::auth_backend::TuiAuthBackendContext;
 use super::coordinator_warmup::LiveCoordinatorConfigWarmup;
-use super::live_events::forward_events_to_tui;
-use super::live_intents::{handle_ui_intents, LiveAgentTarget};
 use super::live_options::new_live_tui_options;
 use super::live_runtime::bootstrap_new_live_runtime;
 use super::live_settings::{launch_metadata_for_mode, prepare_new_live_workspace, LiveSettings};
@@ -35,7 +26,7 @@ use super::session_history::load_startup_session_history_entries;
 use super::workflow::{
     build_live_ui_intent_router, take_selected_workflow, InteractiveWorkflow, LaunchSelection,
 };
-use super::{await_task, stop_live_source_run, unique_interactive_run_id, user_actor, TuiCommand};
+use super::{await_task, stop_live_source_run, unique_interactive_run_id, TuiCommand};
 
 pub(super) async fn run_new_worktree_live_session(
     cmd: &TuiCommand,
@@ -297,21 +288,24 @@ async fn run_new_live_runtime(
     let _ = live_update_tx.send(LiveUpdate::Status("starting new session".to_string()));
     let bootstrap_error_tx = live_update_tx.clone();
     let session_history_update_tx = live_update_tx.clone();
-    let workspace = prepare_new_live_workspace(&settings, demo_mode, &run_id_override)?;
+    let bootstrap_result = async {
+        let workspace = prepare_new_live_workspace(&settings, demo_mode, &run_id_override)?;
+        bootstrap_new_live_runtime(
+            &settings,
+            demo_mode,
+            workspace,
+            run_id_override,
+            launch_metadata,
+            coordinator_config_warmup,
+            launch_selection,
+            live_update_tx,
+            intent_rx,
+        )
+        .await
+    }
+    .await;
 
-    match bootstrap_new_live_runtime(
-        &settings,
-        demo_mode,
-        workspace,
-        run_id_override,
-        launch_metadata,
-        coordinator_config_warmup,
-        launch_selection,
-        live_update_tx,
-        intent_rx,
-    )
-    .await
-    {
+    match bootstrap_result {
         Ok(runtime) => {
             let session_history_task = spawn_session_history_refresh(
                 settings.session_dir.clone(),
@@ -379,4 +373,75 @@ async fn runtime_bootstrap_error_notice(
 ) -> Result<(), String> {
     let _ = shutdown_rx.await;
     Err(err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::task::Poll;
+
+    #[tokio::test]
+    async fn workspace_failure_notifies_ui_and_waits_for_shutdown(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let session_dir = directory.path().join("not-a-directory");
+        std::fs::write(
+            session_dir.with_extension("workspaces"),
+            "block workspace creation",
+        )?;
+        let settings = LiveSettings {
+            config: None,
+            config_path: None,
+            session_dir,
+            data_dir: directory.path().join("home"),
+            workspace_root: directory.path().into(),
+            shell_allowlist: Default::default(),
+            deterministic: false,
+            yolo: false,
+            seed: 0,
+            config_digest: "test".into(),
+            launch_metadata: LaunchMetadata::default(),
+            launch_mode_label: None,
+            toggles: Default::default(),
+        };
+        let warmup = LiveCoordinatorConfigWarmup::start(&settings, true);
+        let selection = Arc::new(std::sync::Mutex::new(
+            super::super::workflow::LaunchSelectionState {
+                metadata: LaunchMetadata::default(),
+                config_digest: "test".into(),
+            },
+        ));
+        let (updates_tx, updates_rx) = live_update_channel();
+        let (_intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let runtime = run_new_live_runtime(
+            settings,
+            true,
+            "workspace-failure".into(),
+            LaunchMetadata::default(),
+            warmup,
+            selection,
+            updates_tx,
+            intent_rx,
+            shutdown_rx,
+        );
+        tokio::pin!(runtime);
+        std::future::poll_fn(|context| {
+            assert!(runtime.as_mut().poll(context).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        assert!(matches!(updates_rx.try_recv()?, LiveUpdate::Status(_)));
+        let LiveUpdate::OperatorNotice { message, level } = updates_rx.try_recv()? else {
+            return Err("missing workspace failure notice".into());
+        };
+        assert!(matches!(level, OperatorNoticeLevel::Error));
+        assert!(message.starts_with("new session failed: "));
+        shutdown_tx
+            .send(())
+            .map_err(|_| "runtime stopped before shutdown")?;
+        let error = runtime.await.err().ok_or("workspace failure was ignored")?;
+        assert_eq!(message, format!("new session failed: {error}"));
+        Ok(())
+    }
 }

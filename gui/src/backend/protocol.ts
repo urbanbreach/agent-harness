@@ -73,7 +73,12 @@ export type SessionRow = {
   createdAt?: string;
   live: boolean;
 };
-export type ModelSelection = { profile: string; model?: string; variant?: string };
+export type ModelSelection = {
+  profile: string;
+  model?: string;
+  variant?: string;
+  provider?: string;
+};
 export type AccessMode = 'supervised' | 'autoEdits' | 'auto' | 'full';
 export type FileTagSource = { start: number; end: number; value: string };
 export type SelectedFileTag = {
@@ -303,6 +308,7 @@ export type Methods = {
   'state.read': Rpc<{ name: string }, Json>;
   'state.write': Rpc<{ name: string; value: Json }, null>;
   'sessions.list': Rpc<{ cwd: string }, SessionRow[]>;
+  'sessions.attachment': Rpc<{ runDir: string; ref: string }, { dataBase64: string }>;
   'sessions.events': Rpc<{ runDir: string }, EventEnvelopeV1[]>;
   'sessions.search': Rpc<
     { cwds: string[]; query: string; limit: number },

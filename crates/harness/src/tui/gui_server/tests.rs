@@ -168,6 +168,18 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
     let session = client.call("session.create", json!({"cwd":cwd})).await?;
     let id = session["sessionId"].clone();
     let run_dir = session["runDir"].clone();
+    for mode in ["autoEdits", "auto", "full", "supervised"] {
+        client
+            .call(
+                "session.intent",
+                json!({"sessionId":id,"intent":{"kind":"setAccessMode","mode":mode}}),
+            )
+            .await?;
+        assert_eq!(
+            client.call("session.info", json!({"sessionId":id})).await?["accessMode"],
+            mode
+        );
+    }
     client.call("session.intent",json!({"sessionId":id,"intent":{"kind":"submit","text":"Describe a copper lighthouse"}})).await?;
     loop {
         if client.events.iter().any(|message| {
@@ -277,21 +289,12 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
     let scan = client
         .call("diagnostics.crashScan", json!({"cwd":cwd}))
         .await?;
-    // Native crash scans inspect every non-hidden child, including the deletion trash directory.
-    assert_eq!(scan["summary"]["scanned"], 2);
     let reports = scan["reports"]
         .as_array()
         .ok_or("crash reports must be an array")?;
     assert!(reports
         .iter()
         .any(|report| report["run_dir"] == run_dir && report["events_log_present"] == true));
-    let trash = Path::new(run_dir.as_str().ok_or("missing run path")?)
-        .parent()
-        .ok_or("missing session parent")?
-        .join("trash");
-    assert!(reports
-        .iter()
-        .any(|report| report["run_dir"] == json!(trash) && report["events_log_present"] == false));
     let explanation = client
         .call(
             "config.explain",

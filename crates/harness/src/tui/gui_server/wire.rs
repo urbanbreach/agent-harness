@@ -61,12 +61,14 @@ pub(super) fn selection(
     let profile: &str = field(value, "profile")?;
     let model: Option<&str> = optional(value, "model")?;
     let variant: Option<&str> = optional(value, "variant")?;
+    let provider: Option<&str> = optional(value, "provider")?;
     let option = metadata
         .available_models()
         .iter()
         .find(|option| {
             option.profile == profile
                 && model.is_none_or(|model| option.model == model)
+                && provider.is_none_or(|provider| option.provider == provider)
                 && option.variant() == variant
         })
         .ok_or_else(|| format!("model selection is unavailable for profile {profile}"))?;

@@ -29,8 +29,9 @@ mod todos;
 mod web;
 pub use harness_core::UnwrapOrAbort;
 pub use skills::{
-    discover_skill_catalog, discover_skill_catalog_with_config, NativeSkillCatalogDiscovery,
-    SkillCatalog, SkillCatalogEntry, SkillCatalogStatus,
+    discover_skill_catalog, discover_skill_catalog_with_config,
+    discover_skill_installations_with_config, NativeSkillCatalogDiscovery, SkillCatalog,
+    SkillCatalogEntry, SkillCatalogStatus, SkillInstallation,
 };
 
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {

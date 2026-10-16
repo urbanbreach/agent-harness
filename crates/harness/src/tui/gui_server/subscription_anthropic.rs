@@ -5,7 +5,7 @@ use harness_core::auth::{
     CredentialStore,
 };
 use harness_providers::anthropic_subscription::{
-    accounts::{list_accounts, select_account, AffinityOptions},
+    accounts::{list_accounts, select_account, AccountPool, AccountSlot, AffinityOptions},
     auth_lane::EXPIRING_WITHIN_MS,
     AccountSource, SubscriptionAccountStore,
 };
@@ -16,7 +16,10 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 
-pub(super) async fn fetch(home: &Path) -> Result<Option<Value>, String> {
+pub(super) async fn fetch(
+    home: &Path,
+    settings: Option<&harness_core::config::AnthropicSubscriptionProviderConfig>,
+) -> Result<Option<Value>, String> {
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .connect_timeout(REQUEST_TIMEOUT)
@@ -31,20 +34,9 @@ pub(super) async fn fetch(home: &Path) -> Result<Option<Value>, String> {
     else {
         return Ok(None);
     };
-    // Stored slots only: explicit usage requests never import host or environment credentials.
-    let slots = list_accounts(&pool, None);
-    if slots.is_empty() {
+    let Some(mut slot) = usage_account(&pool, settings)? else {
         return Ok(None);
-    }
-    let mut slot = select_account(
-        &slots,
-        &AffinityOptions {
-            pinned_account: pool.pinned.as_deref(),
-            now: now_epoch_ms(),
-            ..AffinityOptions::default()
-        },
-    )
-    .map_err(|_| "subscription account unavailable".to_owned())?;
+    };
     if slot.source == AccountSource::Env {
         return Err("subscription account unavailable".into());
     }
@@ -80,6 +72,30 @@ pub(super) async fn fetch(home: &Path) -> Result<Option<Value>, String> {
     let value = serde_json::from_slice(&body)
         .map_err(|_| "subscription usage response invalid".to_owned())?;
     parse_usage(&value).map(Some)
+}
+
+fn usage_account(
+    pool: &AccountPool,
+    settings: Option<&harness_core::config::AnthropicSubscriptionProviderConfig>,
+) -> Result<Option<AccountSlot>, String> {
+    // Stored slots only: explicit usage requests never import host or environment credentials.
+    let slots = list_accounts(pool, None);
+    if slots.is_empty() {
+        return Ok(None);
+    }
+    select_account(
+        &slots,
+        &AffinityOptions {
+            pinned_account: settings
+                .and_then(|settings| settings.pinned_account.as_deref())
+                .filter(|pin| !pin.is_empty())
+                .or(pool.pinned.as_deref()),
+            now: now_epoch_ms(),
+            ..AffinityOptions::default()
+        },
+    )
+    .map(Some)
+    .map_err(|_| "subscription account unavailable".to_owned())
 }
 
 async fn bounded_body(mut response: reqwest::Response) -> Result<Vec<u8>, String> {
@@ -170,6 +186,48 @@ fn parse_usage(value: &Value) -> Result<Value, String> {
 mod tests {
     use super::parse_usage;
     use serde_json::json;
+
+    #[test]
+    fn usage_account_prefers_configured_pin_and_falls_back_to_stored_pin() -> Result<(), String> {
+        use harness_core::config::AnthropicSubscriptionProviderConfig;
+        use harness_providers::anthropic_subscription::{
+            accounts::{AccountPool, AccountSlot},
+            AccountSource,
+        };
+
+        let pool = AccountPool {
+            accounts: ["configured", "stored"]
+                .into_iter()
+                .map(|name| AccountSlot {
+                    name: name.into(),
+                    display_name: None,
+                    access: String::new(),
+                    refresh: String::new(),
+                    expires: i64::MAX,
+                    source: AccountSource::Login,
+                    blocked_until: None,
+                    block_reason: None,
+                    model_blocks: None,
+                })
+                .collect(),
+            pinned: Some("stored".into()),
+            ..AccountPool::default()
+        };
+        for (pin, expected) in [
+            (Some("configured"), "configured"),
+            (None, "stored"),
+            (Some(""), "stored"),
+        ] {
+            let config = AnthropicSubscriptionProviderConfig {
+                pinned_account: pin.map(str::to_owned),
+                ..AnthropicSubscriptionProviderConfig::default()
+            };
+            let selected = super::usage_account(&pool, Some(&config))?
+                .ok_or("missing subscription account")?;
+            assert_eq!(selected.name, expected);
+        }
+        Ok(())
+    }
 
     #[test]
     fn parses_known_windows_without_scaling_or_leaking_unknown_fields() -> Result<(), String> {

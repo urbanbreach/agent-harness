@@ -1,4 +1,65 @@
 use crate::clock::Clock;
+use std::path::Path;
+use std::sync::Arc;
+
+use crate::event::{ActorKind, EventActor, EventV1, SessionTitleUpdatedEvent, SCHEMA_VERSION};
+use crate::redact::{redact_event_payload, DefaultRedactor, SecretRedactor, SecretRegistry};
+use crate::store::{
+    EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, Journal, JournalReader,
+};
+
+/// Rename a closed session under its exclusive writer lock, with live-event redaction.
+pub fn update_offline_title(
+    root: &Path,
+    id: &str,
+    title: String,
+    secret_values: Vec<String>,
+) -> Result<(), EventStoreError> {
+    if title.trim().is_empty() || title.len() > 1024 {
+        return Err(EventStoreError::Invalid("invalid session title"));
+    }
+    let secrets = Arc::new(SecretRegistry::default());
+    secrets
+        .register(secret_values)
+        .map_err(EventStoreError::Invalid)?;
+    let redactor = SecretRedactor::new(Arc::new(DefaultRedactor::default()), secrets);
+    let payload = redact_event_payload(
+        &redactor,
+        EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent { title }),
+    )?;
+    let journal = Journal::open_existing(root, id, false)?;
+    let length = crate::store::open_private_file(journal.file_path())?
+        .metadata()?
+        .len();
+    if length > 64 * 1024 * 1024 {
+        return Err(EventStoreError::Invalid(
+            "session journal exceeds the 64 MiB inspection limit",
+        ));
+    }
+    let mut last = None;
+    for event in JournalReader::open(journal.file_path(), length)? {
+        last = Some(event?);
+    }
+    let last = last.ok_or(EventStoreError::Invalid("session journal is empty"))?;
+    if last.run_id.as_str() != id {
+        return Err(EventStoreError::Invalid(
+            "session directory and journal identity disagree",
+        ));
+    }
+    journal.append(EventEnvelopeWithoutSeqV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: uuid::Uuid::now_v7().to_string(),
+        run_id: last.run_id,
+        mono_ms: last.mono_ms.saturating_add(1),
+        ts: crate::clock::RealClock::new().system_time_rfc3339_millis(),
+        actor: EventActor::new(ActorKind::System, None),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: None,
+        payload,
+    })?;
+    Ok(())
+}
 
 pub const TITLE_OPERATION_TEMPERATURE: f32 = 0.5;
 pub const TITLE_GENERATION_USER_PROMPT: &str = "Generate a title for this conversation:\n";

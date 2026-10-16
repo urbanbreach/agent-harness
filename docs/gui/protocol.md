@@ -62,10 +62,16 @@ directory resolved for that directory (`<home>/sessions/<key>/` unless configure
 
 - `sessions.list { cwd }` → `SessionRow[]`, newest first.
 - `sessions.events { runDir }` → `EventEnvelopeV1[]` (durable journal, read-only).
+- `sessions.attachment { runDir, ref }` → `{ dataBase64 }`. Reads only
+  `artifacts/<digest>.attachment` within that session for canonical
+  `attachment:blake3:<64 lowercase hex>` references. Symlink paths are rejected,
+  content is re-hashed before publication, and the limit is 20 MiB.
 - `sessions.search { cwds: string[], query, limit }` →
   `{ runDir, role: "user" | "assistant", snippet }[]`.
 - `sessions.rename { runDir, title }` → `null`. Live sessions go through the
-  coordinator; idle sessions append `session_title_updated` to their journal.
+  coordinator; idle sessions use the core offline-title API under an exclusive
+  writer lock. Both redact credential patterns and configured/stored secrets
+  before appending `session_title_updated`.
 - `sessions.delete { runDir }` → `{ trashedTo: string }`.
 - `sessions.pins { cwd }` → `string[]` run ids; `sessions.setPinned { cwd, runId, pinned }`.
 
@@ -105,9 +111,11 @@ Omitting `accessMode` honors configured `runtime.yolo` (`full` when enabled,
 otherwise `supervised`). `models.catalog.defaultAccessMode` reports that default.
 `worktree.baseBranch` is an optional Git start ref; omitting it keeps the native
 worktree default. It does not switch the original checkout.
+`ModelSelection.provider` is the provider id reported by `models.catalog`, not its
+display label. When present, it disambiguates matching model ids across endpoints.
 
 ```ts
-type ModelSelection = { profile: string; model?: string; variant?: string }
+type ModelSelection = { profile: string; model?: string; variant?: string; provider?: string }
 type AccessMode = "supervised" | "autoEdits" | "auto" | "full"
 
 // supervised keeps the configured permission rules and disables YOLO.
@@ -301,6 +309,8 @@ arbitrary paths. Rescan after mutation; errors may follow partial filesystem wor
 `usage.history {cwd?,from,to}` accepts inclusive `YYYY-MM-DD` UTC dates. It scans
 Harness session journals, not provider-native transcripts or billing records.
 `cwd` selects configuration and storage roots, not a project filter.
+Copied fork/clone history and mirrored child records are counted once by their
+source provenance; new provider work in copied sessions still contributes usage.
 
 ```ts
 type UsageAggregate = {
@@ -485,6 +495,14 @@ payloads are rejected. Missing historical blobs require the user to reattach;
 the GUI must not silently resend an image-bearing prompt without its images.
 
 ## Deterministic GUI fixtures
+
+Scenario JSON may include an optional `"base"` naming another packaged scenario
+without the `.json` suffix. `createBackend` resolves bases recursively, merges
+object properties, and replaces arrays, scalars, or null values with the override.
+Omitted properties retain their base values; an empty array clears an inherited
+array. Base names use the same lowercase letters, digits, and hyphens as
+`HARNESS_GUI_FIXTURE`. Circular base chains are rejected. Each backend instance
+receives a deep copy of the resolved scenario.
 
 Scenarios may seed `state:Record<string,Json>` GUI documents and
 `extensions:Partial<{[M in Method]:Methods[M]["result"]}>` operation results.

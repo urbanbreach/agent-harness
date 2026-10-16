@@ -51,10 +51,38 @@ enum ToolNames {
 pub fn discover_skill_catalog(workspace: &Path) -> Result<SkillCatalog, ToolError> {
     discover_skill_catalog_with_config(workspace, &registered_skills_config())
 }
+
+/// A local installation, including renamed disabled manifests and parsed instructions.
+pub struct SkillInstallation {
+    pub entry: SkillCatalogEntry,
+    pub enabled: bool,
+    pub body: String,
+}
+
+/// Inspect installations for management without changing the runtime's header-only catalog.
+pub fn discover_skill_installations_with_config(
+    workspace: &Path,
+    config: &SkillsConfig,
+) -> Result<Vec<SkillInstallation>, ToolError> {
+    discover(workspace, config, true)
+}
 pub fn discover_skill_catalog_with_config(
     workspace: &Path,
     config: &SkillsConfig,
 ) -> Result<SkillCatalog, ToolError> {
+    Ok(SkillCatalog {
+        entries: discover(workspace, config, false)?
+            .into_iter()
+            .map(|installation| installation.entry)
+            .collect(),
+    })
+}
+
+fn discover(
+    workspace: &Path,
+    config: &SkillsConfig,
+    installations: bool,
+) -> Result<Vec<SkillInstallation>, ToolError> {
     let workspace = workspace.canonicalize()?;
     let mut project_roots: Vec<_> = config.project_roots.iter().collect();
     let mut global_roots: Vec<_> = config.global_roots.iter().collect();
@@ -105,9 +133,11 @@ pub fn discover_skill_catalog_with_config(
     let (mut entries, mut names, mut visited, mut scanned) =
         (Vec::new(), BTreeSet::new(), BTreeSet::new(), 0);
     for (scope, root) in roots {
-        if !visited.insert(root.clone())
-            || !fs::symlink_metadata(&root).is_ok_and(|meta| meta.is_dir())
-        {
+        if !fs::symlink_metadata(&root).is_ok_and(|meta| meta.is_dir()) {
+            continue;
+        }
+        let root = root.canonicalize()?;
+        if !visited.insert(root.clone()) {
             continue;
         }
         for item in walkdir::WalkDir::new(&root)
@@ -123,11 +153,15 @@ pub fn discover_skill_catalog_with_config(
             }
             let item =
                 item.map_err(|_| ToolError::Execution("cannot inspect skill directory".into()))?;
-            if !item.file_type().is_file() || item.file_name() != "SKILL.md" {
+            let enabled = item.file_name() == "SKILL.md";
+            if !item.file_type().is_file()
+                || !(enabled || installations && item.file_name() == "SKILL.md.disabled")
+            {
                 continue;
             }
             let path = item.into_path();
-            let parsed = header(&path);
+            let parsed = header(&path, installations);
+            let mut body = String::new();
             let fallback = path
                 .parent()
                 .and_then(Path::file_name)
@@ -153,7 +187,8 @@ pub fn discover_skill_catalog_with_config(
                 body_digest: None,
             };
             match parsed {
-                Ok(header) => {
+                Ok((header, instructions)) => {
+                    body = instructions;
                     let redactor = DefaultRedactor::default();
                     entry.name = header.name;
                     entry.description = redactor.redact_text(&header.description);
@@ -193,9 +228,11 @@ pub fn discover_skill_catalog_with_config(
             }
             .into();
             if entry.reason.is_none() {
-                if disabled.iter().any(|matcher| {
-                    matcher.is_match(&entry.name) || matcher.is_match(&entry.stable_id)
-                }) {
+                if !enabled
+                    || disabled.iter().any(|matcher| {
+                        matcher.is_match(&entry.name) || matcher.is_match(&entry.stable_id)
+                    })
+                {
                     entry.status = SkillCatalogStatus::Disabled;
                     entry.reason = Some("disabled by skills.disabled".into());
                 } else if mode == PermissionMode::Deny {
@@ -208,10 +245,14 @@ pub fn discover_skill_catalog_with_config(
                     entry.loadable = true;
                 }
             }
-            entries.push(entry);
+            entries.push(SkillInstallation {
+                entry,
+                enabled,
+                body,
+            });
         }
     }
-    Ok(SkillCatalog { entries })
+    Ok(entries)
 }
 
 fn root_class(path: &Path) -> u8 {
@@ -229,10 +270,11 @@ fn root_class(path: &Path) -> u8 {
     }
 }
 
-fn header(path: &Path) -> Result<Header, String> {
+fn header(path: &Path, include_body: bool) -> Result<(Header, String), String> {
     let file =
         harness_core::store::open_private_file(path).map_err(|_| "cannot read skill header")?;
-    let mut reader = std::io::BufReader::with_capacity(1024, file.take(65_537));
+    let limit = if include_body { 1_048_577 } else { 65_537 };
+    let mut reader = std::io::BufReader::with_capacity(1024, file.take(limit));
     let mut line = String::new();
     reader
         .read_line(&mut line)
@@ -268,5 +310,14 @@ fn header(path: &Path) -> Result<Header, String> {
     {
         return Err("skill requires a safe name and a description under 4 KiB".into());
     }
-    Ok(header)
+    let mut body = String::new();
+    if include_body {
+        reader
+            .read_to_string(&mut body)
+            .map_err(|_| "skill body is not UTF-8")?;
+        if raw.len() + body.len() + 8 > 1_048_576 {
+            return Err("skill manifest exceeds 1 MiB".into());
+        }
+    }
+    Ok((header, body.trim().to_owned()))
 }

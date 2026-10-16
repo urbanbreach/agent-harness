@@ -46,6 +46,29 @@ async fn skill_discovery_is_read_only_and_reports_precedence_without_loading_bod
         && entry.status.as_str() == "disabled"));
     assert!(!format!("{catalog:?}").contains("PRIVATE BODY SENTINEL"));
     assert!(!project.join(".harness/sessions").exists());
+    let disabled_manifest = project.join(".harness/skills/disabled/SKILL.md");
+    fs::rename(
+        &disabled_manifest,
+        disabled_manifest.with_file_name("SKILL.md.disabled"),
+    )?;
+    let installations = harness_tools::discover_skill_installations_with_config(&project, &config)?;
+    let disabled = installations
+        .iter()
+        .find(|installation| installation.entry.name == "disabled")
+        .ok_or("disabled installation missing")?;
+    assert!(!disabled.enabled);
+    assert!(!disabled.entry.loadable);
+    assert_eq!(disabled.entry.description, "Review the code and its tests.");
+    assert_eq!(disabled.entry.allowed_tools, ["read", "grep"]);
+    assert_eq!(disabled.body, "PRIVATE BODY SENTINEL");
+    assert!(!discover_skill_catalog_with_config(&project, &config)?
+        .entries
+        .iter()
+        .any(|entry| entry.name == "disabled"));
+    fs::rename(
+        disabled_manifest.with_file_name("SKILL.md.disabled"),
+        &disabled_manifest,
+    )?;
     let mut runtime = harness_core::coord::CoordinatorConfig::new(root.path().join("sessions"));
     runtime.tool_registry = std::sync::Arc::new(harness_tools::coordinator_registry_with_skills(
         Default::default(),

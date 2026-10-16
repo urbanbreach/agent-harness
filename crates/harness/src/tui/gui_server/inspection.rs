@@ -44,9 +44,10 @@ pub(super) async fn dispatch(
     let deps = dependencies(server, &cwd, &settings.data_dir);
     let config = server.config_path.clone();
     let root = settings.session_dir;
+    let refresh_catalog = method == "diagnostics.refreshModelCatalog";
     let method = method.to_owned();
     let params = params.clone();
-    blocking(move || match method.as_str() {
+    let result = blocking(move || match method.as_str() {
         "sessions.discoverForeign" | "sessions.importForeign" => {
             let source = absolute(&params, "from")?;
             if method == "sessions.discoverForeign" {
@@ -97,7 +98,11 @@ pub(super) async fn dispatch(
         "plans.list" | "plans.read" => plans(&runtime, &method, &params),
         _ => Err(format!("method_not_found: {method}")),
     })
-    .await
+    .await;
+    if refresh_catalog && result.is_ok() {
+        server.settings.lock().await.clear();
+    }
+    result
 }
 
 fn maintenance_command(method: &str, params: &Value) -> Result<Vec<std::ffi::OsString>, String> {
