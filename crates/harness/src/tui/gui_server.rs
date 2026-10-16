@@ -99,6 +99,13 @@ impl Server {
             cwd.to_path_buf(),
             &context,
         )?;
+        if self.mock_script.is_some() {
+            settings.config = crate::cli_config::load_optional_config_with_digest_context(
+                self.config_path.as_deref(),
+                &context,
+            )?
+            .map(|loaded| loaded.config);
+        }
         runtime_ext::apply_overrides(&mut settings)?;
         cached.insert(cwd.to_path_buf(), settings.clone());
         Ok(settings)
