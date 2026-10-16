@@ -31,7 +31,7 @@ export function EmptyMessage({
     >
       {icon && (
         <div style={{ marginBottom: 14 }}>
-          <Icon name={icon} size={22} />
+          <Icon name={icon} size={22} color={colors.text_tertiary} />
         </div>
       )}
       <text style={{ color: colors.text, fontSize: sp(13), fontWeight: 500 }}>{title}</text>
@@ -42,7 +42,8 @@ export function EmptyMessage({
             fontSize: sp(12.5),
             lineHeight: sp(17),
             textAlign: 'center',
-            maxWidth: 340,
+            width: 340,
+            maxWidth: '100%',
             marginTop: 6,
           }}
         >
@@ -54,6 +55,9 @@ export function EmptyMessage({
   );
 }
 export function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
+  if (/^readme(?:\.md)?$/i.test(path.split('/').at(-1) ?? '')) {
+    return <Icon name="info" size={size} color="#57a7da" />;
+  }
   const extension = path.split('.').pop()?.toLowerCase();
   const names: Record<string, string> = {
     ts: 'typescript',
@@ -74,7 +78,12 @@ export function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
   return name ? (
     <svg
       src={new URL(`../../../assets/file-icons/${name}.svg`, import.meta.url).pathname}
-      style={{ width: size, height: size, flexShrink: 0 }}
+      style={{
+        width: size,
+        height: size,
+        flexShrink: 0,
+        color: name === 'rust' ? '#e2795b' : name === 'markdown' ? '#57a7da' : undefined,
+      }}
     />
   ) : (
     <Icon name="file" size={size} />

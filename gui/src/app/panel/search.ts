@@ -40,11 +40,37 @@ export function replaceMatches(
   replacement: string,
   options: SearchOptions,
 ): string {
-  const pattern = searchPattern(query, options);
+  let pattern: RegExp | null;
+  try {
+    pattern = searchPattern(query, options);
+  } catch {
+    return text;
+  }
   if (!pattern) return text;
-  return options.regex
-    ? text.replace(pattern, replacement)
-    : text.replace(pattern, () => replacement);
+  return text.replace(pattern, (...args) => {
+    const matched = args[0] as string;
+    if (!matched.length) return matched;
+    if (!options.regex) return replacement;
+    const named = typeof args[args.length - 1] === 'object';
+    const offset = args[args.length - (named ? 3 : 2)] as number;
+    const captures = args.slice(1, args.length - (named ? 3 : 2)) as (string | undefined)[];
+    const groups = named
+      ? (args[args.length - 1] as Record<string, string | undefined>)
+      : undefined;
+    return replacement.replace(/\$(\$|&|`|'|[0-9]{1,2}|<[^>]*>)/g, (token, name: string) => {
+      if (name === '$') return '$';
+      if (name === '&') return matched;
+      if (name === '`') return text.slice(0, offset);
+      if (name === "'") return text.slice(offset + matched.length);
+      if (name.startsWith('<')) return groups ? (groups[name.slice(1, -1)] ?? '') : token;
+      const index = Number(name);
+      if (index > 0 && index <= captures.length) return captures[index - 1] ?? '';
+      const first = Number(name[0]);
+      if (name.length === 2 && first > 0 && first <= captures.length)
+        return (captures[first - 1] ?? '') + name[1];
+      return token;
+    });
+  });
 }
 export function replaceMatch(
   text: string,
@@ -53,8 +79,13 @@ export function replaceMatch(
   options: SearchOptions,
   match: Match,
 ): string {
-  const pattern = searchPattern(query, options);
-  if (!pattern) return text;
+  let pattern: RegExp | null;
+  try {
+    pattern = searchPattern(query, options);
+  } catch {
+    return text;
+  }
+  if (!pattern || match.start === match.end) return text;
   const current = new RegExp(pattern.source, pattern.flags.replace('g', '') + 'y');
   current.lastIndex = match.start;
   return options.regex

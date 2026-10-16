@@ -7,6 +7,7 @@ import {
   Menu,
   MenuChip,
   Spinner,
+  Scrollbar,
   TextField,
   Tooltip,
   ellipsis,
@@ -182,6 +183,11 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
   const tree = useRef<PublicInstance>(null);
   const navigationRefs = useRef(new Map<string, PublicInstance>());
   const [treeFocused, setTreeFocused] = useState(false);
+  const [diffViewport, setDiffViewport] = useState(0);
+  const [diffOffset, setDiffOffset] = useState(0);
+  const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
+  const [treeViewport, setTreeViewport] = useState(0);
+  const [treeOffset, setTreeOffset] = useState(0);
   const anchor = useRef<{ path: string; line?: DiffLine; offset: number } | undefined>(undefined);
   const request = useRef(0);
   const controller = useRef<AbortController | undefined>(undefined);
@@ -274,22 +280,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
         : queuedSelection.sessionId === sessionId)
     )) {
       void (async () => {
-        let chosen: ReviewSource = initial?.source ?? 'uncommitted';
-        if (!initial && sessionId) {
-          try {
-            const refs = await listCheckpointRefs(cwd, sessionId);
-            const ready = refs.flatMap((ref) => {
-              const match = /\/(\d+)-end$/.exec(ref);
-              return match && Number(match[1]) > 0 && refs.includes(ref.replace(/-end$/, '-start'))
-                ? [Number(match[1])]
-                : [];
-            });
-            if (ready.length)
-              chosen = { kind: 'lastTurn', session: sessionId, turn: Math.max(...ready) };
-          } catch {
-            /* Review reports repository errors through its snapshot request. */
-          }
-        }
+        const chosen: ReviewSource = initial?.source ?? 'uncommitted';
         if (active && request.current === initialRequest) {
           setSource(chosen);
           void refresh(chosen);
@@ -375,7 +366,9 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
       files
         .flatMap((file) => [
           { file } as DocumentRow,
-          ...foldContext(file.lines, expanded[file.path]).map((line) => ({ file, line })),
+          ...foldContext(file.lines, expanded[file.path])
+            .filter((line) => line.kind !== 'hunk')
+            .map((line) => ({ file, line })),
         ])
         .slice(0, 50_000),
     [files, expanded],
@@ -460,6 +453,12 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
   ];
   const lineHeight = Math.round(codeFontSize * 1.5);
   const gutter = Math.round(codeFontSize * 3 + 14);
+  const heights = rows.map(
+    (item, index) =>
+      rowHeights[`${item.file.path}:${index}`] ??
+      (!item.line ? 36 : item.line.kind === 'gap' ? 32 : lineHeight),
+  );
+  const contentHeight = heights.reduce((sum, height) => sum + height, 0);
   function fileHeader(file: ReviewFile) {
     return (
       <div
@@ -475,19 +474,21 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
         }}
       >
         <FileIcon path={file.path} size={14} />
-        <Tooltip content={file.path}>
-          <text
-            style={{
-              ...ellipsis,
-              flexGrow: 1,
-              fontSize: 12.5,
-              fontWeight: 500,
-              color: colors.text_secondary,
-            }}
-          >
-            {file.path}
-          </text>
-        </Tooltip>
+        <div style={{ flexGrow: 1, minWidth: 0 }}>
+          <Tooltip content={file.path}>
+            <text
+              style={{
+                ...ellipsis,
+                flexGrow: 1,
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: colors.text_secondary,
+              }}
+            >
+              {file.path}
+            </text>
+          </Tooltip>
+        </div>
         <text style={{ fontSize: 12.5, color: colors.success }}>
           {`+${file.additions.toLocaleString()}`}
         </text>
@@ -687,7 +688,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
               fontSize: codeFontSize,
               lineHeight,
               textAlign: 'right',
-              color: colors.text_ghost,
+              color: added ? colors.success : removed ? colors.danger : colors.text_ghost,
             }}
           >
             {special ? '' : (line.next ?? line.old)}
@@ -820,6 +821,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
       ) : (
         <div style={{ ...row, flexGrow: 1, minHeight: 0, alignItems: 'stretch' }}>
           <div
+            onLayout={(event) => setDiffViewport(event.height ?? 0)}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -840,6 +842,12 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 const start = event.startIndex ?? 0;
                 const end = event.endIndex ?? start + 50;
                 setVisible(start);
+                const anchor = list.current && renderer?.getListScrollTop?.(list.current.id);
+                if (anchor)
+                  setDiffOffset(
+                    heights.slice(0, anchor[0]).reduce((sum, height) => sum + height, 0) +
+                      (anchor[1] ?? 0),
+                  );
                 setWindow({ start: Math.max(0, start - 30), end: Math.min(rows.length, end + 50) });
                 const next = rows.slice(start + 1, end + 1).find((item) => !item.line);
                 const header = next && fileHeaders.current.get(next.file.path);
@@ -851,12 +859,20 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 flexGrow: 1,
                 minHeight: 0,
                 scrollbarColor: colors.text_ghost,
-                scrollbarWidth: 6,
+                scrollbarWidth: 0,
               }}
             >
               {rows.slice(window.start, window.end).map((item, index) => (
                 <div
                   key={`${item.file.path}:${window.start + index}`}
+                  onLayout={(event) => {
+                    const key = `${item.file.path}:${window.start + index}`;
+                    const height = event.height ?? 0;
+                    if (height > 0)
+                      setRowHeights((old) =>
+                        old[key] === height ? old : { ...old, [key]: height },
+                      );
+                  }}
                   ref={
                     item.line
                       ? undefined
@@ -870,6 +886,22 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 </div>
               ))}
             </virtual-list>
+            <Scrollbar
+              viewport={diffViewport}
+              content={contentHeight}
+              offset={diffOffset}
+              surface={colors.surface}
+              onScroll={(top) => {
+                if (!list.current) return;
+                let index = 0;
+                let remaining = top;
+                while (index < heights.length - 1 && remaining >= heights[index]!) {
+                  remaining -= heights[index]!;
+                  index++;
+                }
+                renderer?.scrollToItem?.(list.current.id, index, remaining);
+              }}
+            />
             {pinned && rows[visible]?.line && (
               <div
                 onScroll={(event) => {
@@ -960,169 +992,190 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                 }}
               />
             </div>
-            <div
-              ref={tree}
-              role="tree"
-              aria-label="Changed files"
-              tabIndex={0}
-              onFocus={() => setTreeFocused(true)}
-              onBlur={() => setTreeFocused(false)}
-              onKeyDown={(event) => {
-                const key = event.key;
-                if (
-                  !['up', 'down', 'left', 'right', 'home', 'end', 'enter', 'space', ' '].includes(
-                    key ?? '',
+            <div style={{ display: 'flex', flexGrow: 1, minHeight: 0, position: 'relative' }}>
+              <div
+                ref={tree}
+                onLayout={(event) => setTreeViewport(event.height ?? 0)}
+                onScrollChange={(event) => setTreeOffset(Math.max(0, -(event.scrollY ?? 0)))}
+                role="tree"
+                aria-label="Changed files"
+                tabIndex={0}
+                onFocus={() => setTreeFocused(true)}
+                onBlur={() => setTreeFocused(false)}
+                onKeyDown={(event) => {
+                  const key = event.key;
+                  if (
+                    !['up', 'down', 'left', 'right', 'home', 'end', 'enter', 'space', ' '].includes(
+                      key ?? '',
+                    )
                   )
-                )
-                  return;
-                event.preventDefault();
-                if (key === 'up' || key === 'down' || key === 'home' || key === 'end')
-                  setCursor((old) =>
-                    key === 'home'
-                      ? 0
-                      : key === 'end'
-                        ? navigation.length - 1
-                        : Math.max(
-                            0,
-                            Math.min(navigation.length - 1, old + (key === 'up' ? -1 : 1)),
-                          ),
-                  );
-                else if (key === 'left' || key === 'right') {
-                  const item = navigation[cursor];
-                  if (!item) return;
-                  if (key === 'right' && item.directory) {
-                    if (!query.trim() && collapsed.has(item.path))
-                      setCollapsed((old) => {
-                        const next = new Set(old);
-                        next.delete(item.path);
-                        return next;
-                      });
-                    else if (navigation[cursor + 1]?.depth === item.depth + 1)
-                      setCursor(cursor + 1);
-                  } else if (key === 'left') {
-                    if (item.directory && !collapsed.has(item.path) && !query.trim())
-                      setCollapsed((old) => new Set([...old, item.path]));
-                    else {
-                      const parent = item.path.slice(0, item.path.lastIndexOf('/'));
-                      const index = navigation.findIndex((row) => row.path === parent);
-                      if (index >= 0) setCursor(index);
-                    }
-                  }
-                } else activate(cursor);
-              }}
-              style={{
-                flexGrow: 1,
-                minHeight: 0,
-                overflowY: 'scroll',
-                scrollbarColor: colors.text_ghost,
-                scrollbarWidth: 6,
-                paddingTop: 4,
-                paddingBottom: 4,
-                borderWidth: 1,
-                borderColor: 'transparent',
-                focusVisible: { borderColor: colors.accent },
-              }}
-            >
-              {navigation.map((item, index) => {
-                const status = item.file?.status;
-                const statusColor =
-                  status === 'A' ? colors.success : status === 'D' ? colors.danger : colors.warning;
-                return (
-                  <div
-                    key={item.path}
-                    ref={(value) => {
-                      if (value) navigationRefs.current.set(item.path, value);
-                      else navigationRefs.current.delete(item.path);
-                    }}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      height: 30,
-                      paddingLeft: 6,
-                      paddingRight: 6,
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Button
-                      tabIndex={-1}
-                      role="treeitem"
-                      aria-label={item.path}
-                      aria-selected={selected === item.path}
-                      aria-expanded={
-                        item.directory
-                          ? query.trim()
-                            ? true
-                            : !collapsed.has(item.path)
-                          : undefined
+                    return;
+                  event.preventDefault();
+                  if (key === 'up' || key === 'down' || key === 'home' || key === 'end')
+                    setCursor((old) =>
+                      key === 'home'
+                        ? 0
+                        : key === 'end'
+                          ? navigation.length - 1
+                          : Math.max(
+                              0,
+                              Math.min(navigation.length - 1, old + (key === 'up' ? -1 : 1)),
+                            ),
+                    );
+                  else if (key === 'left' || key === 'right') {
+                    const item = navigation[cursor];
+                    if (!item) return;
+                    if (key === 'right' && item.directory) {
+                      if (!query.trim() && collapsed.has(item.path))
+                        setCollapsed((old) => {
+                          const next = new Set(old);
+                          next.delete(item.path);
+                          return next;
+                        });
+                      else if (navigation[cursor + 1]?.depth === item.depth + 1)
+                        setCursor(cursor + 1);
+                    } else if (key === 'left') {
+                      if (item.directory && !collapsed.has(item.path) && !query.trim())
+                        setCollapsed((old) => new Set([...old, item.path]));
+                      else {
+                        const parent = item.path.slice(0, item.path.lastIndexOf('/'));
+                        const index = navigation.findIndex((row) => row.path === parent);
+                        if (index >= 0) setCursor(index);
                       }
-                      onClick={() => activate(index)}
+                    }
+                  } else activate(cursor);
+                }}
+                style={{
+                  flexGrow: 1,
+                  minHeight: 0,
+                  overflowY: 'scroll',
+                  scrollbarColor: colors.text_ghost,
+                  scrollbarWidth: 0,
+                  paddingTop: 4,
+                  paddingBottom: 4,
+                  borderWidth: 1,
+                  borderColor: 'transparent',
+                  focusVisible: { borderColor: colors.accent },
+                }}
+              >
+                {navigation.map((item, index) => {
+                  const status = item.file?.status;
+                  const statusColor =
+                    status === 'A'
+                      ? colors.success
+                      : status === 'D'
+                        ? colors.danger
+                        : colors.warning;
+                  return (
+                    <div
+                      key={item.path}
+                      ref={(value) => {
+                        if (value) navigationRefs.current.set(item.path, value);
+                        else navigationRefs.current.delete(item.path);
+                      }}
                       style={{
-                        height: 26,
-                        justifyContent: 'flex-start',
-                        paddingLeft: (item.directory ? 7 : 23) + item.depth * 14,
-                        paddingRight: 7,
-                        gap: 6,
-                        borderRadius: 5,
-                        backgroundColor:
-                          treeFocused &&
-                          cursor === index &&
-                          (item.directory || selected === item.path)
-                            ? colors.overlay_strong
-                            : (treeFocused && cursor === index) || selected === item.path
-                              ? colors.overlay
-                              : undefined,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: 30,
+                        paddingLeft: 6,
+                        paddingRight: 6,
+                        justifyContent: 'center',
                       }}
                     >
-                      {item.directory ? (
-                        <>
-                          <Icon
-                            name={
-                              !query.trim() && collapsed.has(item.path)
-                                ? 'chevron-right'
-                                : 'chevron-down'
-                            }
-                            size={10}
-                            color={colors.text_ghost}
-                          />
-                          <Icon name="folder" size={13} />
-                        </>
-                      ) : (
-                        <FileIcon path={item.path} size={13} />
-                      )}
-                      <Tooltip content={item.path}>
-                        <text
-                          style={{
-                            ...ellipsis,
-                            flexGrow: 1,
-                            fontSize: sp(12.5),
-                            color: selected === item.path ? colors.text : colors.text_secondary,
-                          }}
-                        >
-                          {item.name}
-                        </text>
-                      </Tooltip>
-                      {status && (
-                        <div
-                          style={{
-                            ...row,
-                            width: 18,
-                            height: 18,
-                            borderRadius: 4,
-                            borderWidth: 1,
-                            borderColor: `${statusColor}a6`,
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <text style={{ fontSize: sp(12.5), fontWeight: 600, color: statusColor }}>
-                            {status}
-                          </text>
+                      <Button
+                        tabIndex={-1}
+                        role="treeitem"
+                        aria-label={item.path}
+                        aria-selected={selected === item.path}
+                        aria-expanded={
+                          item.directory
+                            ? query.trim()
+                              ? true
+                              : !collapsed.has(item.path)
+                            : undefined
+                        }
+                        onClick={() => activate(index)}
+                        style={{
+                          height: 26,
+                          justifyContent: 'flex-start',
+                          paddingLeft: (item.directory ? 7 : 23) + item.depth * 14,
+                          paddingRight: 7,
+                          gap: 6,
+                          borderRadius: 5,
+                          backgroundColor:
+                            treeFocused &&
+                            cursor === index &&
+                            (item.directory || selected === item.path)
+                              ? colors.overlay_strong
+                              : (treeFocused && cursor === index) || selected === item.path
+                                ? colors.overlay
+                                : undefined,
+                        }}
+                      >
+                        {item.directory ? (
+                          <>
+                            <Icon
+                              name={
+                                !query.trim() && collapsed.has(item.path)
+                                  ? 'chevron-right'
+                                  : 'chevron-down'
+                              }
+                              size={10}
+                              color={colors.text_ghost}
+                            />
+                            <Icon name="folder" size={13} />
+                          </>
+                        ) : (
+                          <FileIcon path={item.path} size={13} />
+                        )}
+                        <div style={{ flexGrow: 1, minWidth: 0 }}>
+                          <Tooltip content={item.path}>
+                            <text
+                              style={{
+                                ...ellipsis,
+                                flexGrow: 1,
+                                fontSize: sp(12.5),
+                                color: selected === item.path ? colors.text : colors.text_secondary,
+                              }}
+                            >
+                              {item.name}
+                            </text>
+                          </Tooltip>
                         </div>
-                      )}
-                    </Button>
-                  </div>
-                );
-              })}
+                        {status && (
+                          <div
+                            style={{
+                              ...row,
+                              width: 18,
+                              height: 18,
+                              borderRadius: 4,
+                              borderWidth: 1,
+                              borderColor: `${statusColor}a6`,
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <text
+                              style={{ fontSize: sp(12.5), fontWeight: 600, color: statusColor }}
+                            >
+                              {status}
+                            </text>
+                          </div>
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+              <Scrollbar
+                viewport={treeViewport}
+                content={navigation.length * 30 + 8}
+                offset={treeOffset}
+                surface={colors.surface}
+                onScroll={(top) => {
+                  if (tree.current) renderer?.scrollToItem?.(tree.current.id, Math.floor(top / 30));
+                }}
+              />
             </div>
           </div>
         </div>

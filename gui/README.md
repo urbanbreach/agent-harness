@@ -77,3 +77,26 @@ bun run format                     # Prettier
   mock provider (text, reasoning, tool calls, delays); see
   `test/fixtures/scripts/interactive.json` and `docs/gui/protocol.md`.
 - Always point `HARNESS_HOME` at a temporary directory when experimenting.
+
+### Workspace panels
+
+Review opens on **Uncommitted** changes; the Review button on a transcript turn
+opens that turn's checkpoint instead. File headers and the changed-file tree keep
+their counts and status badges aligned to the trailing edge. Review scrollbars
+appear during scrolling or pointer interaction and fade at rest.
+
+The file editor supports Ctrl+Home/End and Ctrl+Shift+Home/End for document-edge
+navigation and selection. Find keeps its case, whole-word and regular-expression
+options inside the query field; Enter/Shift+Enter navigate matches. Empty
+regular-expression matches are not replacement targets.
+
+Each Terminal tab owns an independent shell. Ctrl+Shift+C copies the selected
+terminal cells; Ctrl+Shift+V pastes clipboard text, respecting bracketed paste and
+normalizing line endings. Word/line selections can be extended with dragging.
+Panel resizing reflows output and resizes the PTY; shell exit preserves output
+and marks the status dot red.
+
+`test/fixtures/scripts/panel.json` exercises a local edit, todo updates and a
+saved rollout plan through the scripted mock backend, without provider calls.
+Use an isolated `HARNESS_HOME`; `test/fixtures/repos/panel.ts` resets only its
+dedicated `/tmp/harness-panel-repos` fixture repositories.

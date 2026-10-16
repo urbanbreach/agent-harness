@@ -63,7 +63,10 @@ export function openPanelSurface(kind: PanelKind) {
   if (kind === 'review' || (kind === 'files' && state.files.selected)) {
     const store = getAppStore();
     store.setLayout({
-      rightWidth: Math.max(Number(store.getSnapshot().layout.rightWidth) || 460, 684),
+      rightWidth: Math.max(
+        Number(store.getSnapshot().layout.rightWidth) || 460,
+        kind === 'review' ? 768 : 684,
+      ),
     });
   }
   notify();

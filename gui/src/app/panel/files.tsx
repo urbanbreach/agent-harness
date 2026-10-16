@@ -48,11 +48,13 @@ export function FilesView({
   const input = useRef<PublicInstance>(null);
   const queryInput = useRef<PublicInstance>(null);
   const selection = useRef({ start: 0, end: 0 });
+  const documentSelectionAnchor = useRef<number | undefined>(undefined);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [treeVersion, setTreeVersion] = useState(0);
   const [find, setFind] = useState(false);
   const [replace, setReplace] = useState(false);
   const [query, setQuery] = useState('');
+  const [queryFocused, setQueryFocused] = useState(false);
   const [replacement, setReplacement] = useState('');
   const [options, setOptions] = useState<SearchOptions>({
     caseSensitive: false,
@@ -93,6 +95,10 @@ export function FilesView({
     };
   }, [cwd, state, treeVersion]);
   useEffect(() => {
+    setFind(false);
+    documentSelectionAnchor.current = undefined;
+  }, [state]);
+  useEffect(() => {
     const path = state.selected;
     if (!path || state.buffers.has(path)) return;
     const next: Buffer = { text: '', saved: '', loaded: false };
@@ -123,8 +129,11 @@ export function FilesView({
     }
   }
   useEffect(() => {
-    if (find) reveal(0);
+    if (find) reveal(Math.min(activeMatch, Math.max(0, search.matches.length - 1)));
   }, [query, options]);
+  useEffect(() => {
+    setActiveMatch((index) => Math.min(index, Math.max(0, search.matches.length - 1)));
+  }, [text, state.selected]);
   function openFind(withReplace = false) {
     const selected = text.slice(selection.current.start, selection.current.end);
     const seed = selected && !/[\r\n]/.test(selected) ? selected : query;
@@ -149,10 +158,12 @@ export function FilesView({
   }
   function replaceCurrent() {
     const match = search.matches[activeMatch];
+    if (!search.matches.length || search.error) return;
     if (!match || buffer?.error) return;
     edit(replaceMatch(text, query, replacement, options, match));
   }
   function keys(event: KeyEvent) {
+    if (event.defaultPrevented) return;
     const key = event.key?.toLowerCase();
     const m = event.modifiers;
     let handled = true;
@@ -166,9 +177,7 @@ export function FilesView({
     else if (m?.ctrl && m.alt && ['c', 'w', 'r'].includes(key ?? '')) {
       const field = key === 'c' ? 'caseSensitive' : key === 'w' ? 'wholeWord' : 'regex';
       setOptions((old) => ({ ...old, [field]: !old[field] }));
-    } else if (find && m?.ctrl && m.alt && key === 'enter')
-      edit(replaceMatches(text, query, replacement, options));
-    else handled = false;
+    } else handled = false;
     if (handled) {
       event.preventDefault();
       event.stopPropagation();
@@ -176,6 +185,7 @@ export function FilesView({
   }
   const markdown = /\.(md|markdown|mdx)$/i.test(state.selected ?? '');
   const treeWidth = Math.max(140, Math.min(state.treeWidth, 360, width - 140));
+  const findWidth = Math.max(96, Math.min(380, width - treeWidth - 1 - 252));
   return (
     <div
       onKeyDown={keys}
@@ -216,6 +226,21 @@ export function FilesView({
           </Toolbar>
           {find && !(markdown && preview) && (
             <div
+              onKeyDown={(event) => {
+                if (event.defaultPrevented || event.key !== 'enter') return;
+                if (event.modifiers?.ctrl && event.modifiers.alt) {
+                  if (!buffer?.error && !search.error)
+                    edit(replaceMatches(text, query, replacement, options));
+                } else if (
+                  event.modifiers?.shift &&
+                  !event.modifiers.ctrl &&
+                  !event.modifiers.alt
+                ) {
+                  reveal(activeMatch - 1);
+                } else return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -226,6 +251,8 @@ export function FilesView({
                 borderBottomWidth: 1,
                 borderColor: colors.border,
                 gap: 4,
+                flexShrink: 0,
+                overflow: 'hidden',
               }}
             >
               <div style={{ ...row, gap: 4 }}>
@@ -236,81 +263,164 @@ export function FilesView({
                   style={{ width: 18, height: 24 }}
                   onClick={() => setReplace(!replace)}
                 />
-                <TextField
-                  ref={queryInput}
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Find"
+                <div
                   style={{
-                    flexGrow: 1,
-                    maxWidth: 380,
-                    minWidth: 96,
+                    ...row,
+                    width: findWidth,
+                    flexShrink: 0,
                     height: 24,
-                    borderColor: search.error ? colors.danger : undefined,
+                    paddingLeft: 5,
+                    paddingRight: 5,
+                    borderWidth: 1,
+                    borderRadius: 5,
+                    borderColor: search.error
+                      ? colors.danger
+                      : queryFocused
+                        ? colors.accent
+                        : colors.border_strong,
+                    backgroundColor: colors.inset,
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'enter') {
-                      event.preventDefault();
-                      reveal(activeMatch + (event.modifiers?.shift ? -1 : 1));
-                    }
+                >
+                  <input
+                    ref={queryInput}
+                    value={query}
+                    onChange={(event) => setQuery(event.value ?? '')}
+                    placeholder="Find"
+                    aria-label="Find in file"
+                    onFocus={() => setQueryFocused(true)}
+                    onBlur={() => setQueryFocused(false)}
+                    theme={{
+                      text: colors.text,
+                      caret: colors.accent,
+                      ...{ placeholder: colors.text_ghost },
+                    }}
+                    style={{
+                      flexGrow: 1,
+                      minWidth: 0,
+                      height: sp(16),
+                      fontSize: sp(12.5),
+                      lineHeight: sp(16),
+                      backgroundColor: 'transparent',
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === 'enter' &&
+                        !event.modifiers?.ctrl &&
+                        !event.modifiers?.alt
+                      ) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        reveal(activeMatch + (event.modifiers?.shift ? -1 : 1));
+                      }
+                    }}
+                  />
+                  {(['caseSensitive', 'wholeWord', 'regex'] as const).map((field, i) => (
+                    <Tooltip
+                      key={field}
+                      content={['Match case', 'Whole word', 'Regular expression'][i]}
+                    >
+                      <IconButton
+                        name={['case-sensitive', 'whole-word', 'regex'][i]!}
+                        size={12}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 4,
+                          borderWidth: 1,
+                          borderColor: options[field] ? `${colors.accent}80` : 'transparent',
+                          backgroundColor: options[field] ? `${colors.accent}38` : 'transparent',
+                          hover: { backgroundColor: colors.overlay_strong },
+                        }}
+                        color={options[field] ? colors.text : colors.text_tertiary}
+                        onClick={() => setOptions((old) => ({ ...old, [field]: !old[field] }))}
+                      />
+                    </Tooltip>
+                  ))}
+                </div>
+                <text
+                  style={{
+                    minWidth: 56,
+                    flexShrink: 0,
+                    fontSize: sp(12.5),
+                    color: search.error ? colors.danger : colors.text_tertiary,
+                  }}
+                >
+                  {!query
+                    ? ''
+                    : search.error
+                      ? 'Bad pattern'
+                      : search.matches.length
+                        ? `${Math.min(activeMatch + 1, search.matches.length)} of ${search.matches.length}${search.capped ? '+' : ''}`
+                        : 'No results'}
+                </text>
+                <div
+                  style={{
+                    width: 1,
+                    height: 16,
+                    flexShrink: 0,
+                    backgroundColor: colors.border_strong,
                   }}
                 />
-                {(['caseSensitive', 'wholeWord', 'regex'] as const).map((field, i) => (
-                  <Tooltip
-                    key={field}
-                    content={['Match case', 'Whole word', 'Regular expression'][i]}
-                  >
-                    <IconButton
-                      name={['case-sensitive', 'whole-word', 'regex'][i]!}
-                      size={12}
-                      style={{
-                        width: 18,
-                        height: 24,
-                        backgroundColor: options[field] ? colors.overlay_strong : undefined,
-                      }}
-                      color={options[field] ? colors.accent : undefined}
-                      onClick={() => setOptions((old) => ({ ...old, [field]: !old[field] }))}
-                    />
-                  </Tooltip>
-                ))}
-                <text style={{ minWidth: 56, fontSize: sp(12.5), color: colors.text_tertiary }}>
-                  {search.error
-                    ? 'Invalid regex'
-                    : `${search.matches.length ? Math.min(activeMatch + 1, search.matches.length) : 0}/${search.matches.length}${search.capped ? '+' : ''}`}
-                </text>
                 <IconButton
                   name="arrow-up"
+                  size={12}
+                  style={{ width: 22, height: 22, borderRadius: 5 }}
                   disabled={!search.matches.length}
                   onClick={() => reveal(activeMatch - 1)}
                 />
                 <IconButton
                   name="arrow-down"
+                  size={12}
+                  style={{ width: 22, height: 22, borderRadius: 5 }}
                   disabled={!search.matches.length}
                   onClick={() => reveal(activeMatch + 1)}
                 />
-                <IconButton name="x" onClick={closeFind} />
+                <div style={{ flexGrow: 1 }} />
+                <IconButton
+                  name="x"
+                  size={12}
+                  style={{ width: 22, height: 22, borderRadius: 5 }}
+                  onClick={closeFind}
+                />
               </div>
-              {replace && (
-                <div style={{ ...row, gap: 4, paddingLeft: 24 }}>
+              {replace && !buffer?.error && (
+                <div style={{ ...row, gap: 4, paddingLeft: 22 }}>
                   <TextField
                     value={replacement}
                     onChange={setReplacement}
                     placeholder="Replace"
-                    style={{ flexGrow: 1, maxWidth: 380, height: 24 }}
+                    style={{
+                      width: findWidth,
+                      flexShrink: 0,
+                      height: 24,
+                      paddingLeft: 5,
+                      paddingRight: 5,
+                      borderRadius: 5,
+                    }}
                     onKeyDown={(event) => {
-                      if (event.key === 'enter') {
+                      if (
+                        event.key === 'enter' &&
+                        !event.modifiers?.ctrl &&
+                        !event.modifiers?.alt
+                      ) {
                         event.preventDefault();
-                        replaceCurrent();
+                        event.stopPropagation();
+                        if (event.modifiers?.shift) reveal(activeMatch - 1);
+                        else replaceCurrent();
                       }
                     }}
                   />
                   <IconButton
                     name="replace"
+                    size={12}
+                    style={{ width: 22, height: 22, borderRadius: 5 }}
                     disabled={!search.matches.length || !!buffer?.error}
                     onClick={replaceCurrent}
                   />
                   <IconButton
                     name="replace-all"
+                    size={12}
+                    style={{ width: 22, height: 22, borderRadius: 5 }}
                     disabled={!search.matches.length || !!buffer?.error}
                     onClick={() => edit(replaceMatches(text, query, replacement, options))}
                   />
@@ -335,14 +445,50 @@ export function FilesView({
             <textarea
               ref={input}
               value={text}
+              interceptedKeys={['ctrl-home', 'ctrl-end', 'ctrl-shift-home', 'ctrl-shift-end']}
+              onKeyDown={(event) => {
+                const key = event.key?.toLowerCase();
+                if (
+                  !event.modifiers?.ctrl ||
+                  event.modifiers.alt ||
+                  !['home', 'end'].includes(key ?? '')
+                ) {
+                  documentSelectionAnchor.current = undefined;
+                  return;
+                }
+                if (!renderer || !input.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const target = key === 'home' ? 0 : text.length;
+                if (!event.modifiers.shift) documentSelectionAnchor.current = undefined;
+                else documentSelectionAnchor.current ??= selection.current.start;
+                const anchor = documentSelectionAnchor.current ?? target;
+                selection.current = { start: anchor, end: target };
+                const native = nativeRenderer(renderer);
+                native.inputSetSelection(input.current.id, anchor, target);
+                native.inputRevealRange(input.current.id, target, target);
+              }}
+              onMouseDown={() => {
+                documentSelectionAnchor.current = undefined;
+              }}
+              onBlur={() => {
+                documentSelectionAnchor.current = undefined;
+              }}
+              theme={{
+                text: colors.text_secondary,
+                caret: colors.accent,
+                bg: colors.surface,
+                ...{ selectionWash: colors.selection },
+              }}
               readOnly={!buffer?.loaded || !!buffer?.error}
               onChange={(event) => edit(event.value ?? '')}
               onFocus={() => {
                 const path = state.selected;
                 if (path && buffer?.loaded && !buffer.error && buffer.text === buffer.saved) {
+                  const saved = buffer.saved;
                   void readText(cwd, path)
                     .then((content) => {
-                      if (buffer.text === buffer.saved) {
+                      if (buffer.text === saved && buffer.saved === saved) {
                         buffer.text = content;
                         buffer.saved = content;
                         onChange();
@@ -415,8 +561,15 @@ export function FilesView({
           />
         )}
         <Toolbar>
-          <Icon name="folder" />
-          <text style={{ ...ellipsis, fontSize: sp(12.5), color: colors.text_secondary }}>
+          <Icon name="folder" size={13} color={colors.text_tertiary} />
+          <text
+            style={{
+              ...ellipsis,
+              fontSize: sp(12.5),
+              fontWeight: 500,
+              color: colors.text_secondary,
+            }}
+          >
             {cwd.split('/').filter(Boolean).pop() ?? 'workspace'}
           </text>
         </Toolbar>
@@ -454,6 +607,7 @@ export function FilesView({
               }}
               style={{
                 justifyContent: 'flex-start',
+                flexShrink: 0,
                 height: 30,
                 marginLeft: 8,
                 marginRight: 8,

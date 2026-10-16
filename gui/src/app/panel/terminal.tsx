@@ -93,6 +93,48 @@ type Selection = { anchor: TerminalPosition; end: TerminalPosition };
 const compare = (a: TerminalPosition, b: TerminalPosition) => a.row - b.row || a.column - b.column;
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
+// Native editor bindings run before JS handlers. Intercept every terminal chord
+// with an editor action, including modified navigation and function keys.
+const terminalInterceptedKeys = [
+  ...[
+    '',
+    'shift-',
+    'alt-',
+    'alt-shift-',
+    'ctrl-',
+    'ctrl-shift-',
+    'ctrl-alt-',
+    'ctrl-alt-shift-',
+  ].flatMap((modifier) =>
+    [
+      'enter',
+      'backspace',
+      'tab',
+      'escape',
+      'up',
+      'down',
+      'left',
+      'right',
+      'home',
+      'end',
+      'insert',
+      'delete',
+      'pageup',
+      'pagedown',
+      ...Array.from({ length: 12 }, (_, index) => `f${index + 1}`),
+    ].map((key) => `${modifier}${key}`),
+  ),
+  ...['ctrl-', 'ctrl-shift-', 'alt-', 'alt-shift-', 'ctrl-alt-', 'ctrl-alt-shift-'].flatMap(
+    (modifier) =>
+      Array.from('abcdefghijklmnopqrstuvwxyz0123456789@[]\\^_?', (key) => `${modifier}${key}`),
+  ),
+  'ctrl-space',
+  'ctrl-shift-space',
+  'ctrl-alt-space',
+  'ctrl-alt-shift-space',
+  'alt-space',
+];
+
 export function TerminalView({
   cwd,
   active,
@@ -118,6 +160,7 @@ export function TerminalView({
   const [size, setSize] = useState({ width: 425.6, height: 664 });
   const [selection, setSelection] = useState<Selection>();
   const [dragging, setDragging] = useState(false);
+  const dragStart = useRef<(Selection & { extend: boolean }) | undefined>(undefined);
   const [menu, setMenu] = useState<{ x: number; y: number; paste: string | null }>();
   const [link, setLink] = useState<{ row: number; start: number; end: number; target: string }>();
   const pauseBlink = useRef(0);
@@ -195,8 +238,12 @@ export function TerminalView({
     if (
       session.current.screen.emulator.cols !== cols ||
       session.current.screen.emulator.rows !== rows
-    )
+    ) {
+      setSelection(undefined);
+      setLink(undefined);
+      setDragging(false);
       session.current.resize(cols, rows);
+    }
   }, [cols, rows, active, snapshot !== undefined]);
   useEffect(() => {
     if (!active) return;
@@ -352,20 +399,32 @@ export function TerminalView({
       anchor = selection.anchor;
       end = { ...p, column: p.column + 1 };
     }
+    dragStart.current = { anchor, end, extend: Boolean(e.modifiers?.shift && selection) };
     setSelection({ anchor, end });
     setDragging(true);
   }
   function move(e: EventPayload) {
     const p = position(e);
     if (!p) return;
-    if (dragging && selection) {
+    if (dragging && dragStart.current) {
       if (e.pressedButton !== undefined && e.pressedButton !== 0) {
         setDragging(false);
         return;
       }
+      const start = dragStart.current;
+      const forward = compare(p, start.anchor) >= 0;
       setSelection({
-        anchor: selection.anchor,
-        end: { ...p, column: p.column + (compare(p, selection.anchor) >= 0 ? 1 : 0) },
+        anchor:
+          forward || start.extend
+            ? start.anchor
+            : compare(start.anchor, start.end) === 0
+              ? { ...start.anchor, column: start.anchor.column + 1 }
+              : start.end,
+        end: forward
+          ? !start.extend && compare(p, start.end) < 0
+            ? start.end
+            : { ...p, column: p.column + 1 }
+          : p,
       });
     } else setLink(e.modifiers?.ctrl ? detectLink(p) : undefined);
   }
@@ -514,33 +573,7 @@ export function TerminalView({
           value=""
           aria-label="Terminal input"
           readOnly
-          onSubmit={() => {
-            if (active && !menu && session.current) {
-              session.current.input('\r');
-              wakeCursor();
-              setSelection(undefined);
-              session.current.screen.scrollTo(session.current.screen.snapshot().scrollback);
-              refresh();
-            }
-          }}
-          interceptedKeys={[
-            'backspace',
-            'tab',
-            'escape',
-            'up',
-            'down',
-            'left',
-            'right',
-            'home',
-            'end',
-            'delete',
-            'pageup',
-            'pagedown',
-            ...Array.from('abcdefghijklmnopqrstuvwxyz', (key) => `ctrl-${key}`),
-            'ctrl-shift-c',
-            'ctrl-shift-v',
-            'ctrl-shift-a',
-          ]}
+          interceptedKeys={terminalInterceptedKeys}
           onKeyDown={keys}
           tabIndex={0}
           onFocus={() => {
@@ -567,7 +600,7 @@ export function TerminalView({
         {!snapshot && (
           <text
             style={{
-              padding: 20,
+              padding: 12,
               color: error ? colors.danger : colors.text_tertiary,
               fontSize: sp(12.5),
               lineHeight: sp(17),

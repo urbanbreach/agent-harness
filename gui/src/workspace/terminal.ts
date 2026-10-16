@@ -337,6 +337,7 @@ export class TerminalScreen {
     const buffer = this.emulator.buffer.active;
     if (start.row > end.row || (start.row === end.row && start.column > end.column))
       [start, end] = [end, start];
+    if (start.row === end.row && start.column === end.column) return '';
     const first = Math.max(0, start.row),
       last = Math.min(buffer.length - 1, end.row),
       cell = buffer.getNullCell();
@@ -346,7 +347,9 @@ export class TerminalScreen {
       if (!line) continue;
       if (y > first && !line.isWrapped) text += '\n';
       let part = '';
-      const from = y === start.row ? Math.max(0, start.column) : 0;
+      let from = y === start.row ? Math.max(0, start.column) : 0;
+      // A pointer can land on the spacer half of a wide glyph.
+      while (from > 0 && line.getCell(from)?.getWidth() === 0) from--;
       const to = y === end.row ? Math.min(this.emulator.cols, end.column) : this.emulator.cols;
       for (let x = from; x < to; x++) {
         if (!line.getCell(x, cell) || cell.getWidth() === 0) continue;
@@ -506,12 +509,15 @@ export async function startTerminal(options: {
       if (!pty!.closed && proc.exitCode === null) pty!.write(data);
     },
     paste(text) {
-      if (!pty!.closed && proc.exitCode === null)
+      if (!pty!.closed && proc.exitCode === null) {
+        // PTYs use carriage return for Enter, including multiline clipboard text.
+        const data = text.replace(/\r?\n/g, '\r');
         pty!.write(
           screen.emulator.modes.bracketedPasteMode
-            ? `\x1b[200~${text.replace(/\x1b/g, '')}\x1b[201~`
-            : text,
+            ? `\x1b[200~${data.replace(/\x1b/g, '')}\x1b[201~`
+            : data,
         );
+      }
     },
     resize(cols, rows) {
       if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1)
