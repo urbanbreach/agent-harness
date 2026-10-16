@@ -4,9 +4,12 @@ import { pathToFileURL } from 'node:url';
 import type { AppStore, Draft, Selection } from '../../store/store';
 import type { FollowUp } from './Queue';
 import { fileTags } from './completion';
+import { recordPromptDisplay } from './prompt-display';
 export function canSteerDraft(draft: Draft): boolean {
   return (
     !draft.fileTags?.length &&
+    !draft.agentTags?.length &&
+    !draft.resourceTags?.length &&
     !/(^|\s)@/.test(draft.text) &&
     !(draft.attachments ?? []).some((item) => item.path && !item.mime.startsWith('image/'))
   );
@@ -34,6 +37,20 @@ export function prepareDraft(draft: Draft, cwd: string): Draft {
   return {
     ...draft,
     text,
+    agentTags: [...text.matchAll(/(^|\s)(@agent:\S+)/g)].flatMap((match) => {
+      const tag = draft.agentTags?.find((entry) => entry.source.value === match[2]);
+      const start = match.index! + match[1]!.length;
+      return tag
+        ? [{ ...tag, source: { start, end: start + match[2]!.length, value: match[2]! } }]
+        : [];
+    }),
+    resourceTags: [...text.matchAll(/(^|\s)(@resource:\S+)/g)].flatMap((match) => {
+      const tag = draft.resourceTags?.find((entry) => entry.source.value === match[2]);
+      const start = match.index! + match[1]!.length;
+      return tag
+        ? [{ ...tag, source: { start, end: start + match[2]!.length, value: match[2]! } }]
+        : [];
+    }),
     fileTags: [
       ...(draft.fileTags ?? []).filter((tag) => !tags.some((item) => item.path === tag.path)),
       ...tags,
@@ -103,6 +120,14 @@ export function startQueueDelivery(store: AppStore) {
             ...prepareDraft(first.draft, cwd),
             mode: 'submit',
             consumeDraft: false,
+            runBeforeSubmit: first.draft.invocation
+              ? ({ sessionId }) =>
+                  recordPromptDisplay(
+                    sessionId,
+                    prepareDraft(first.draft, cwd).text,
+                    first.draft.invocation!,
+                  )
+              : undefined,
           });
       void operation
         .then(() => {

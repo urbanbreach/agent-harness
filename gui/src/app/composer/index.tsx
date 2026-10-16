@@ -22,19 +22,32 @@ import { Approvals } from './Approvals';
 import { ModelControls } from './ModelControls';
 import { Queue, type FollowUp } from './Queue';
 import { Suggestions } from './Suggestions';
-import { appCommands, suggestions, triggerAt, type Suggestion } from './completion';
+import {
+  appCommands,
+  terminalCommands,
+  suggestions,
+  triggerAt,
+  type Suggestion,
+} from './completion';
 import { importPath, maxAttachmentBytes } from './attachments';
 import { canSteerDraft, prepareDraft, setQueuedDrafts, startQueueDelivery } from './queue-store';
+import { recordPromptDisplay } from './prompt-display';
 
 export type ComposerTarget =
   | { kind: 'task'; sessionId: string; cwd: string }
   | { kind: 'new'; projectId: string | null; cwd: string | null };
 function selectionFor(target: ComposerTarget): Selection {
   const state = getAppStore().getSnapshot();
+  const row =
+    target.kind === 'task'
+      ? Object.values(state.sessions)
+          .flat()
+          .find((entry) => entry.runId === target.sessionId)
+      : undefined;
   const projectId =
     target.kind === 'new'
       ? target.projectId
-      : state.projects.find((project) => project.cwd === target.cwd)?.id;
+      : state.projects.find((project) => project.cwd === (row?.projectCwd ?? target.cwd))?.id;
   return target.kind === 'task'
     ? { kind: 'session', sessionId: target.sessionId, projectId: projectId ?? '' }
     : projectId
@@ -74,6 +87,13 @@ export function Composer({ target }: { target: ComposerTarget }) {
   const [dismissed, setDismissed] = useState<string>();
   const [editMenu, setEditMenu] = useState<{ x: number; y: number }>();
   const [skillCatalog, setSkillCatalog] = useState<{ cwd: string; entries: Skill[] }>();
+  const [mentions, setMentions] = useState<{
+    cwd: string;
+    agents: { name: string }[];
+    resources: { name: string; uri: string; mime: string }[];
+  }>();
+  const [promptHistory, setPromptHistory] = useState<{ cwd: string; prompts: string[] }>();
+  const [ghost, setGhost] = useState<{ text: string; suffix: string }>();
   const busy =
     view?.status === 'working' || view?.status === 'waiting' || view?.status === 'background';
   const overlay = colors.overlay_strong.match(/[\d.]+/g)!.map(Number);
@@ -92,6 +112,8 @@ export function Composer({ target }: { target: ComposerTarget }) {
         commands ?? [],
         files ?? [],
         skillCatalog?.cwd === cwd ? skillCatalog.entries : [],
+        mentions?.cwd === cwd ? mentions.agents : [],
+        mentions?.cwd === cwd ? mentions.resources : [],
       )
     : [];
   const loading = !!trigger && (trigger.kind === '/' ? !commands : !files);
@@ -100,6 +122,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
   const queue = queues[key] ?? [];
   const sendable = !!draft.text.trim() || attachments.length > 0;
   const providerAvailable = !!catalog?.models.length;
+  const canSubmit = providerAvailable || draft.text.trim().startsWith('/');
   const accessMode =
     draft.accessMode ??
     (sessionId
@@ -146,6 +169,50 @@ export function Composer({ target }: { target: ComposerTarget }) {
       cancelled = true;
     };
   }, [cwd]);
+  useEffect(() => {
+    let cancelled = false;
+    if (cwd)
+      void Promise.all([
+        store.backend.call('agents.list', { cwd }),
+        store.backend.call('mcp.resources', { cwd }),
+        store.backend.call('history.prompts', { cwd }),
+      ])
+        .then(([agents, resources, history]) => {
+          if (!cancelled) {
+            setMentions({ cwd, agents, resources });
+            setPromptHistory({ cwd, prompts: history.prompts });
+          }
+        })
+        .catch(fail);
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd]);
+  useEffect(() => {
+    setGhost(undefined);
+    if (
+      !focused ||
+      !draft.text ||
+      draft.text.startsWith('!') ||
+      popup ||
+      caret !== draft.text.length
+    )
+      return;
+    const timer = setTimeout(() => {
+      const history = [
+        ...(promptHistory?.cwd === cwd ? promptHistory.prompts : []),
+        ...(view?.entries.flatMap((entry) => (entry.kind === 'user' ? [entry.text] : [])) ?? []),
+      ];
+      for (let index = history.length - 1; index >= 0; index--) {
+        const prediction = history[index]!;
+        if (prediction !== draft.text && prediction.startsWith(draft.text)) {
+          setGhost({ text: draft.text, suffix: prediction.slice(draft.text.length) });
+          break;
+        }
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [draft.text, focused, caret, popup, promptHistory, cwd, view?.entries]);
   useEffect(() => {
     let cancelled = false;
     if (sessionId && live)
@@ -225,18 +292,113 @@ export function Composer({ target }: { target: ComposerTarget }) {
   }, [sessionId]);
   async function localCommand(text: string): Promise<boolean> {
     const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
-    if (!match || !appCommands.includes(match[1]!)) return false;
+    if (!match) return false;
     const name = match[1]!;
-    if (
-      commands?.some(
-        (command) => command.name.replace(/^\//, '') === name && command.scope !== 'builtin',
-      )
-    )
-      return false;
-    maintenanceArguments.current = match[2];
-    const handled = runAction(`session.${name}`) || runAction(name);
-    maintenanceArguments.current = undefined;
-    if (!handled) throw new Error(`The ${name} command is unavailable here`);
+    const args = match[2]?.trim();
+    const command = commands?.find((entry) => entry.name.replace(/^\//, '') === name);
+    if (command && (command.scope !== 'builtin' || command.template !== undefined)) return false;
+    if (terminalCommands[name]) throw new Error(`/${name} is only available in the terminal`);
+    if (!appCommands.includes(name) && command?.scope !== 'builtin') return false;
+    if (name === 'rename' && args) {
+      if (!sessionId) throw new Error('Open a task before renaming it');
+      await store.sendIntent(sessionId, { kind: 'updateTitle', title: args });
+      return true;
+    }
+    if (['model', 'models', 'mo'].includes(name) && args) {
+      const entry = catalog?.models.find((entry) =>
+        [entry.model, entry.label, `${entry.provider}/${entry.model}`, entry.profile].some(
+          (value) => value.toLowerCase() === args.toLowerCase(),
+        ),
+      );
+      if (!entry) throw new Error(`Unknown model: ${args}`);
+      const value = { profile: entry.profile, model: entry.model, variant: entry.variant };
+      update({ selection: value });
+      if (sessionId) await store.sendIntent(sessionId, { kind: 'switchModel', selection: value });
+      return true;
+    }
+    if (name === 'yolo') {
+      const mode = accessMode === 'full' ? 'supervised' : 'full';
+      update({ accessMode: mode });
+      store.setPreferences({ lastAccessMode: mode });
+      if (sessionId) {
+        await store.sendIntent(sessionId, { kind: 'setAccessMode', mode });
+        setRuntimeAccess({ sessionId, mode });
+      }
+      return true;
+    }
+    if (name === 'timestamps' || name === 'thinking') {
+      const preference = name === 'timestamps' ? 'showMessageTimes' : 'showReasoning';
+      store.setPreferences({ [preference]: preferences[preference] === false });
+      return true;
+    }
+    if (name === 'copy') {
+      const markdown =
+        view?.entries
+          .flatMap((entry) =>
+            entry.kind === 'user'
+              ? [`## You\n\n${entry.text}`]
+              : entry.kind === 'text'
+                ? [`## Agent\n\n${entry.text}`]
+                : [],
+          )
+          .join('\n\n') ?? '';
+      native.writeClipboardText(markdown);
+      showToast('Transcript copied', 'success');
+      return true;
+    }
+    if (name === 'claude-account' && args) {
+      await store.backend.call('auth.command', {
+        cwd,
+        args: ['claude-account', ...args.split(/\s+/)],
+      });
+    }
+    if (name === 'new' || name === 'clear') {
+      update({ text: args ?? '' });
+      if (!runAction('task.new')) throw new Error('New task is unavailable here');
+      return true;
+    }
+    const actions: Record<string, string> = {
+      new: 'task.new',
+      clear: 'task.new',
+      sessions: 'session.resume',
+      resume: 'session.resume',
+      continue: 'session.resume',
+      import: 'session.resume',
+      tree: 'session.tree',
+      models: 'composer.modelPicker',
+      model: 'composer.modelPicker',
+      mo: 'composer.modelPicker',
+      agents: 'composer.profilePicker',
+      mcps: 'settings.tools',
+      toggles: 'settings.tools',
+      login: 'settings.providers',
+      'claude-account': 'settings.providers',
+      help: 'settings.help',
+      feedback: 'settings.help',
+      follow: 'transcript.follow',
+      undo: 'session.rewind',
+      summarize: 'session.compact',
+      exit: 'app.quit',
+      quit: 'app.quit',
+      q: 'app.quit',
+      settings: 'settings.general',
+      'view-plan': 'panel.plan',
+      worktree: 'worktree.open',
+      dashboard: 'panel.session',
+      status: 'panel.session',
+      usage: 'usage.toggle',
+    };
+    const commandDraft = store.getDraft(selection);
+    if (commandDraft) store.setDraft(selection, { ...commandDraft, text: '' });
+    maintenanceArguments.current = args;
+    try {
+      if (!runAction(actions[name] ?? `session.${name}`)) {
+        if (commandDraft) store.setDraft(selection, commandDraft);
+        throw new Error(`The ${name} command is unavailable here`);
+      }
+    } finally {
+      maintenanceArguments.current = undefined;
+    }
     return true;
   }
   async function submit(steer = false, current = store.getDraft(selection) ?? emptyDraft) {
@@ -245,13 +407,31 @@ export function Composer({ target }: { target: ComposerTarget }) {
       if (steer && busy && queue.length) await steerItem(queue[0]!);
       return;
     }
-    if (!providerAvailable) return;
+    if (!providerAvailable && !current.text.trim().startsWith('/')) return;
     setPreparing(true);
     try {
       if (await localCommand(current.text.trim())) {
-        store.consumeDraft(selection);
+        if (!/^\/(?:new|clear)(?:\s|$)/.test(current.text.trim()))
+          store.setDraft(selection, { ...(store.getDraft(selection) ?? emptyDraft), text: '' });
         return;
       }
+      const invocation = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(current.text.trim());
+      if (
+        invocation &&
+        commands?.some(
+          (entry) =>
+            entry.name.replace(/^\//, '') === invocation[1] &&
+            (entry.scope !== 'builtin' || entry.template !== undefined),
+        )
+      ) {
+        const expanded = await store.backend.call('commands.expand', {
+          cwd,
+          name: invocation[1]!,
+          args: invocation[2] ?? '',
+        });
+        current = { ...current, text: expanded.text, invocation: current.text.trim() };
+      }
+      if (!providerAvailable) throw new Error('Choose an available model before sending a prompt');
       const shouldSteer = (steer || view?.status === 'background') && canSteerDraft(current);
       if ((busy && !shouldSteer) || (!steer && queue.length > 0)) {
         saveQueue([...queue, { id: crypto.randomUUID(), draft: current }]);
@@ -273,6 +453,10 @@ export function Composer({ target }: { target: ComposerTarget }) {
           ...prepareDraft(current, cwd),
           accessMode,
           mode: busy ? 'steer' : 'submit',
+          runBeforeSubmit: current.invocation
+            ? ({ sessionId }) =>
+                recordPromptDisplay(sessionId, prepareDraft(current, cwd).text, current.invocation!)
+            : undefined,
         });
     } catch (error) {
       fail(error);
@@ -364,18 +548,38 @@ export function Composer({ target }: { target: ComposerTarget }) {
       native.inputSetSelection(editor.current.id, end, end);
       focus();
     }
-    if (row.local) void submitLocal(row.value);
-  }
-  async function submitLocal(text: string) {
-    try {
-      if (await localCommand(text)) store.consumeDraft(selection);
-    } catch (error) {
-      fail(error);
+    if (row.agent || row.resource) {
+      const source = { start: trigger.start, end: end - 1, value: row.value };
+      if (row.agent)
+        update({ text, agentTags: [...(draft.agentTags ?? []), { ...row.agent, source }] });
+      if (row.resource)
+        update({
+          text,
+          resourceTags: [...(draft.resourceTags ?? []), { ...row.resource, source }],
+        });
     }
   }
   function keys(event: KeyEvent) {
     const keyName = event.key;
     const primary = event.modifiers?.ctrl || event.modifiers?.cmd;
+    if (
+      ghost?.text === draft.text &&
+      !popup &&
+      !primary &&
+      !event.modifiers?.alt &&
+      !event.modifiers?.shift &&
+      ['tab', 'right'].includes(keyName ?? '') &&
+      selectionRange.current.start === selectionRange.current.end
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const text = draft.text + ghost.suffix;
+      flushSync(() => update({ text }));
+      setCaret(text.length);
+      setGhost(undefined);
+      if (editor.current) native.inputSetSelection(editor.current.id, text.length, text.length);
+      return;
+    }
     if (primary && keyName === 'v') {
       const image = pasteImage();
       const paths = image ? undefined : native.readClipboardPaths();
@@ -430,7 +634,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
     });
   }
   if (target.kind === 'new' && !target.cwd) return null;
-  if (view?.meta && !view.meta.is_resumable)
+  if (!live && view?.meta && !view.meta.is_resumable)
     return (
       <div
         style={{
@@ -539,6 +743,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
             autoFocus
             value={draft.text}
             placeholder="Do anything…"
+            ghostText={ghost?.text === draft.text ? ghost.suffix : undefined}
             minRows={1}
             maxRows={Math.ceil(300 / sp(22))}
             onFocus={() => setFocused(true)}
@@ -548,6 +753,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
               'ctrl-v',
               'cmd-v',
               ...(popup && rows.length ? ['up', 'down', 'tab'] : []),
+              ...(ghost?.text === draft.text && !popup ? ['tab', 'right'] : []),
               ...(!draft.text && attachments.length ? ['backspace'] : []),
             ]}
             onSubmit={(event) => {
@@ -567,8 +773,9 @@ export function Composer({ target }: { target: ComposerTarget }) {
             onChange={(event) => {
               const input = event as NativeEvent;
               update({ text: input.value ?? '' });
-              if (input.selectionEnd !== undefined) setCaret(input.selectionEnd);
-              else setCaret((input.value ?? '').length);
+              const end = input.selectionEnd ?? (input.value ?? '').length;
+              selectionRange.current = { start: input.selectionStart ?? end, end };
+              setCaret(end);
             }}
             theme={{
               appearance: colors.is_dark ? 'dark' : 'light',
@@ -584,11 +791,11 @@ export function Composer({ target }: { target: ComposerTarget }) {
               },
             }}
             style={{
-              minHeight: 24,
-              maxHeight: 300,
+              minHeight: 26,
+              maxHeight: 302,
               paddingLeft: 14,
               paddingRight: 14,
-              paddingTop: 2,
+              paddingTop: 3,
               width: '100%',
               fontSize: sp(13.5),
               lineHeight: sp(22),
@@ -654,14 +861,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
                     <Button
                       aria-label="Stop"
                       onClick={() => {
-                        if (sessionId)
-                          void store
-                            .sendIntent(sessionId, {
-                              kind: 'interrupt',
-                              taskIds: [],
-                              reason: 'user',
-                            })
-                            .catch(fail);
+                        if (sessionId) void store.interruptSession(sessionId).catch(fail);
                       }}
                       style={{
                         width: 26,
@@ -684,7 +884,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
                 {(!busy || sendable) && (
                   <Tooltip
                     content={
-                      !providerAvailable
+                      !canSubmit
                         ? 'Install or switch on a provider to send'
                         : busy
                           ? 'Queue as follow-up (⏎)'
@@ -693,7 +893,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
                   >
                     <Button
                       aria-label={busy ? 'Queue as follow-up' : 'Send'}
-                      disabled={!sendable || !providerAvailable}
+                      disabled={!sendable || !canSubmit}
                       onClick={() => void submit()}
                       style={{
                         marginLeft: busy ? 2 : 0,
@@ -701,7 +901,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
                         height: 26,
                         borderRadius: 26,
                         backgroundColor:
-                          sendable && providerAvailable ? colors.inverse : colors.overlay_strong,
+                          sendable && canSubmit ? colors.inverse : colors.overlay_strong,
                         opacity: 1,
                         hover: { opacity: 0.9 },
                         active: { opacity: 0.8 },
@@ -710,9 +910,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
                       <Icon
                         name="arrow-up"
                         size={16}
-                        color={
-                          sendable && providerAvailable ? colors.on_inverse : colors.text_ghost
-                        }
+                        color={sendable && canSubmit ? colors.on_inverse : colors.text_ghost}
                       />
                     </Button>
                   </Tooltip>
@@ -771,7 +969,20 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
   const { showToast } = useToast();
   const sessionId = target.kind === 'task' ? target.sessionId : undefined;
   const view = useSessionView(sessionId);
-  const current = projects.find((project) => project.cwd === target.cwd);
+  const current = projects.find((project) => project.id === selection.projectId);
+  const [worktreeOpen, setWorktreeOpen] = useState(false);
+  useEffect(
+    () =>
+      registerAction({
+        id: 'worktree.open',
+        label: 'Choose worktree',
+        run: () => {
+          if (sessionId) runAction('task.new');
+          setWorktreeOpen(true);
+        },
+      }),
+    [sessionId],
+  );
   return (
     <div
       style={{
@@ -821,6 +1032,8 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
           onError={showToast}
         />
         <Dropdown
+          open={worktreeOpen}
+          onOpenChange={setWorktreeOpen}
           label={draft.worktree ? 'New worktree' : 'Local'}
           icon="monitor"
           chevron={false}

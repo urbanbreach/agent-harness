@@ -51,12 +51,8 @@ const selectionFor = (entry: ModelEntry): ModelSelection => ({
 function providerIcon(provider: string) {
   const name = provider.toLowerCase();
   if (['openai', 'codex'].includes(name)) return 'provider-openai';
-  if (['anthropic', 'claude'].includes(name)) return 'provider-claude';
-  return ['amp', 'cursor', 'deepseek', 'fx', 'grok', 'kimi', 'ohmypi', 'opencode', 'pi'].includes(
-    name,
-  )
-    ? `provider-${name}`
-    : 'bot';
+  if (name === 'anthropic') return 'provider-claude';
+  return 'bot';
 }
 
 export function ModelControls({
@@ -80,6 +76,7 @@ export function ModelControls({
   const catalog = useModels(cwd);
   const preferences = useStore((state) => state.preferences);
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('');
@@ -172,6 +169,15 @@ export function ModelControls({
         run: () => changeOpen(!open),
       }),
     [open, cwd, current, usable.join('\n')],
+  );
+  useEffect(
+    () =>
+      registerAction({
+        id: 'composer.profilePicker',
+        label: 'Agents',
+        run: () => setProfileOpen(true),
+      }),
+    [],
   );
   useEffect(() => {
     if (!open) return;
@@ -380,6 +386,8 @@ export function ModelControls({
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
+                      width: '100%',
+                      minWidth: 0,
                       paddingLeft: 24,
                       paddingRight: 24,
                       paddingTop: 22,
@@ -408,6 +416,8 @@ export function ModelControls({
                         fontSize: sp(12.5),
                         lineHeight: sp(17),
                         textAlign: 'center',
+                        width: '100%',
+                        whiteSpace: 'normal',
                       }}
                     >
                       Install an agent CLI, or switch one back on in Provider settings.
@@ -678,8 +688,10 @@ export function ModelControls({
           menuStyle={{ minWidth: 214 }}
         />
       )}
-      {(catalog?.profiles.length ?? 0) > 0 && (
+      {((catalog?.profiles.length ?? 0) > 1 || profileOpen) && (
         <Dropdown
+          open={profileOpen}
+          onOpenChange={setProfileOpen}
           menuSide="top"
           chevron={false}
           icon="bot"

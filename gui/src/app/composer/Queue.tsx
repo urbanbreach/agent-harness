@@ -32,8 +32,8 @@ export function Queue({
         backgroundColor: colors.composer,
         paddingTop: 4,
         paddingBottom: 4,
-        paddingLeft: 14,
-        paddingRight: 14,
+        marginLeft: 14,
+        marginRight: 14,
         overflow: 'hidden',
       }}
     >
@@ -53,35 +53,27 @@ export function Queue({
           }}
         >
           <Icon name="queue" size={12} />
-          <Tooltip content="Edit in composer">
-            <Button
-              onClick={() => onEdit(item)}
-              style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, justifyContent: 'flex-start' }}
-            >
-              <text
-                style={{
-                  fontSize: sp(12.5),
-                  color: colors.text,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
+          <div style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
+            <Tooltip content="Edit in composer">
+              <Button
+                onClick={() => onEdit(item)}
+                style={{ width: '100%', minWidth: 0, justifyContent: 'flex-start' }}
               >
-                {item.draft.text ||
-                  item.draft.attachments?.map((attachment) => attachment.name).join(', ')}
-              </text>
-            </Button>
-          </Tooltip>
-          <Tooltip content="Steer current turn">
-            <Button
-              disabled={!canSteerDraft(item.draft)}
-              onClick={() => onSteer(item)}
-              style={{ height: 24, paddingLeft: 7, paddingRight: 7, gap: 5, borderRadius: 6 }}
-            >
-              <Icon name="corner-down-right" size={11} />
-              <text style={{ fontSize: sp(12.5) }}>Steer</text>
-            </Button>
-          </Tooltip>
+                <text
+                  style={{
+                    fontSize: sp(12.5),
+                    color: colors.text,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {item.draft.text ||
+                    item.draft.attachments?.map((attachment) => attachment.name).join(', ')}
+                </text>
+              </Button>
+            </Tooltip>
+          </div>
           <Tooltip content="Remove from queue">
             <IconButton
               name="trash"
@@ -103,6 +95,13 @@ export function Queue({
                 label: 'Edit in composer',
                 icon: 'pencil',
                 onSelect: () => onEdit(item),
+              },
+              {
+                id: 'steer',
+                label: 'Steer current turn',
+                icon: 'corner-down-right',
+                disabled: !canSteerDraft(item.draft),
+                onSelect: () => onSteer(item),
               },
               {
                 id: 'remove',
