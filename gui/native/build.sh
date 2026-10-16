@@ -79,7 +79,8 @@ mv "$here/dist/gpuix-native.linux-x64-gnu.node.new" \
   "$here/dist/gpuix-native.linux-x64-gnu.node"
 echo "built $here/dist/gpuix-native.linux-x64-gnu.node"
 if [ "${1:-}" = "--test" ]; then
-  cargo nextest run --release --manifest-path "$src/gpuix/packages/native/Cargo.toml"
-  cargo nextest run --release --manifest-path "$src/gpuix/zed/Cargo.toml" -p gpui \
+  # The GPUIX checkouts have no Harness nextest profiles (CI exports NEXTEST_PROFILE=ci).
+  cargo nextest run --profile default --release --manifest-path "$src/gpuix/packages/native/Cargo.toml"
+  cargo nextest run --profile default --release --manifest-path "$src/gpuix/zed/Cargo.toml" -p gpui \
     test_layout_handler_reports_programmatic_scroll_without_wheel
 fi
