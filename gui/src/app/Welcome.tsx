@@ -30,7 +30,7 @@ export function Welcome({
         justifyContent: 'center',
         paddingLeft: 32,
         paddingRight: 32,
-        paddingBottom: noProject ? 46 : 52,
+        paddingBottom: noProject ? 46 : 44,
       }}
     >
       <Icon name="sparkle" size={noProject ? 24 : 20} color={colors.accent} />
@@ -118,9 +118,9 @@ export function Welcome({
       ) : (
         <div
           style={{
-            marginTop: 14,
+            marginTop: 12,
             display: 'flex',
-            alignItems: 'baseline',
+            alignItems: 'center',
             justifyContent: 'center',
           }}
         >

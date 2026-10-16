@@ -233,10 +233,11 @@ export function Switch({
 export interface TextFieldProps extends Omit<InputProps, 'onChange'> {
   icon?: string;
   iconSize?: number;
+  neutralFocus?: boolean;
   onChange?: (value: string) => void;
 }
 export const TextField = forwardRef<PublicInstance, TextFieldProps>(function TextField(
-  { icon, iconSize = 13, style, onChange, onFocus, onBlur, theme, ...props },
+  { icon, iconSize = 13, neutralFocus = false, style, onChange, onFocus, onBlur, theme, ...props },
   ref,
 ) {
   const { colors, sp } = useTheme();
@@ -317,7 +318,11 @@ export const TextField = forwardRef<PublicInstance, TextFieldProps>(function Tex
         gap: 6,
         borderRadius: 6,
         borderWidth: 1,
-        borderColor: focused || editMenu ? colors.accent : colors.border_strong,
+        borderColor: neutralFocus
+          ? 'transparent'
+          : focused || editMenu
+            ? colors.accent
+            : colors.border_strong,
         backgroundColor: colors.inset,
         minWidth: 0,
         ...style,

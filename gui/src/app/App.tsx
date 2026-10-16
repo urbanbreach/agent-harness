@@ -523,7 +523,8 @@ export function Workspace(props: AppProps) {
             {props.headerActions}
             {!layout.rightVisible && props.fps}
             {chromeButton('info', t('navigation.usage'), () => runAction('usage.toggle'))}
-            {chromeButton('panel-right', t('action.rightPanel'), toggleRight)}
+            {!layout.rightVisible &&
+              chromeButton('panel-right', t('action.rightPanel'), toggleRight)}
             {!layout.rightVisible && windowControls}
           </div>
           {props.main ?? (

@@ -34,6 +34,7 @@ export interface MenuProps {
   position?: { x: number; y: number };
   side?: 'top' | 'bottom' | 'right';
   flyout?: boolean;
+  autoHighlight?: boolean;
   onReturn?: () => void;
 }
 export function Menu({
@@ -45,15 +46,19 @@ export function Menu({
   position,
   side = 'bottom',
   flyout = false,
+  autoHighlight = false,
   onReturn,
 }: MenuProps) {
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const card = useRef<PublicInstance>(null);
   const [highlight, setHighlight] = useState(() =>
-    items.findIndex(
-      (item) => (!item.type || item.type === 'item') && !item.disabled && !(flyout && item.items),
-    ),
+    autoHighlight
+      ? items.findIndex(
+          (item) =>
+            (!item.type || item.type === 'item') && !item.disabled && !(flyout && item.items),
+        )
+      : -1,
   );
   const [submenu, setSubmenu] = useState<string>();
   const enabled = items
@@ -107,7 +112,7 @@ export function Menu({
       return;
     }
     if (activation(event)) {
-      select(highlight);
+      select(highlight < 0 ? (enabled[0] ?? -1) : highlight);
       return;
     }
     if (['down', 'up', 'home', 'end'].includes(key ?? '')) {
@@ -117,7 +122,11 @@ export function Menu({
           ? enabled[0]
           : key === 'end'
             ? enabled[enabled.length - 1]
-            : enabled[(at + (key === 'up' ? -1 : 1) + enabled.length) % enabled.length];
+            : at < 0
+              ? key === 'up'
+                ? enabled.at(-1)
+                : enabled[0]
+              : enabled[(at + (key === 'up' ? -1 : 1) + enabled.length) % enabled.length];
       setHighlight(next ?? -1);
       setSubmenu(undefined);
     }
@@ -246,7 +255,7 @@ export function Menu({
                 style={{
                   ...row,
                   position: 'relative',
-                  minHeight: 26,
+                  minHeight: 30,
                   marginLeft: 4,
                   marginRight: 4,
                   paddingLeft: 8,
@@ -262,8 +271,8 @@ export function Menu({
                       : colors.text_secondary,
                   backgroundColor: !disabled && highlight === i ? colors.overlay_strong : undefined,
                   hover: disabled ? undefined : { backgroundColor: colors.overlay },
-                  fontSize: sp(12.5),
-                  lineHeight: sp(15),
+                  fontSize: sp(13),
+                  lineHeight: sp(16),
                   fontWeight: item.selected ? 500 : 400,
                 }}
               >
@@ -320,6 +329,7 @@ export function Dropdown({
   ...props
 }: DropdownProps) {
   const [internal, setInternal] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const trigger = useRef<PublicInstance>(null);
   const open = controlled ?? internal;
   function change(value: boolean) {
@@ -333,11 +343,20 @@ export function Dropdown({
         ref={trigger}
         disabled={disabled}
         open={open}
+        onMouseDown={(event) => {
+          setKeyboardOpen(false);
+          props.onMouseDown?.(event);
+        }}
+        onKeyDown={(event) => {
+          if (activation(event)) setKeyboardOpen(true);
+          props.onKeyDown?.(event);
+        }}
         onClick={() => change(!open)}
       />
       {open && (
         <Menu
           items={items}
+          autoHighlight={keyboardOpen}
           style={menuStyle}
           side={menuSide}
           restoreFocusId={trigger.current?.id}

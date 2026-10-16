@@ -1,0 +1,72 @@
+diff --git a/packages/native/src/theme.rs b/packages/native/src/theme.rs
+--- a/packages/native/src/theme.rs
++++ b/packages/native/src/theme.rs
+@@ -462,3 +462,5 @@
+     /// Native editor caret width in logical pixels.
+     pub caret_width: f32,
++    /// Space below the caret in overflowing multiline editors.
++    pub scroll_bottom_inset: f32,
+     /// Inline-code text, violet-300.
+@@ -499,2 +501,3 @@
+             caret_width: 2.0,
++            scroll_bottom_inset: 0.0,
+             code_text: oklch(0.811, 0.111, 293.571),
+@@ -525,2 +528,3 @@
+             caret_width: 2.0,
++            scroll_bottom_inset: 0.0,
+             code_text: oklch(0.491, 0.27, 292.581),
+@@ -555,2 +559,5 @@
+         }
++        if let Some(inset) = o.scroll_bottom_inset.filter(|inset| inset.is_finite() && *inset >= 0.0 && *inset <= f32::MAX as f64) {
++            self.scroll_bottom_inset = inset as f32;
++        }
+         set(&mut self.code_text, &o.code_text);
+@@ -674,2 +681,3 @@
+     pub caret_width: Option<f64>,
++    pub scroll_bottom_inset: Option<f64>,
+     pub code_text: Option<String>,
+diff --git a/packages/native/src/custom_elements/input.rs b/packages/native/src/custom_elements/input.rs
+--- a/packages/native/src/custom_elements/input.rs
++++ b/packages/native/src/custom_elements/input.rs
+@@ -427,2 +427,3 @@
+                 let caret_width = px(self.theme.caret_width);
++                let scroll_bottom_inset = self.theme.scroll_bottom_inset;
+                 let callback = callback.clone();
+@@ -480,2 +481,3 @@
+                     caret_width,
++                    scroll_bottom_inset,
+                     blink_anchor: cx.background_executor().now(),
+@@ -544,2 +546,3 @@
+                 || state.caret_width != px(self.theme.caret_width)
++                || state.scroll_bottom_inset != self.theme.scroll_bottom_inset
+             {
+@@ -549,2 +552,3 @@
+                 state.caret_width = px(self.theme.caret_width);
++                state.scroll_bottom_inset = self.theme.scroll_bottom_inset;
+                 cx.notify();
+@@ -879,2 +883,3 @@
+     caret_width: Pixels,
++    scroll_bottom_inset: f32,
+     blink_anchor: Instant,
+@@ -1585,2 +1590,3 @@
+-        let max_scroll = (self.content_height - f32::from(bounds.size.height)).max(0.0);
++        let viewport_height = self.scroll_viewport_height(f32::from(bounds.size.height));
++        let max_scroll = (self.content_height - viewport_height).max(0.0);
+         let next = (self.scroll_top + delta).clamp(0.0, max_scroll);
+@@ -1607,2 +1613,2 @@
+-        let viewport_height = f32::from(bounds.size.height);
++        let viewport_height = self.scroll_viewport_height(f32::from(bounds.size.height));
+         let max_scroll = (self.content_height - viewport_height).max(0.0);
+@@ -1740,3 +1746,12 @@
+ 
++    fn scroll_viewport_height(&self, height: f32) -> f32 {
++        if self.multiline && self.content_height > height {
++            (height - self.scroll_bottom_inset).max(f32::from(self.line_height))
++        } else {
++            height
++        }
++    }
++
+     fn clamp_scroll(&mut self, viewport_width: f32, viewport_height: f32) {
++        let viewport_height = self.scroll_viewport_height(viewport_height);
+         if let Some(range) = self.reveal_range.take() {

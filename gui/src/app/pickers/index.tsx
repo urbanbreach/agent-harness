@@ -268,6 +268,7 @@ export function ProjectPicker(
         >
           <div style={{ paddingTop: 10, paddingLeft: 12, paddingRight: 12, paddingBottom: 8 }}>
             <TextField
+              neutralFocus
               ref={input}
               value={query}
               onSubmit={() => choose(cursor < 0 ? 0 : cursor)}
@@ -380,7 +381,15 @@ export function ProjectSelector(props: ProjectSelectorProps) {
             backgroundColor: open ? colors.overlay : undefined,
           }}
         >
-          <text style={{ ...ellipsis, fontSize: sp(20), fontWeight: 500, color: colors.text }}>
+          <text
+            style={{
+              ...ellipsis,
+              fontSize: sp(20),
+              lineHeight: sp(28),
+              fontWeight: 500,
+              color: colors.text,
+            }}
+          >
             {label}
           </text>
           {triggerWidth > 0 && (

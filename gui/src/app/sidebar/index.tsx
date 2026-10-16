@@ -6,6 +6,7 @@ import { taskTitle } from '../../store/title';
 import type { SessionRow, Update } from '../../backend/protocol';
 import {
   Button,
+  Dialog,
   Icon,
   IconButton,
   Menu,
@@ -60,6 +61,8 @@ export function Sidebar(props: SidebarProps) {
   const [revealed, setRevealed] = useState<Record<string, number>>({});
   const [options, setOptions] = useState(false);
   const [rename, setRename] = useState<{ id: string; title: string; original: string }>();
+  const [exportTarget, setExportTarget] = useState<{ task: SessionRow; dest: string }>();
+  const [exporting, setExporting] = useState(false);
   const renameRef = useRef(rename);
   renameRef.current = rename;
   const input = useRef<PublicInstance>(null);
@@ -256,20 +259,40 @@ export function Sidebar(props: SidebarProps) {
     setRename({ id: task.runId, title, original: title });
   }
   async function exportMarkdown(task: SessionRow) {
-    if (!renderer?.promptForPaths) throw new Error('The native folder picker is unavailable');
+    const filename = `${task.runId.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`;
+    const home = state.initialized?.home ?? task.runDir;
+    setExportTarget({ task, dest: `${home.replace(/\/$/, '')}/exports/${filename}` });
+  }
+  function closeExport() {
+    setExportTarget(undefined);
+    setTimeout(() => runAction('composer.focus'), 0);
+  }
+  async function browseExportFolder() {
+    if (!renderer?.promptForPaths || !exportTarget) return;
     const paths = await renderer.promptForPaths({
       directories: true,
       files: false,
       multiple: false,
     });
-    const folder = paths?.[0];
-    if (!folder) return;
-    const filename = `${task.runId.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`;
-    const result = await store.backend.call('sessions.exportMarkdown', {
-      runDir: task.runDir,
-      dest: `${folder.replace(/\/$/, '')}/${filename}`,
-    });
-    showToast(`Exported Markdown to ${result.dest}`, 'success');
+    if (!paths?.[0]) return;
+    const filename = `${exportTarget.task.runId.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`;
+    setExportTarget((current) =>
+      current ? { ...current, dest: `${paths[0]!.replace(/\/$/, '')}/${filename}` } : current,
+    );
+  }
+  async function saveExport() {
+    if (!exportTarget || exporting || !exportTarget.dest.trim()) return;
+    setExporting(true);
+    try {
+      const result = await store.backend.call('sessions.exportMarkdown', {
+        runDir: exportTarget.task.runDir,
+        dest: exportTarget.dest.trim(),
+      });
+      closeExport();
+      showToast(`Exported Markdown to ${result.dest}`, 'success');
+    } finally {
+      setExporting(false);
+    }
   }
   async function duplicateTask(task: SessionRow) {
     await store.continueSession(task.runId);
@@ -931,6 +954,47 @@ export function Sidebar(props: SidebarProps) {
           restoreFocusId={context.focus}
           onClose={() => setContext(undefined)}
         />
+      )}
+      {exportTarget && (
+        <Dialog
+          open
+          title="Export Markdown"
+          style={{ padding: 20, gap: 16 }}
+          onClose={() => {
+            if (!exporting) closeExport();
+          }}
+        >
+          <text style={{ color: colors.text, fontSize: sp(18), fontWeight: 600 }}>
+            Export Markdown
+          </text>
+          <text style={{ color: colors.text_secondary }}>
+            Save this conversation to a Markdown file.
+          </text>
+          <TextField
+            aria-label="Export file path"
+            value={exportTarget?.dest ?? ''}
+            onChange={(dest) =>
+              setExportTarget((current) => (current ? { ...current, dest } : current))
+            }
+            onSubmit={() => run(saveExport())}
+          />
+          <div style={{ ...row, gap: 8, justifyContent: 'flex-end' }}>
+            {renderer?.promptForPaths && (
+              <Button disabled={exporting} onClick={() => run(browseExportFolder())}>
+                Browse folder…
+              </Button>
+            )}
+            <Button disabled={exporting} onClick={closeExport}>
+              Cancel
+            </Button>
+            <Button
+              disabled={exporting || !exportTarget?.dest.trim()}
+              onClick={() => run(saveExport())}
+            >
+              {exporting ? 'Saving…' : 'Save Markdown'}
+            </Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

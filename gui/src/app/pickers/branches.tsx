@@ -233,6 +233,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                     </text>
                   </div>
                   <TextField
+                    neutralFocus
                     key="create"
                     ref={createInput}
                     autoFocus
@@ -261,6 +262,7 @@ export function BranchSelector(props: BranchSelectorProps) {
                     style={{ paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 8 }}
                   >
                     <TextField
+                      neutralFocus
                       key="browse"
                       ref={input}
                       autoFocus
