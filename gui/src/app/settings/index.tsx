@@ -18,11 +18,11 @@ export const settingsPages = [
   ['general', 'General', 'settings'],
   ['appearance', 'Appearance', 'appearance'],
   ['providers', 'Providers', 'bot'],
+  ['skills', 'Skills', 'package'],
+  ['usage', 'Usage', 'chart-column'],
   ['runtime', 'Runtime', 'settings'],
   ['tools', 'Tools & MCP', 'server'],
   ['memory', 'Memory', 'file-text'],
-  ['skills', 'Skills', 'package'],
-  ['usage', 'Usage', 'chart-column'],
   ['worktrees', 'Worktrees', 'folder'],
   ['diagnostics', 'Diagnostics', 'alert'],
   ['help', 'Help', 'file-text'],
@@ -298,7 +298,7 @@ export function SettingsPage({
               key={id}
               onClick={() => setCurrent(id)}
               style={{
-                height: 36,
+                height: 39,
                 paddingLeft: 11,
                 gap: 10,
                 justifyContent: 'flex-start',

@@ -516,10 +516,10 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                     onClick={() => select(entry.skill.id)}
                     style={{
                       ...row,
-                      paddingLeft: 9,
-                      paddingRight: 9,
-                      paddingTop: 7,
-                      paddingBottom: 7,
+                      paddingLeft: 8,
+                      paddingRight: 8,
+                      paddingTop: 6,
+                      paddingBottom: 6,
                       borderRadius: 8,
                       borderWidth: 1,
                       borderColor: 'transparent',

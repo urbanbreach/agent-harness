@@ -143,7 +143,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
     borderRadius: 7,
     overflow: 'hidden',
   };
-  const itemStyle = { height: 26, paddingLeft: 11, paddingRight: 11, fontSize: sp(12.5) };
+  const itemStyle = { height: 26, paddingLeft: 10, paddingRight: 10, fontSize: sp(12.5) };
   const sections = total
     ? [
         [
@@ -185,6 +185,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
         alignSelf: 'center',
         paddingLeft: 0,
         paddingRight: 0,
+        paddingTop: 6,
         paddingBottom: view === 'daily' ? 48 : 16,
         gap: 6,
         color: colors.text,
@@ -273,7 +274,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
               flexDirection: 'row',
               flexWrap: 'wrap',
               gap: 28,
-              marginTop: 20,
+              marginTop: 14,
             }}
           >
             <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -356,7 +357,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
           <div
             style={{
               ...row,
-              marginTop: 24,
+              marginTop: 18,
               borderTopWidth: 1,
               borderBottomWidth: 1,
               borderColor: colors.border,
@@ -372,10 +373,10 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                   paddingLeft: 14,
                   paddingRight: 14,
                   paddingTop: 11,
-                  paddingBottom: 11,
+                  paddingBottom: 13,
                   borderLeftWidth: i ? 1 : 0,
                   borderColor: colors.border,
-                  gap: 2,
+                  gap: 3,
                 }}
               >
                 <text style={{ ...text, ...ellipsis, color: colors.text_tertiary }}>{label}</text>
@@ -390,7 +391,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
               flexDirection: 'row',
               flexWrap: 'wrap',
               gap: 32,
-              marginTop: 24,
+              marginTop: 17,
             }}
           >
             <div style={{ flexGrow: 1, minWidth: 320 }}>
@@ -445,7 +446,9 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                 />
               ))}
               {!sortedModels.length && (
-                <text style={{ ...text, marginTop: 10 }}>No activity in this window</text>
+                <text style={{ ...text, marginTop: 26, textAlign: 'center' }}>
+                  No activity in this window
+                </text>
               )}
             </div>
             <div style={{ width: 240 }}>
@@ -554,7 +557,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
         </div>
       )}
       {data && (
-        <text style={{ ...text, color: colors.text_tertiary, marginTop: 18 }}>
+        <text style={{ ...text, color: colors.text_tertiary, marginTop: 14 }}>
           {`Scanned ${data.scan.scanned} transcripts (${data.scan.skipped} outside the window) · ${data.scan.records} usage records · ${(data.scan.elapsedMs / 1000).toFixed(1)}s · ${data.timeZone} dates`}
         </text>
       )}
@@ -562,6 +565,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
   );
 }
 function ProviderMark({ provider }: { provider: string }) {
+  const { colors } = useTheme();
   return (
     <Icon
       name={
@@ -572,6 +576,7 @@ function ProviderMark({ provider }: { provider: string }) {
             : 'package'
       }
       size={12}
+      color={providerColor(provider, colors)}
     />
   );
 }
@@ -795,7 +800,7 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
     ? Array.from({ length: Math.round(maximum / step) + 1 }, (_, i) => i * step)
     : [0];
   const x = (i: number) => (days.length > 1 ? (i / (days.length - 1)) * width : width / 2);
-  const y = (value: number) => 224 - (value / maximum) * 216;
+  const y = (value: number) => 223 - (value / maximum) * 215;
   const paths = providers.map((p, provider) => {
     const points = days.map((d, i) => [x(i), y(d.values[provider]!)]) as [number, number][];
     const line = points

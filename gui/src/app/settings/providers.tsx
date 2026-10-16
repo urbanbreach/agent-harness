@@ -77,10 +77,20 @@ export function ProvidersPage() {
   const url = message.match(/https?:\/\/[^\s<>]+/)?.[0];
   return (
     <SettingsCard>
-      <SettingsRow title="Providers" description="Connect Harness to the providers you use.">
+      <SettingsRow
+        title="Providers"
+        description="Connect Harness directly to model providers. Add an API key or sign in to a subscription account, then refresh."
+      >
         <Button
           onClick={() => void refresh()}
-          style={{ padding: 8, borderRadius: 7, borderColor: colors.border_strong, gap: 6 }}
+          style={{
+            height: 28,
+            paddingLeft: 12,
+            paddingRight: 12,
+            borderRadius: 7,
+            borderColor: colors.border_strong,
+            gap: 6,
+          }}
         >
           <Icon name="rotate-cw" size={11} />
           {checking ? 'Checking…' : 'Refresh'}

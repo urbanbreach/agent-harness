@@ -232,6 +232,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
     (action) =>
       action.enabled?.() !== false &&
       !hidden.includes(action.id) &&
+      !action.id.startsWith('session.fork:') &&
       !action.id.startsWith('settings.'),
   );
   let rows: PaletteRow[] = actions.map((action) => ({
@@ -512,7 +513,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               borderRadius: 15,
               overflow: 'hidden',
               borderWidth: 1,
-              borderColor: colors.border_strong,
+              borderColor: 'transparent',
               boxShadow: {
                 offsetX: 0,
                 offsetY: 18,
@@ -540,11 +541,13 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                 paddingLeft: 19,
                 paddingRight: 19,
                 borderRadius: 0,
+                borderTopLeftRadius: 14,
+                borderTopRightRadius: 14,
                 borderWidth: 0,
                 borderBottomWidth: 1,
                 borderColor: colors.border,
                 backgroundColor: colors.raised,
-                fontSize: sp(14),
+                fontSize: sp(16),
               }}
               onKeyDown={(event) => {
                 const key = event.key ?? '';

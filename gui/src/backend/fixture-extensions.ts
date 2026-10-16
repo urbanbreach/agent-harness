@@ -1,3 +1,7 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
+import { projectEvents } from '../model/session';
+import type { EventEnvelopeV1 } from './protocol';
 import { blake3 } from '@noble/hashes/blake3.js';
 import type { Methods, Method, UsageAggregate, UsageHistory } from './protocol';
 
@@ -6,12 +10,20 @@ export class FixtureExtensions {
   readonly values: ExtensionFixtures;
   private blobs = new Map<string, { mime: string; dataBase64: string }>();
   private scratchSerial = 0;
-  constructor(values: ExtensionFixtures = {}) {
+  constructor(
+    values: ExtensionFixtures = {},
+    private eventsForRun: (runDir: string) => EventEnvelopeV1[] = () => {
+      throw new Error('Fixture session not found');
+    },
+  ) {
     this.values = structuredClone(values);
   }
   dispatch(method: Method, p: Record<string, any>): unknown {
     const configured = this.values[method];
-    if (configured !== undefined && !['skills.list', 'memory.list', 'toggles.get'].includes(method))
+    if (
+      configured !== undefined &&
+      !['skills.list', 'memory.list', 'toggles.get', 'sessions.exportMarkdown'].includes(method)
+    )
       return structuredClone(configured);
     const skills = (this.values['skills.list'] ??= {
       skills: [
@@ -234,8 +246,21 @@ export class FixtureExtensions {
             total: 1,
           },
         };
-      case 'sessions.exportMarkdown':
-        return { dest: p.dest, bytes: 512 };
+      case 'sessions.exportMarkdown': {
+        if (typeof p.dest !== 'string' || !isAbsolute(p.dest))
+          throw new Error('Export destination must be an absolute path');
+        const view = projectEvents(this.eventsForRun(p.runDir));
+        const markdown = view.entries
+          .filter((entry) => entry.kind === 'user' || entry.kind === 'text')
+          .map(
+            (entry) =>
+              `## ${entry.kind === 'user' ? 'User' : 'Assistant'}\n\n${'text' in entry ? entry.text : ''}\n\n`,
+          )
+          .join('');
+        mkdirSync(dirname(p.dest), { recursive: true, mode: 0o700 });
+        writeFileSync(p.dest, markdown, { mode: 0o600 });
+        return { dest: p.dest, bytes: Buffer.byteLength(markdown) };
+      }
       case 'sessions.trace':
         return {
           session_id: p.runDir.split('/').pop(),

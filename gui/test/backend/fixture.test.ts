@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { createBackend, FixtureBackend, type Scenario } from '../../src/backend/fixture';
 
@@ -42,6 +45,36 @@ test('fixture instances are deterministic and mutations never modify the authore
   } finally {
     a.close();
     b.close();
+  }
+});
+
+test('fixture Markdown export writes visible session content and reports actual UTF-8 bytes', async () => {
+  const scenario = (await Bun.file(
+    new URL('../fixtures/scenarios/conversation.json', import.meta.url),
+  ).json()) as Scenario;
+  scenario.extensions = {
+    ...scenario.extensions,
+    'sessions.exportMarkdown': { dest: '/unused/authored-result.md', bytes: 512 },
+  };
+  const backend = new FixtureBackend(scenario);
+  const directory = await mkdtemp(join(tmpdir(), 'harness-fixture-export-'));
+  const dest = join(directory, 'nested', 'session.md');
+  try {
+    const result = await backend.call('sessions.exportMarkdown', {
+      runDir: '/fixture/sessions/chat',
+      dest,
+    });
+    const markdown = await readFile(dest, 'utf8');
+    expect(markdown).toBe(
+      '## User\n\nWhat does this project do?\n\n## Assistant\n\nIt is a small, synthetic desktop demo.\n\n',
+    );
+    expect(result).toEqual({ dest, bytes: Buffer.byteLength(markdown) });
+    await expect(
+      backend.call('sessions.exportMarkdown', { runDir: '/fixture/sessions/missing', dest }),
+    ).rejects.toThrow('Fixture session not found');
+  } finally {
+    backend.close();
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

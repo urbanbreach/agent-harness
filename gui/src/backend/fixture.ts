@@ -29,13 +29,19 @@ export class FixtureBackend implements Backend {
   private statusListeners = new Set<() => void>();
   private timers = new Map<string, ReturnType<typeof setTimeout>[]>();
   private pins = new Map<string, string[]>();
+  private accounts = new Map<string, string>();
+  private pinnedAccount?: string;
   private accessModes = new Map<string, Methods['session.info']['result']['accessMode']>();
   private status: BackendStatus = { state: 'connected', reconnectable: false };
   private serial = 0;
   private extensions: FixtureExtensions;
   constructor(scenario: Scenario) {
     this.scenario = structuredClone(scenario);
-    this.extensions = new FixtureExtensions(scenario.extensions);
+    this.extensions = new FixtureExtensions(scenario.extensions, (runDir) => {
+      const session = this.scenario.sessions.find((session) => session.row.runDir === runDir);
+      if (!session) throw new BackendError('not_found', 'Fixture session not found');
+      return session.events;
+    });
     this.documents.set('projects', structuredClone(scenario.projects));
     for (const [name, value] of Object.entries(scenario.state ?? {})) {
       this.documents.set(name, structuredClone(value));
@@ -95,7 +101,10 @@ export class FixtureBackend implements Backend {
       return session;
     };
     const override = this.extensions.values[method];
-    if (override !== undefined && !['skills.list', 'memory.list', 'toggles.get'].includes(method)) {
+    if (
+      override !== undefined &&
+      !['skills.list', 'memory.list', 'toggles.get', 'sessions.exportMarkdown'].includes(method)
+    ) {
       return structuredClone(override);
     }
     switch (method) {
@@ -366,6 +375,51 @@ export class FixtureBackend implements Backend {
       case 'auth.command':
       case 'auth.start': {
         const attempt = ++this.serial;
+        if (p.args?.[0] === 'claude-account') {
+          const [, action, id, ...name] = p.args as string[];
+          let success = true;
+          let message = '';
+          if (action === 'add') {
+            const account = `fixture-account-${attempt}`;
+            this.accounts.set(account, 'Synthetic subscription');
+            message = `Added synthetic account ${account}. No provider was contacted.`;
+          } else if (action === 'list') {
+            message =
+              [...this.accounts]
+                .map(
+                  ([account, label]) =>
+                    `${label} (${account})${this.pinnedAccount === account ? ' | pinned' : ''}`,
+                )
+                .join('\n') || 'No synthetic subscription accounts.';
+          } else if (action === 'unpin') {
+            this.pinnedAccount = undefined;
+            message = 'Unpinned synthetic account.';
+          } else if (!id || !this.accounts.has(id)) {
+            success = false;
+            message = 'Synthetic account not found.';
+          } else if (action === 'remove') {
+            this.accounts.delete(id);
+            if (this.pinnedAccount === id) this.pinnedAccount = undefined;
+            message = `Removed synthetic account ${id}.`;
+          } else if (action === 'rename') {
+            this.accounts.set(id, name.join(' '));
+            message = `Renamed synthetic account ${id} to ${name.join(' ')}.`;
+          } else if (action === 'pin') {
+            this.pinnedAccount = id;
+            message = `Pinned synthetic account ${id}.`;
+          } else {
+            success = false;
+            message = `Unsupported synthetic account action: ${action}`;
+          }
+          queueMicrotask(() => {
+            for (const listener of this.listeners)
+              listener({
+                method: 'auth.update',
+                params: { attempt, kind: 'result', success, message: `Fixture only: ${message}` },
+              });
+          });
+          return { attempt };
+        }
         queueMicrotask(() => {
           for (const listener of this.listeners)
             listener({
