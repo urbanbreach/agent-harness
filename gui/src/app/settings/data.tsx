@@ -62,11 +62,12 @@ export function DataPage({ page, cwd }: { page: string; cwd: string }) {
           <SettingsRow
             title="Tools & MCP"
             description="Changes apply to newly started sessions."
+            style={{ minHeight: 74, paddingTop: 11.5, paddingBottom: 12.5 }}
             last
           />
         </SettingsCard>
         {[...new Set(toggles.map((entry) => entry.kind))].map((kind) => (
-          <SettingsCard key={kind}>
+          <SettingsCard key={kind} style={{ marginTop: 12 }}>
             {toggles
               .filter((entry) => entry.kind === kind)
               .map((entry, index, group) => (

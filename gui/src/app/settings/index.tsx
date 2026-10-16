@@ -28,7 +28,7 @@ export const settingsPages = [
   ['help', 'Help', 'file-text'],
 ] as const;
 
-export function SettingsCard({ children }: { children: ReactNode }) {
+export function SettingsCard({ children, style }: { children: ReactNode; style?: StyleDesc }) {
   const { colors } = useTheme();
   return (
     <div
@@ -37,6 +37,7 @@ export function SettingsCard({ children }: { children: ReactNode }) {
         borderRadius: 13,
         overflow: 'hidden',
         marginTop: 15,
+        ...style,
       }}
     >
       {children}
@@ -105,7 +106,7 @@ function General() {
         <SettingsRow
           title="Local by default"
           description="Projects, conversations, and settings are stored on this computer"
-          style={{ minHeight: 74 }}
+          style={{ minHeight: 74, paddingTop: 11.5, paddingBottom: 12.5 }}
           last
         />
       </SettingsCard>

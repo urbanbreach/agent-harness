@@ -680,6 +680,9 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                     {row.shortcut && (
                       <div
                         style={{
+                          position: 'relative',
+                          left: 1,
+                          top: 1,
                           height: 22,
                           minWidth: 28,
                           paddingLeft: 7,

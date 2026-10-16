@@ -82,16 +82,19 @@ export function ProvidersPage() {
         title="Providers"
         description="Connect Harness directly to model providers. Add an API key or sign in to a subscription account, then refresh."
         last
-        style={{ paddingTop: 14, paddingBottom: 2 }}
+        style={{ paddingTop: 14, paddingBottom: 4 }}
       >
         <Button
           onClick={() => void refresh()}
           style={{
             height: 28,
+            minWidth: 87,
+            flexShrink: 0,
             alignSelf: 'flex-start',
-            paddingLeft: 12,
-            paddingRight: 12,
+            paddingLeft: 11,
+            paddingRight: 11,
             borderRadius: 7,
+            fontSize: sp(12.5),
             borderColor: colors.border_strong,
             gap: 6,
           }}
@@ -113,6 +116,7 @@ export function ProvidersPage() {
               <div
                 style={{
                   position: 'relative',
+                  display: 'flex',
                   width: 30,
                   height: 30,
                   flexShrink: 0,
@@ -138,9 +142,9 @@ export function ProvidersPage() {
                     position: 'absolute',
                     right: -2,
                     bottom: -2,
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
                     borderWidth: 2,
                     borderColor: colors.raised,
                     backgroundColor: provider.connected ? colors.success : colors.text_ghost,
@@ -151,6 +155,7 @@ export function ProvidersPage() {
           >
             <Button
               aria-label={`Configure ${provider.label}`}
+              style={{ width: 22, height: 22 }}
               onClick={() => {
                 setExpanded(expanded === provider.id ? undefined : provider.id);
                 setMessage('');
@@ -158,7 +163,7 @@ export function ProvidersPage() {
                 setApiKeyProvider(undefined);
               }}
             >
-              <Icon name={expanded === provider.id ? 'chevron-down' : 'chevron-right'} />
+              <Icon name={expanded === provider.id ? 'chevron-down' : 'chevron-right'} size={14} />
             </Button>
           </SettingsRow>
           {expanded === provider.id && (

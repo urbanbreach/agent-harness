@@ -367,16 +367,18 @@ export function UsagePage({ cwd }: { cwd?: string }) {
               <div
                 key={label}
                 style={{
+                  display: 'flex',
+                  flexDirection: 'column',
                   flexGrow: 1,
                   flexBasis: 0,
                   minWidth: 0,
                   paddingLeft: 14,
                   paddingRight: 14,
                   paddingTop: 11,
-                  paddingBottom: 13,
+                  paddingBottom: 11,
                   borderLeftWidth: i ? 1 : 0,
                   borderColor: colors.border,
-                  gap: 3,
+                  gap: 2,
                 }}
               >
                 <text style={{ ...text, ...ellipsis, color: colors.text_tertiary }}>{label}</text>
@@ -391,7 +393,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
               flexDirection: 'row',
               flexWrap: 'wrap',
               gap: 32,
-              marginTop: 17,
+              marginTop: 18,
             }}
           >
             <div style={{ flexGrow: 1, minWidth: 320 }}>
@@ -860,8 +862,8 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
               key={t}
               style={{
                 position: 'absolute',
-                right: 0,
-                top: Math.max(0, y(t) - 15),
+                right: 1,
+                top: Math.max(0, y(t) - 7),
                 fontSize: sp(12.5),
                 color: colors.text_tertiary,
               }}
