@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DismissableLayer, useGpuix, type KeyEvent, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import { Button, Icon, MenuChip, TextField, ellipsis, row } from '../../ui';
+import type { IconName } from '../../ui/icon-names';
 import { Scrollbar } from '../../ui/scrollbar';
 export { BranchSelector, type BranchSelectorProps } from './branches';
 
@@ -69,7 +70,7 @@ export function PickerRow({
   rowRef,
 }: {
   label: string;
-  icon?: string;
+  icon?: IconName;
   checked?: boolean;
   highlighted?: boolean;
   disabled?: boolean;

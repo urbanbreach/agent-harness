@@ -131,7 +131,13 @@ export function Sidebar(props: SidebarProps) {
     const buckets = oldest ? [...dateBuckets].reverse() : dateBuckets;
     for (const label of buckets) {
       const matches = tasks.filter((task) => dateBucket(sidebarTimestamp(task), now) === label);
-      if (matches.length) groups.push({ key: `updated:${label}`, label, tasks: matches });
+      const emptyRecentBucket =
+        label === 'Yesterday' &&
+        tasks.some(
+          (task) => !['Today', 'Yesterday'].includes(dateBucket(sidebarTimestamp(task), now)),
+        );
+      if (matches.length || emptyRecentBucket)
+        groups.push({ key: `updated:${label}`, label, tasks: matches });
     }
   }
   if (!groups.length) {
@@ -456,7 +462,7 @@ export function Sidebar(props: SidebarProps) {
           </div>
         </div>
       )}
-      <div style={{ paddingLeft: 10, paddingRight: 10, flexShrink: 0 }}>
+      <div style={{ paddingLeft: 9, paddingRight: 11, flexShrink: 0 }}>
         <Button onClick={() => props.onNewTask(state.selectedProject)} style={actionStyle}>
           <div style={{ ...row, width: 20, justifyContent: 'center' }}>
             <Icon name="compose" size={14} color={colors.text_secondary} />
@@ -488,7 +494,7 @@ export function Sidebar(props: SidebarProps) {
               setOffset(top);
             }
           }}
-          style={{ flexGrow: 1, minHeight: 0, paddingLeft: 10, paddingRight: 10 }}
+          style={{ flexGrow: 1, minHeight: 0, paddingLeft: 9, paddingRight: 11 }}
         >
           {entries.map((entry, index) => {
             if (entry.kind === 'space')
@@ -936,7 +942,7 @@ export function Sidebar(props: SidebarProps) {
           }}
         />
       </div>
-      <div style={{ ...row, height: 40, paddingLeft: 10, paddingRight: 10, flexShrink: 0 }}>
+      <div style={{ ...row, height: 40, paddingLeft: 9, paddingRight: 11, flexShrink: 0 }}>
         <Tooltip content="Settings">
           <IconButton
             name="settings"

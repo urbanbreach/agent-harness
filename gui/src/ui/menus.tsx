@@ -11,11 +11,12 @@ import {
 } from '@gpuix/react';
 import { useTheme } from '../theme';
 import { bare, activation, Icon, MenuChip, row, ellipsis, type MenuChipProps } from './controls';
+import type { IconName } from './icon-names';
 
 export interface MenuItem {
   id: string;
   label?: string;
-  icon?: string;
+  icon?: IconName;
   disabled?: boolean;
   selected?: boolean;
   shortcut?: string;
@@ -29,6 +30,7 @@ export interface MenuProps {
   items: MenuItem[];
   onClose: () => void;
   style?: StyleDesc;
+  itemStyle?: StyleDesc;
   restoreFocusId?: number;
   ignoreOutsideId?: number;
   position?: { x: number; y: number };
@@ -41,6 +43,7 @@ export function Menu({
   items,
   onClose,
   style,
+  itemStyle,
   restoreFocusId,
   ignoreOutsideId,
   position,
@@ -274,6 +277,7 @@ export function Menu({
                   fontSize: sp(13),
                   lineHeight: sp(16),
                   fontWeight: item.selected ? 500 : 400,
+                  ...itemStyle,
                 }}
               >
                 {item.content ?? (
@@ -317,6 +321,7 @@ export interface DropdownProps extends Omit<MenuChipProps, 'onClick' | 'open'> {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   menuStyle?: StyleDesc;
+  menuItemStyle?: StyleDesc;
   menuSide?: MenuProps['side'];
 }
 export function Dropdown({
@@ -324,6 +329,7 @@ export function Dropdown({
   open: controlled,
   onOpenChange,
   menuStyle,
+  menuItemStyle,
   menuSide,
   disabled,
   ...props
@@ -358,6 +364,7 @@ export function Dropdown({
           items={items}
           autoHighlight={keyboardOpen}
           style={menuStyle}
+          itemStyle={menuItemStyle}
           side={menuSide}
           restoreFocusId={trigger.current?.id}
           onClose={() => change(false)}

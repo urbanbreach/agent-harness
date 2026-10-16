@@ -67,7 +67,7 @@ export function Scrollbar({
   }
   function move(e: EventPayload) {
     if (!drag) return;
-    if (e.pressedButton !== undefined && e.pressedButton !== 0) {
+    if (e.pressedButton !== 0) {
       setDrag(undefined);
       return;
     }

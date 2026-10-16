@@ -1,3 +1,5 @@
+import type { IconName } from '../ui/icon-names';
+
 // App-wide commands shared by the command palette, keyboard shortcuts and menus.
 // Surfaces register handlers for the commands they own; callers run them by id.
 export type ActionId = string;
@@ -8,7 +10,7 @@ export type ActionInfo = {
   label: string;
   /** Linux shortcut as displayed, e.g. "Ctrl+Shift+B". */
   shortcut?: string;
-  icon?: string;
+  icon?: IconName;
   /** Hidden from the palette when false. */
   enabled?: () => boolean;
   run: (value?: string) => void;

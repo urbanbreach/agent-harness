@@ -7,7 +7,7 @@ import {
   type StyleDesc,
 } from '@gpuix/react';
 import { ThemeProvider, useTheme } from '../theme';
-import { Button, Icon, ToastHost, ToastProvider, Tooltip, useToast } from '../ui';
+import { Button, Icon, ToastHost, ToastProvider, Tooltip, useToast, type IconName } from '../ui';
 import { memoryPersist, type Persist } from '../state/persist';
 import { fitPanels, usePanelLayout } from '../state/layout';
 import { Panel } from './PanelFrame';
@@ -114,7 +114,7 @@ function WindowFrame({ children }: { children: ReactNode }) {
       enabled: true,
       run: () => runAction('shell.quit'),
     },
-  ];
+  ] satisfies { icon: IconName; label: string; enabled: boolean; run: () => void }[];
   const chrome = (
     <div
       style={{
@@ -366,7 +366,7 @@ export function Workspace(props: AppProps) {
     event.stopPropagation();
   };
   const chromeButton = (
-    icon: string,
+    icon: IconName,
     label: string,
     action?: () => void,
     disabled = false,
@@ -392,7 +392,7 @@ export function Workspace(props: AppProps) {
           active: { backgroundColor: colors.overlay_strong },
         }}
       >
-        <Icon name={icon} size={14} color={colors.text_tertiary} />
+        <Icon name={icon} size={icon === 'info' ? 16 : 14} color={colors.text_tertiary} />
       </Button>
     </Tooltip>
   );
@@ -520,7 +520,9 @@ export function Workspace(props: AppProps) {
               {props.title ?? t('task.untitled')}
             </text>
             <div {...titlebar} style={{ flexGrow: 1, height: '100%' }} />
-            {props.headerActions}
+            {props.headerActions && (
+              <div style={{ position: 'relative', left: -1 }}>{props.headerActions}</div>
+            )}
             {!layout.rightVisible && props.fps}
             {chromeButton('info', t('navigation.usage'), () => runAction('usage.toggle'))}
             {!layout.rightVisible &&

@@ -28,9 +28,9 @@ export function Welcome({
         minHeight: 0,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingLeft: 32,
+        paddingLeft: noProject ? 32 : 34,
         paddingRight: 32,
-        paddingBottom: noProject ? 46 : 44,
+        paddingBottom: noProject ? 47 : 51,
       }}
     >
       <Icon name="sparkle" size={noProject ? 24 : 20} color={colors.accent} />

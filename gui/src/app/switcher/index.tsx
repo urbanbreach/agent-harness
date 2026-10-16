@@ -2,6 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { DismissableLayer, useWindowSize, type PublicInstance } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import { Icon, ellipsis, row } from '../../ui';
+import type { IconName } from '../../ui/icon-names';
 import { TaskSwitcherController } from './controller';
 export {
   TaskSwitcherController,
@@ -32,14 +33,14 @@ const providerColors: Record<string, string> = {
   anthropic: '#D97757',
   deepseek: '#4D6BFE',
 };
-const providerIcons: Record<string, string> = {
-  claude: 'claude',
-  anthropic: 'claude',
-  deepseek: 'deepseek',
-  openai: 'openai',
-  codex: 'openai',
-  grok: 'grok',
-  xai: 'grok',
+const providerIcons: Record<string, IconName> = {
+  claude: 'provider-claude',
+  anthropic: 'provider-claude',
+  deepseek: 'provider-deepseek',
+  openai: 'provider-openai',
+  codex: 'provider-openai',
+  grok: 'provider-grok',
+  xai: 'provider-grok',
 };
 export function TaskSwitcher({
   controller,
@@ -124,9 +125,7 @@ export function TaskSwitcher({
                   const provider = (task.provider || '').toLowerCase();
                   const providerName = task.providerName || task.provider || 'Harness';
                   const providerColor = providerColors[provider] || colors.text;
-                  const providerIcon = providerIcons[provider]
-                    ? `provider-${providerIcons[provider]}`
-                    : 'sparkle';
+                  const providerIcon = providerIcons[provider] ?? 'sparkle';
                   const status = task.status || 'idle';
                   const statusIcon =
                     status === 'working' || status === 'connecting'

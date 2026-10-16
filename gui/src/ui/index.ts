@@ -26,3 +26,4 @@ export { Toast, ToastProvider, ToastHost, useToast, Dialog } from './overlays';
 export type { ToastKind, ToastMessage, DialogProps } from './overlays';
 export { Scrollbar } from './scrollbar';
 export type { ScrollbarProps } from './scrollbar';
+export type { IconName } from './icon-names';

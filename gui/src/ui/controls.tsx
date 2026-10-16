@@ -15,6 +15,7 @@ import { useTheme } from '../theme';
 import { nativeRenderer, type InputCommand, type NativeEvent } from '../native';
 import { t } from '../i18n';
 import { Menu, type MenuItem } from './menus';
+import type { IconName } from './icon-names';
 
 export const row: StyleDesc = { display: 'flex', flexDirection: 'row', alignItems: 'center' };
 export const ellipsis: StyleDesc = {
@@ -31,13 +32,19 @@ export function bare(event: EventPayload) {
 export function activation(event: EventPayload) {
   return bare(event) && ['enter', 'space', ' '].includes(event.key ?? '');
 }
-export function Icon({ name, size = 13, color }: { name: string; size?: number; color?: string }) {
+export function Icon({
+  name,
+  size = 13,
+  color,
+}: {
+  name: IconName;
+  size?: number;
+  color?: string;
+}) {
   const { colors, sp } = useTheme();
   return (
     <svg
-      src={
-        new URL(`../../assets/icons/${name.replace(/\.svg$/, '')}.svg`, import.meta.url).pathname
-      }
+      src={new URL(`../../assets/icons/${name}.svg`, import.meta.url).pathname}
       style={{
         width: sp(size),
         height: sp(size),
@@ -122,7 +129,7 @@ export const Button = forwardRef<PublicInstance, ButtonProps>(function Button(
   );
 });
 export interface IconButtonProps extends ButtonProps {
-  name: string;
+  name: IconName;
   size?: number;
   color?: string;
   label?: string;
@@ -144,13 +151,14 @@ export const IconButton = forwardRef<PublicInstance, IconButtonProps>(function I
 });
 export interface MenuChipProps extends ButtonProps {
   label?: string;
-  icon?: string;
+  icon?: IconName;
+  iconColor?: string;
   outlined?: boolean;
   open?: boolean;
   chevron?: boolean;
 }
 export const MenuChip = forwardRef<PublicInstance, MenuChipProps>(function MenuChip(
-  { label, icon, outlined, open, chevron = true, children, style, disabled, ...props },
+  { label, icon, iconColor, outlined, open, chevron = true, children, style, disabled, ...props },
   ref,
 ) {
   const { colors, sp } = useTheme();
@@ -173,7 +181,7 @@ export const MenuChip = forwardRef<PublicInstance, MenuChipProps>(function MenuC
         ...style,
       }}
     >
-      {icon && <Icon name={icon} size={12} />}
+      {icon && <Icon name={icon} size={12} color={iconColor} />}
       <text
         style={{ ...ellipsis, color: colors.text_secondary, fontSize: sp(13), lineHeight: sp(16) }}
       >
@@ -231,7 +239,7 @@ export function Switch({
   );
 }
 export interface TextFieldProps extends Omit<InputProps, 'onChange'> {
-  icon?: string;
+  icon?: IconName;
   iconSize?: number;
   neutralFocus?: boolean;
   onChange?: (value: string) => void;
@@ -387,9 +395,9 @@ export const TextField = forwardRef<PublicInstance, TextFieldProps>(function Tex
           flexGrow: 1,
           flexShrink: 1,
           minWidth: 0,
-          height: sp(16),
-          fontSize: sp(12.5),
-          lineHeight: sp(16),
+          height: style?.lineHeight ?? sp(16),
+          fontSize: style?.fontSize ?? sp(12.5),
+          lineHeight: style?.lineHeight ?? sp(16),
           color: colors.text,
           cursor: 'text',
           overflow: 'hidden',

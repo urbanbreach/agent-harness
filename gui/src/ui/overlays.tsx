@@ -13,6 +13,8 @@ import {
   DialogBackdrop,
   DialogPopup,
   useWindowSize,
+  useGpuix,
+  type PublicInstance,
   type StyleDesc,
 } from '@gpuix/react';
 import { useTheme } from '../theme';
@@ -65,6 +67,9 @@ export function Toast({
   id?: number;
 }) {
   const { colors, sp, reducedMotion } = useTheme();
+  const { renderer } = useGpuix();
+  const anchor = useRef<PublicInstance>(null);
+  const [position, setPosition] = useState<{ x: number; y: number }>();
   const [hover, setHover] = useState(false);
   const remaining = useRef(5000);
   const started = useRef(0);
@@ -83,21 +88,29 @@ export function Toast({
   }, [hover, message, onDismiss]);
   return (
     <div
+      ref={anchor}
       onLayout={(event) => {
         if (event.width !== undefined) setAvailableWidth(Math.min(560, event.width));
+        const bounds = anchor.current && renderer?.getElementBounds?.(anchor.current.id);
+        if (bounds) {
+          const x = bounds.x + bounds.width / 2;
+          const y = bounds.y;
+          setPosition((current) => (current?.x === x && current.y === y ? current : { x, y }));
+        }
       }}
       style={{
         position: 'absolute',
         top: 0,
         left: 20,
         right: 20,
-        height: 0,
+        height: 1,
         ...row,
         justifyContent: 'center',
         pointerEvents: 'none',
       }}
     >
       <anchored
+        position={position}
         side="bottom"
         align="center"
         gap={56}
@@ -196,6 +209,7 @@ export function Dialog({
 }: DialogProps) {
   const { colors } = useTheme();
   const size = useWindowSize();
+  if (!open) return null;
   return (
     <NativeDialog
       open={open}
