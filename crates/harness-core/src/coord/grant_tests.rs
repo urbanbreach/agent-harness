@@ -221,9 +221,26 @@ async fn yolo_releases_pending_tools_but_keeps_sensitive_requests_interactive(
             } else {
                 None
             };
+            if !already_enabled {
+                // Automatic approvers get exactly YOLO's authority.
+                let first = permission.clone().ok_or("missing approval")?;
+                let approved = coordinator
+                    .resolve_permission_if_yolo_eligible(first, "automatic approver")
+                    .await?;
+                assert_eq!(approved, allowed || external);
+            }
             coordinator.set_yolo_mode(true).await?;
             if external && !already_enabled {
-                permission = Some(approval(&mut events, &id).await?);
+                let outside_request = approval(&mut events, &id).await?;
+                assert!(
+                    !coordinator
+                        .resolve_permission_if_yolo_eligible(
+                            outside_request.clone(),
+                            "automatic approver"
+                        )
+                        .await?
+                );
+                permission = Some(outside_request);
             }
             if allowed {
                 super::history_tests::settled(&coordinator, &id).await?;

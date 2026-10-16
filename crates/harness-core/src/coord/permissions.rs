@@ -160,14 +160,8 @@ impl Runtime {
             let pending: Vec<_> = self
                 .pending
                 .iter()
-                .filter_map(|(id, pending)| {
-                    let eligible = match &pending.work {
-                        PendingWork::Tool(work) => work.yolo,
-                        PendingWork::EditPaths { yolo, .. } => *yolo,
-                        PendingWork::Question { .. } => false,
-                    };
-                    eligible.then(|| id.clone())
-                })
+                .filter(|(_, pending)| yolo_eligible(pending))
+                .map(|(id, _)| id.clone())
                 .collect();
             for id in pending {
                 if let Err(error) = self.resolve_permission(
@@ -186,5 +180,27 @@ impl Runtime {
             }
         }
         Ok(())
+    }
+
+    /// Approves a pending request only if YOLO mode could approve it, so automatic
+    /// approvers never exceed YOLO's limits. Returns whether the request was approved.
+    pub fn resolve_permission_if_yolo_eligible(
+        &mut self,
+        id: &str,
+        reason: String,
+    ) -> Result<bool, CoordinatorError> {
+        if !self.pending.get(id).is_some_and(yolo_eligible) {
+            return Ok(false);
+        }
+        self.resolve_permission(id, PermissionDecision::Allow, Some(reason))?;
+        Ok(true)
+    }
+}
+
+fn yolo_eligible(pending: &Pending) -> bool {
+    match &pending.work {
+        PendingWork::Tool(work) => work.yolo,
+        PendingWork::EditPaths { yolo, .. } => *yolo,
+        PendingWork::Question { .. } => false,
     }
 }

@@ -264,6 +264,17 @@ impl CoordinatorHandle {
         self.call(move |s| s.resolve_permission(&id, decision, reason))
             .await
     }
+    /// Approves a pending request only when YOLO mode could approve it.
+    pub async fn resolve_permission_if_yolo_eligible(
+        &self,
+        id: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Result<bool, CoordinatorError> {
+        let id = id.into();
+        let reason = reason.into();
+        self.call(move |s| s.resolve_permission_if_yolo_eligible(&id, reason))
+            .await
+    }
     pub async fn set_yolo_mode(&self, enabled: bool) -> Result<(), CoordinatorError> {
         self.call(move |s| s.set_yolo_mode(enabled)).await
     }

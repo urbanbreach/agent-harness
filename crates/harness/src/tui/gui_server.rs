@@ -9,7 +9,7 @@ use harness_tui::{LiveUpdate, UiIntent};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
@@ -45,7 +45,8 @@ struct Session {
     cwd: PathBuf,
     metadata: LaunchMetadata,
     intents: mpsc::UnboundedSender<UiIntent>,
-    access: Arc<AtomicU8>,
+    /// Access mode in the low byte; the upper bits count changes.
+    access: Arc<AtomicU32>,
     tasks: Vec<tokio::task::JoinHandle<Result<(), String>>>,
     bridge: tokio::task::JoinHandle<()>,
 }
@@ -233,7 +234,7 @@ impl Server {
             .run_info()
             .await
             .map_err(|e| e.to_string())?;
-        let access = Arc::new(AtomicU8::new(0));
+        let access = Arc::new(AtomicU32::new(0));
         set_access(&runtime.coordinator, &access, mode).await?;
         let output = self.output.clone();
         let bridge_coordinator = runtime.coordinator.clone();
@@ -248,7 +249,14 @@ impl Server {
                     &bridge_settings,
                     &update,
                 );
-                if output.send(json!({"method":"session.update","params":{"sessionId":bridge_id,"update":wire::update(update)}})).is_err() { break; }
+                let session_id = match &update {
+                    LiveUpdate::Event(event) => match event.as_ref() {
+                        RuntimeEvent::Durable(event) => event.run_id.as_str(),
+                        RuntimeEvent::Live(event) => event.run_id.as_str(),
+                    },
+                    _ => bridge_id.as_str(),
+                };
+                if output.send(json!({"method":"session.update","params":{"sessionId":session_id,"update":wire::update(update)}})).is_err() { break; }
             }
         });
         let result = json!({"sessionId":id,"runDir":info.run_dir,"cwd":settings.workspace_root});
@@ -448,7 +456,7 @@ fn is_edit_permission(kind: &str) -> bool {
 }
 async fn set_access(
     coordinator: &CoordinatorHandle,
-    access: &AtomicU8,
+    access: &AtomicU32,
     mode: &str,
 ) -> Result<(), String> {
     let value = match mode {
@@ -462,7 +470,10 @@ async fn set_access(
         .set_yolo_mode(value == 2)
         .await
         .map_err(|e| e.to_string())?;
-    access.store(value, Ordering::Relaxed);
+    // Counting every change lets an in-flight automatic approval notice any switch.
+    access.update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        ((current >> 8).wrapping_add(1) << 8) | value
+    });
     Ok(())
 }
 
@@ -588,11 +599,12 @@ const AUTO_REVIEW_POLICY: &str = "You are a conservative permission reviewer. Th
 
 fn auto_permission(
     coordinator: &CoordinatorHandle,
-    access: &Arc<AtomicU8>,
+    access: &Arc<AtomicU32>,
     settings: &LiveSettings,
     update: &LiveUpdate,
 ) {
-    let mode = access.load(Ordering::Relaxed);
+    let state = access.load(Ordering::Relaxed);
+    let mode = state & 0xff;
     if !matches!(mode, 1 | 3) {
         return;
     }
@@ -605,7 +617,8 @@ fn auto_permission(
     let EventV1::PermissionRequested(permission) = &event.payload else {
         return;
     };
-    if mode == 1 && !is_edit_permission(&permission.kind) {
+    // Questions are for the user, never for a reviewer.
+    if permission.kind == "question" || mode == 1 && !is_edit_permission(&permission.kind) {
         return;
     }
     let coordinator = coordinator.clone();
@@ -621,16 +634,15 @@ fn auto_permission(
                 return;
             }
         }
-        // A mode change while the reviewer is running revokes its authority.
-        if access.load(Ordering::Relaxed) != mode {
+        // An access change while the reviewer ran revokes its authority.
+        if access.load(Ordering::Relaxed) != state {
             return;
         }
+        // The coordinator approves only what YOLO mode itself could approve, so
+        // outside-workspace, repeated-call and secret-file requests still ask.
+        let reason = if mode == 3 { "GUI auto reviewer" } else { "GUI autoEdits" };
         let _ = coordinator
-            .resolve_permission(
-                permission_id,
-                harness_core::perm::PermissionDecision::Allow,
-                Some(if mode == 3 { "GUI auto reviewer" } else { "GUI autoEdits" }.into()),
-            )
+            .resolve_permission_if_yolo_eligible(permission_id, reason)
             .await;
     });
 }
