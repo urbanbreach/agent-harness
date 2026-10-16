@@ -332,7 +332,8 @@ pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
         return;
     }
     let mut helper = spawn_animated_helper("pty_helper_compaction", "compaction");
-    helper.wait_for("Compacting context...");
+    // The label ends in "…" or "..." depending on the terminal's Unicode support.
+    helper.wait_for("Compacting context");
     let initial = compaction_spinner(&helper.screen_text());
     let deadline = Instant::now() + MARKER_TIMEOUT;
     loop {
@@ -348,7 +349,6 @@ pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
             helper.parser.process(&chunk);
         }
     }
-    send_bytes(helper.writer.as_mut(), b"next chunk\r").unwrap_or_abort();
     helper.wait_for("Latest summary chunk");
     let streamed = helper.screen_text();
     assert_eq!(
@@ -359,12 +359,12 @@ pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
         1
     );
     assert!(
-        streamed.contains("(ctrl+c to cancel) Latest summary chunk"),
+        streamed.contains("(Ctrl+C to cancel) Latest summary chunk"),
         "{streamed}"
     );
     helper.master.resize(pty_size(48, 24)).unwrap_or_abort();
     helper.parser = Parser::new(24, 48, 0);
-    helper.wait_for("(ctrl+c to cancel)");
+    helper.wait_for("(Ctrl+C to cancel)");
     let narrow = helper.screen_text();
     assert_eq!(
         narrow
@@ -373,8 +373,11 @@ pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
             .count(),
         1
     );
+    // At 48 columns only the last wide character fits beside the label and the stop control.
     assert!(
-        narrow.contains("最新"),
+        narrow
+            .lines()
+            .any(|row| row.contains("新") && row.contains("[stop]")),
         "stream must retain the newest trailing columns\n{narrow}"
     );
     send_key(helper.writer.as_mut(), 0x03).unwrap_or_abort();
@@ -400,6 +403,12 @@ pub(crate) fn pty_helper_compaction() {
     update_tx
         .send(compaction_update(Some("")))
         .unwrap_or_abort();
+    // The pass streams its summary on its own; prompts typed meanwhile only queue.
+    let streaming = update_tx.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let _ = streaming.send(compaction_update(Some("Latest summary chunk · 最新")));
+    });
     run_tui_with_options(TuiOptions {
         storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
             std::env::var(key).ok()
@@ -415,7 +424,6 @@ pub(crate) fn pty_helper_compaction() {
         exit_on_finish: false,
         on_ui_intent: Some(Arc::new(move |intent| {
             let preview = match intent {
-                UiIntent::SubmitPrompt { .. } => Some("Latest summary chunk · 最新"),
                 UiIntent::CancelCompaction { agent_id } if agent_id == "compaction-agent" => None,
                 _ => return,
             };

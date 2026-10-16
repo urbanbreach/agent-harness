@@ -167,6 +167,8 @@ jobs:
         working-directory: gui
       - run: bun test
         working-directory: gui
+        env:
+          NAPI_RS_NATIVE_LIBRARY_PATH: ${{ github.workspace }}/gui/native/dist/gpuix-native.linux-x64-gnu.node
       - run: bun run format:check
         working-directory: gui
 

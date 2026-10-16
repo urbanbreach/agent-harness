@@ -63,8 +63,15 @@ fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme
     } else {
         full
     };
-    let remaining =
-        usize::from(area.width).saturating_sub(display_width(&status).saturating_add(1));
+    // The stop control is drawn over the row's right end; keep the newest preview text clear of it.
+    let stop = if geometry::live_turn_control_visibility(app, area).stop {
+        display_width(geometry::STOP_LABEL) + 1
+    } else {
+        0
+    };
+    let remaining = usize::from(area.width)
+        .saturating_sub(display_width(&status).saturating_add(1))
+        .saturating_sub(stop);
     let tail = compaction_preview_tail(preview, remaining);
     let label = status.strip_prefix(spinner).unwrap_or(&status);
     let mut line = Line::from(vec![
