@@ -51,6 +51,10 @@ GUI-owned JSON documents under `<home>/gui/<name>.json`. `name` matches
 - `state.write { name, value }` → `null`. Atomic replace; creates `<home>/gui/`
   on first write only.
 
+Initial appearance, panel layout, and window geometry are read without writing
+defaults back. Opening an empty home leaves it file-free until a user changes
+state; later window-geometry changes are persisted normally.
+
 ## Projects and sessions
 
 A project is a workspace directory. Its sessions live in the Harness session
@@ -145,6 +149,8 @@ An `interrupt` must explicitly name the running task ids to cancel. With
 cancelled. An empty `taskIds` array returns queued input but does not stop the
 active turn; clients must collect its running task id rather than a steering
 request id.
+The transcript keeps a stopped-duration row for interrupted turns even when the
+turn contains only assistant text and has no tool or reasoning activity to fold.
 
 The GUI retains restored idle follow-ups in its durable queue. Automatic delivery
 requires an observed busy-to-idle transition in the current process; restoring
@@ -187,9 +193,16 @@ history and an empty draft. A `forked` update triggers a store catalog refresh
 using the parent row's project cwd; child selection waits for that refresh and
 transcript hydration before replacing the current selection.
 
+The GUI captures the first prompt's workspace checkpoint before submission,
+independently of transcript mounting. This makes Last Turn review and prompt
+rewind available for the first completed turn as well as subsequent turns.
+
 Session-history refresh and provider-catalog refresh updates map to `status`;
 session-local authentication notices map to `notice`. Dedicated `auth.start`
 attempts use the `auth.update` notification below.
+Transient notices received without a working or queued turn are runtime metadata,
+not transcript activities. Continuing an idle session therefore does not append
+startup model-selection notices to its previous response.
 
 Durable events are delivered once each, in `seq` order. After a lag the server
 replays durable events from the journal before resuming; clients drop any `seq`

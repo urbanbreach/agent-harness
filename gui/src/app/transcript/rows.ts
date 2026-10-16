@@ -106,7 +106,7 @@ export function transcriptRows(
     let answerStart = entries.length;
     while (answerStart > opening && entries[answerStart - 1]?.kind === 'text') answerStart--;
     const work = entries.slice(opening, answerStart);
-    if (work.length) {
+    if (work.length || turn.status === 'interrupted') {
       rows.push({ id: `fold:${turn.id}`, kind: 'fold', turn });
       if (expanded.has(turn.id)) append(work, false);
     }
