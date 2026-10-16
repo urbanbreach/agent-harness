@@ -1,5 +1,5 @@
-import { readdir, realpath, readFile, writeFile, lstat } from 'node:fs/promises';
-import { watch } from 'node:fs';
+import { readdir, realpath, writeFile, lstat, open, mkdtemp, rename, rm } from 'node:fs/promises';
+import { watch, constants } from 'node:fs';
 import { isAbsolute, relative, resolve, sep, dirname } from 'node:path';
 
 export interface TreeEntry {
@@ -85,8 +85,29 @@ async function safeFile(root: string, path: string): Promise<string> {
 
 export async function readText(root: string, path: string, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
-  const bytes = await readFile(await safeFile(root, path), { signal });
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const target = await safeFile(root, path);
+  const info = await lstat(target);
+  if (!info.isFile()) throw new Error('only regular files can be edited');
+  const limit = 8 * 1024 * 1024;
+  if (info.size > limit) throw new Error('file exceeds the 8 MiB editor limit');
+  const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const opened = await file.stat();
+    if (!opened.isFile()) throw new Error('only regular files can be edited');
+    if (opened.size > limit) throw new Error('file exceeds the 8 MiB editor limit');
+    const bytes = Buffer.allocUnsafe(limit + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      signal?.throwIfAborted();
+      const { bytesRead } = await file.read(bytes, length, bytes.length - length, null);
+      if (!bytesRead) break;
+      length += bytesRead;
+    }
+    if (length > limit) throw new Error('file exceeds the 8 MiB editor limit');
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length));
+  } finally {
+    await file.close();
+  }
 }
 
 export async function writeText(
@@ -96,7 +117,29 @@ export async function writeText(
   signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted();
-  await writeFile(await safeFile(root, path), text, { encoding: 'utf8', signal });
+  const canonical = await realpath(root);
+  const target = await safeFile(canonical, path);
+  const parent = await realpath(dirname(target));
+  if (!contained(canonical, parent)) throw new Error('path is outside the workspace');
+  const directory = await mkdtemp(resolve(parent, '.harness-editor-'));
+  try {
+    const temporary = resolve(directory, 'file');
+    const mode = await lstat(target).then(
+      (info) => info.mode,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return 0o666;
+      },
+    );
+    await writeFile(temporary, text, { encoding: 'utf8', signal, mode, flag: 'wx' });
+    signal?.throwIfAborted();
+    const currentParent = await realpath(parent);
+    if (currentParent !== parent || !contained(canonical, currentParent))
+      throw new Error('workspace parent changed while saving');
+    await rename(temporary, target);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 export interface FileCandidate {

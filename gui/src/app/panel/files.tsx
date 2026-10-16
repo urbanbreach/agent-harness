@@ -188,7 +188,7 @@ export function FilesView({
   }
   const markdown = /\.(md|markdown|mdx)$/i.test(state.selected ?? '');
   const treeWidth = Math.max(140, Math.min(state.treeWidth, 360, width - 140));
-  const findWidth = Math.max(96, Math.min(380, width - treeWidth - 1 - 252));
+  const findWidth = Math.max(96, Math.min(380, width - treeWidth - 1 - 250));
   return (
     <div
       onKeyDown={keys}
@@ -263,7 +263,7 @@ export function FilesView({
                   name={replace ? 'chevron-down' : 'chevron-right'}
                   size={10}
                   disabled={!!buffer?.error}
-                  style={{ width: 18, height: 24 }}
+                  style={{ width: 18, height: 24, marginRight: -2 }}
                   onClick={() => setReplace(!replace)}
                 />
                 <div
@@ -333,7 +333,7 @@ export function FilesView({
                         name={(['case-sensitive', 'whole-word', 'regex'] as const)[i]!}
                         size={12}
                         style={{
-                          width: 18,
+                          width: 20,
                           height: 18,
                           borderRadius: 4,
                           borderWidth: 1,
@@ -394,7 +394,7 @@ export function FilesView({
                 />
               </div>
               {replace && !buffer?.error && (
-                <div style={{ ...row, gap: 4, paddingLeft: 22 }}>
+                <div style={{ ...row, gap: 4, paddingLeft: 20 }}>
                   <TextField
                     value={replacement}
                     onChange={setReplacement}
@@ -509,7 +509,11 @@ export function FilesView({
                         onChange();
                       }
                     })
-                    .catch((error) => showToast(String(error)));
+                    .catch((error) => {
+                      buffer.error = String(error);
+                      buffer.text = `Unable to edit this file: ${error}`;
+                      onChange();
+                    });
                 }
               }}
               runs={runs}
@@ -629,6 +633,7 @@ export function FilesView({
                 marginRight: 8,
                 paddingLeft: 8 + entry.depth * 16,
                 paddingRight: 8,
+                borderWidth: 0,
                 borderRadius: 6,
                 gap: 6,
                 backgroundColor: entry.path === state.selected ? colors.overlay_strong : undefined,

@@ -216,8 +216,11 @@ export class TerminalScreen {
       });
     this.emulator.parser.registerOscHandler(52, (data) => {
       const encoded = data.slice(data.indexOf(';') + 1);
-      if (encoded !== '?' && /^[A-Za-z0-9+/]*={0,2}$/.test(encoded))
-        options.onClipboard?.(Buffer.from(encoded, 'base64').toString('utf8'));
+      const limit = 1024 * 1024;
+      if (encoded.length <= Math.ceil(limit / 3) * 4 && /^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+        const bytes = Buffer.from(encoded, 'base64');
+        if (bytes.length <= limit) options.onClipboard?.(bytes.toString('utf8'));
+      }
       return true;
     });
   }

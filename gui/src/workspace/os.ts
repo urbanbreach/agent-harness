@@ -21,6 +21,7 @@ async function run(
   signal?.throwIfAborted();
   const proc = Bun.spawn(command, {
     stdin: input === undefined ? 'ignore' : new Blob([input]),
+    env: process.env,
     stdout: 'pipe',
     stderr: 'pipe',
     signal,
@@ -70,9 +71,14 @@ export async function notify(options: {
 
 export async function openUrl(url: string, signal?: AbortSignal): Promise<void> {
   const parsed = new URL(url);
-  if (['javascript:', 'data:', 'vbscript:'].includes(parsed.protocol))
-    throw new Error(`Unsafe external URL scheme: ${parsed.protocol}`);
+  if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol))
+    throw new Error(`Unsupported external URL scheme: ${parsed.protocol}`);
   await checked(['xdg-open', parsed.href], signal);
+}
+
+/** Local files use a separate entry point, never a URL supplied by repository content. */
+export async function openPath(path: string, signal?: AbortSignal): Promise<void> {
+  await checked(['xdg-open', resolve(path)], signal);
 }
 
 /** File managers are opened at the parent directory for files, and at the path for directories. */

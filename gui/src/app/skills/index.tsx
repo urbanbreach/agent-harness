@@ -15,8 +15,7 @@ import {
 import { bare, ellipsis, row } from '../../ui/controls';
 import { Markdown } from '../../markdown';
 import { nativeRenderer } from '../../native';
-import { openUrl, revealPath } from '../../workspace/os';
-import { pathToFileURL } from 'node:url';
+import { openPath, openUrl, revealPath } from '../../workspace/os';
 
 type Catalog = Methods['skills.list']['result'];
 type Skill = Catalog['skills'][number];
@@ -206,7 +205,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
   async function pathAction(skill: Skill, action: 'open' | 'reveal') {
     setArmed(undefined);
     try {
-      if (action === 'open') await openUrl(pathToFileURL(skill.primaryFile).href);
+      if (action === 'open') await openPath(skill.primaryFile);
       else await revealPath(skill.primaryDirectory);
     } catch (error) {
       showToast(message(error));
@@ -236,7 +235,6 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
         key={`${label}:${value}`}
         style={{
           ...row,
-          alignItems: 'baseline',
           paddingTop: 8,
           paddingBottom: 8,
           gap: 12,

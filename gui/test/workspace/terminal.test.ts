@@ -77,6 +77,18 @@ test('selection joins wrapped rows, preserves combining glyphs, blanks hidden te
   }
 });
 
+test('OSC 52 accepts clipboard text but ignores decoded payloads above 1 MiB', async () => {
+  const clipboard: string[] = [];
+  const screen = new TerminalScreen({ onClipboard: (text) => clipboard.push(text) });
+  try {
+    await screen.write(`\x1b]52;c;${Buffer.from('clipboard text').toString('base64')}\x07`);
+    await screen.write(`\x1b]52;c;${Buffer.alloc(1024 * 1024 + 1, 65).toString('base64')}\x07`);
+    expect(clipboard).toEqual(['clipboard text']);
+  } finally {
+    screen.dispose();
+  }
+});
+
 async function eventually(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 7_000;
   while (Date.now() < deadline) {

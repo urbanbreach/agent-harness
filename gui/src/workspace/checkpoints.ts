@@ -1,6 +1,6 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { gitCommand } from './git';
 
 const namespace = 'refs/harness-gui/';
@@ -92,7 +92,21 @@ async function capture(
   return temporaryIndex(async (env) => {
     const head = await resolveCommit(cwd, 'HEAD', signal);
     await gitCommand(cwd, ['read-tree', head ?? '--empty'], { signal, env });
-    await gitCommand(cwd, ['add', '-A', '--', '.'], { signal, env });
+    const untracked = (
+      await gitCommand(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], { signal })
+    ).stdout.split('\0');
+    const secrets = untracked.filter((path) => {
+      const name = path.slice(path.lastIndexOf('/') + 1);
+      return name === '.env' || (name.startsWith('.env.') && name !== '.env.example');
+    });
+    await gitCommand(
+      cwd,
+      ['add', '-A', '--', '.', ...secrets.map((path) => `:(top,literal,exclude)${path}`)],
+      {
+        signal,
+        env,
+      },
+    );
     const tree = (await gitCommand(cwd, ['write-tree'], { signal, env })).stdout.trim();
     const commit = (
       await gitCommand(
@@ -290,6 +304,24 @@ export async function restoreNamedSnapshot(
   const target = await resolveCommit(root, ref, signal);
   if (!target) throw new Error(`checkpoint is unavailable: ${ref}`);
   const safetyRef = `${ref.slice(0, ref.lastIndexOf('/'))}/safety-${crypto.randomUUID()}`;
+  const indexPath = (
+    await gitCommand(root, ['rev-parse', '--git-path', 'index'], { signal })
+  ).stdout.trim();
+  const index = await temporaryIndex(async (env) => {
+    // write-tree may create an index even for an unborn repository. Work from an exact copy.
+    await copyFile(resolve(root, indexPath), env.GIT_INDEX_FILE!).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      },
+    );
+    return gitCommand(root, ['write-tree'], { signal, env, allowFailure: true });
+  });
+  if (index.exitCode !== 0)
+    throw new Error(
+      'Cannot restore checkpoint: unable to save staged state; resolve unmerged index entries first',
+    );
+  // Pin the real index separately; the working-tree snapshot cannot preserve partial staging.
+  await gitCommand(root, ['update-ref', `${safetyRef}-index`, index.stdout.trim()], { signal });
   const current = await capture(root, safetyRef, false, signal);
   try {
     await restoreFiles(root, current, target, signal);

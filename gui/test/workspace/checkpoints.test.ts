@@ -125,10 +125,70 @@ test('capture and restore roundtrip preserves HEAD, captures untracked files, re
   expect(await readFile(join(cwd, '.git', 'HEAD'))).toEqual(originalHead);
   expect(await git(cwd, 'rev-parse', 'HEAD')).toBe(originalCommit);
   expect(await hasSnapshot(cwd, safetyRef)).toBe(true);
+  expect(await git(cwd, 'show', `${safetyRef}-index:tracked.txt`)).toBe('staged');
+  expect(await git(cwd, 'rev-parse', `${safetyRef}-index`)).not.toBe(
+    await git(cwd, 'rev-parse', `${safetyRef}^{tree}`),
+  );
   await restoreNamedSnapshot(cwd, safetyRef);
   expect(await readFile(join(cwd, 'tracked.txt'), 'utf8')).toBe('unsaved later edit\n');
   expect(await readFile(join(cwd, 'new-after.txt'), 'utf8')).toBe('safety must retain me\n');
   expect(await Bun.file(join(cwd, 'captured.txt')).exists()).toBe(false);
+}, 30_000);
+
+test('snapshots exclude untracked env secrets without changing tracked env files or examples', async () => {
+  const cwd = await repository();
+  await writeFile(join(cwd, '.env.tracked'), 'tracked before\n');
+  await git(cwd, 'add', '.env.tracked');
+  await git(
+    cwd,
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@localhost',
+    'commit',
+    '-m',
+    'track env',
+  );
+  await mkdir(join(cwd, 'nested'));
+  const secrets = ['.env', '.env.local', 'nested/.env.production'];
+  for (const path of [...secrets, '.env.example']) await writeFile(join(cwd, path), 'before\n');
+  await writeFile(join(cwd, '.env.tracked'), 'tracked snapshot\n');
+  const ref = 'refs/harness-gui/secrets/named';
+  await captureNamedSnapshot(cwd, ref);
+  const paths = (await git(cwd, 'ls-tree', '-r', '--name-only', ref)).split('\n');
+  for (const path of secrets) {
+    expect(paths).not.toContain(path);
+    await writeFile(join(cwd, path), 'secret after\n');
+  }
+  expect(paths).toContain('.env.example');
+  expect(paths).toContain('.env.tracked');
+  await writeFile(join(cwd, '.env.example'), 'example after\n');
+  await writeFile(join(cwd, '.env.tracked'), 'tracked after\n');
+  const { safetyRef } = await restoreNamedSnapshot(cwd, ref);
+  const safetyPaths = (await git(cwd, 'ls-tree', '-r', '--name-only', safetyRef)).split('\n');
+  for (const path of secrets) {
+    expect(safetyPaths).not.toContain(path);
+    expect(await readFile(join(cwd, path), 'utf8')).toBe('secret after\n');
+  }
+  expect(await readFile(join(cwd, '.env.example'), 'utf8')).toBe('before\n');
+  expect(await readFile(join(cwd, '.env.tracked'), 'utf8')).toBe('tracked snapshot\n');
+}, 30_000);
+
+test('restore refuses an unmerged real index before changing workspace files', async () => {
+  const cwd = await repository();
+  const ref = 'refs/harness-gui/conflict/named';
+  await captureNamedSnapshot(cwd, ref);
+  const blob = await git(cwd, 'rev-parse', 'HEAD:tracked.txt');
+  await gitCommand(cwd, ['update-index', '--index-info'], {
+    input: `0 ${'0'.repeat(blob.length)}\ttracked.txt\n100644 ${blob} 1\ttracked.txt\n100644 ${blob} 2\ttracked.txt\n100644 ${blob} 3\ttracked.txt\n`,
+  });
+  await writeFile(join(cwd, 'tracked.txt'), 'unresolved work\n');
+  const index = await readFile(join(cwd, '.git', 'index'));
+  await expect(restoreNamedSnapshot(cwd, ref)).rejects.toThrow(
+    'resolve unmerged index entries first',
+  );
+  expect(await readFile(join(cwd, '.git', 'index'))).toEqual(index);
+  expect(await readFile(join(cwd, 'tracked.txt'), 'utf8')).toBe('unresolved work\n');
 }, 30_000);
 
 test('named snapshots and fork refs survive independently and clean up only selected turns', async () => {

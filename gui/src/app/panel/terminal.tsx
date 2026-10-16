@@ -3,7 +3,7 @@ import { useWindowSize, type EventPayload, type KeyEvent, type PublicInstance } 
 import { basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { access } from 'node:fs/promises';
-import { Menu, Scrollbar } from '../../ui';
+import { Menu, Scrollbar, useToast } from '../../ui';
 import { useTheme } from '../../theme';
 import { useNativeRenderer, type Run } from '../../native';
 import {
@@ -92,6 +92,7 @@ export function terminalKey(
 type Selection = { anchor: TerminalPosition; end: TerminalPosition };
 const compare = (a: TerminalPosition, b: TerminalPosition) => a.row - b.row || a.column - b.column;
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const CELL_MEASUREMENTS = ['m'.repeat(64), 'm'.repeat(128)] as const;
 
 // Native editor bindings run before JS handlers. Intercept every terminal chord
 // with an editor action, including modified navigation and function keys.
@@ -135,16 +136,9 @@ const terminalInterceptedKeys = [
   'alt-space',
 ];
 
-export function TerminalView({
-  cwd,
-  active,
-  onTitle,
-}: {
-  cwd: string | null;
-  active: boolean;
-  onTitle?: (title: string) => void;
-}) {
+export function TerminalView({ cwd, active }: { cwd: string | null; active: boolean }) {
   const { colors, sp } = useTheme();
+  const { showToast } = useToast();
   const native = useNativeRenderer();
   const window = useWindowSize();
   const grid = useRef<PublicInstance>(null);
@@ -157,6 +151,7 @@ export function TerminalView({
   const [windowActive, setWindowActive] = useState(() => native.isWindowActive());
   const [blink, setBlink] = useState(true);
   const [cellWidth, setCellWidth] = useState(7.8);
+  const measurementWidths = useRef<[number, number]>([0, 0]);
   const [size, setSize] = useState({ width: 425.6, height: 664 });
   const [selection, setSelection] = useState<Selection>();
   const [dragging, setDragging] = useState(false);
@@ -168,8 +163,6 @@ export function TerminalView({
   const theme = colors.is_dark ? 'dark' : 'light';
   const themeRef = useRef<'dark' | 'light'>(theme);
   themeRef.current = theme;
-  const titleCallback = useRef(onTitle);
-  titleCallback.current = onTitle;
   const refresh = () => {
     if (session.current) setSnapshot(session.current.screen.snapshot());
   };
@@ -178,7 +171,6 @@ export function TerminalView({
     setError(undefined);
     setExited(false);
     setSelection(undefined);
-    titleCallback.current?.('Terminal');
     if (!cwd) return;
     const controller = new AbortController();
     let owned: TerminalSession | undefined;
@@ -220,9 +212,6 @@ export function TerminalView({
     session.current?.screen.setTheme(theme);
     refresh();
   }, [theme]);
-  useEffect(() => {
-    if (snapshot) titleCallback.current?.(snapshot.title);
-  }, [snapshot?.title]);
   useEffect(() => {
     if (active && input.current) native.focusElement?.(input.current.id);
     if (!active) {
@@ -361,7 +350,7 @@ export function TerminalView({
         await revealPath(path);
       }
     } catch (failure) {
-      console.error(failure);
+      showToast(String(failure));
     }
   }
   function down(e: EventPayload) {
@@ -583,20 +572,38 @@ export function TerminalView({
           onBlur={() => setFocused(false)}
           style={{ position: 'absolute', left: 10, top: 8, width: 1, height: 18, opacity: 0 }}
         />
-        <text
-          onLayout={(e) => {
-            if (e.width && e.width > 0) setCellWidth(e.width);
-          }}
+        <div
           style={{
             position: 'absolute',
+            width: 1000,
+            height: 18,
             opacity: 0,
-            fontFamily: 'JetBrains Mono',
-            fontSize: 12.5,
-            lineHeight: 18,
+            pointerEvents: 'none',
           }}
         >
-          m
-        </text>
+          {CELL_MEASUREMENTS.map((sample, index) => (
+            <text
+              key={index}
+              onLayout={(e) => {
+                if (!e.width || e.width <= 0) return;
+                measurementWidths.current[index] = e.width;
+                const [short, long] = measurementWidths.current;
+                // Subtract the common caret overhang and whole-pixel rounding.
+                if (long > short && short > 0)
+                  setCellWidth((long - short) / CELL_MEASUREMENTS[0].length);
+              }}
+              style={{
+                position: 'absolute',
+                fontFamily: 'JetBrains Mono',
+                fontSize: 12.5,
+                lineHeight: 18,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {sample}
+            </text>
+          ))}
+        </div>
         {!snapshot && (
           <text
             style={{

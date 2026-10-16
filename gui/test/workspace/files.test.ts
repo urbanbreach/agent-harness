@@ -67,6 +67,11 @@ test('UTF-8 file operations reject traversal, escaping symlinks and invalid byte
     }
     await writeFile(join(root, 'binary'), new Uint8Array([0xff, 0xfe]));
     await expect(readText(root, 'binary')).rejects.toThrow();
+    const fifo = Bun.spawn(['mkfifo', join(root, 'pipe')], { stdout: 'ignore', stderr: 'pipe' });
+    expect(await fifo.exited).toBe(0);
+    await expect(readText(root, 'pipe')).rejects.toThrow('only regular files');
+    await writeFile(join(root, 'oversized'), new Uint8Array(8 * 1024 * 1024 + 1));
+    await expect(readText(root, 'oversized')).rejects.toThrow('8 MiB');
     const controller = new AbortController();
     controller.abort();
     await expect(buildFileIndex(root, { signal: controller.signal })).rejects.toThrow();
