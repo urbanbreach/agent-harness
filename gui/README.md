@@ -56,15 +56,14 @@ gui/src (Bun, React)  ──JSON lines over stdio──▶  harness gui-server (
 `native/patches/*.patch` to GPUIX and `native/patches/zed/*.patch` to GPUI, then
 builds the JavaScript packages into `vendor/` and the addon into
 `native/dist/`. The patches add a `rich-text` element (styled runs and inline
-washes), editor syntax runs, gutters, search washes and selection control,
-clipboard access, file drag events, window chrome controls, and virtual-list
-visibility notifications. To change native code, edit the checkout, export the
-diff over the patch file, and rerun the script; `native/smoke/app.tsx`
-exercises every native addition.
-
-Virtual-list rows keep their retained identity when a commit inserts siblings
-between root rendering and row layout. Rendering shifted rows as short
-placeholders would erase the top anchor and jump a bottom-aligned list to its end.
+washes), editor syntax runs, gutters, search washes, selection control, ghost
+text, opt-in key interception and Linux word selection, clipboard access, file
+drag events, window chrome controls and virtual-list visibility notifications;
+they also keep virtual-list rows by identity and the editor's desired column.
+To change native code, edit the checkout, export the diff over the patch file,
+and rerun the script; `native/smoke/app.tsx` exercises every native addition.
+`gui/native/build.sh --test` also runs the native crate's tests, including the
+regression tests the patches add.
 
 ## Development
 

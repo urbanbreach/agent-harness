@@ -4,7 +4,8 @@
 # JavaScript packages and native code use the same pinned GPUIX checkout. This
 # script compiles the native crate with the patches in ./patches and
 # writes dist/gpuix-native.linux-x64-gnu.node, which the GUI loads through
-# NAPI_RS_NATIVE_LIBRARY_PATH.
+# NAPI_RS_NATIVE_LIBRARY_PATH. `--test` also runs the native crate's tests,
+# which include the regression tests our patches add.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -77,3 +78,6 @@ cp "$src/gpuix/packages/native/gpuix-native.linux-x64-gnu.node" \
 mv "$here/dist/gpuix-native.linux-x64-gnu.node.new" \
   "$here/dist/gpuix-native.linux-x64-gnu.node"
 echo "built $here/dist/gpuix-native.linux-x64-gnu.node"
+if [ "${1:-}" = "--test" ]; then
+  cargo test --release --manifest-path "$src/gpuix/packages/native/Cargo.toml"
+fi
