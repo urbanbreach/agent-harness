@@ -40,14 +40,15 @@ export function usePanelLayout(
   errorHandler.current = onError;
   const [layout, setLayout] = useState(defaultLayout);
   const [loaded, setLoaded] = useState(false);
+  const lastLayout = useRef(JSON.stringify(defaultLayout));
   useEffect(() => {
     let active = true;
     void persist
       .read<PanelLayout>('window.panels')
       .then((saved) => {
         if (!active) return;
-        if (saved)
-          setLayout({
+        if (saved) {
+          const restored = {
             sidebarWidth: Number.isFinite(saved.sidebarWidth)
               ? Math.min(420, Math.max(180, saved.sidebarWidth))
               : 252,
@@ -56,7 +57,10 @@ export function usePanelLayout(
               : 460,
             sidebarVisible: saved.sidebarVisible !== false,
             rightVisible: saved.rightVisible === true,
-          });
+          };
+          lastLayout.current = JSON.stringify(restored);
+          setLayout(restored);
+        }
         setLoaded(true);
       })
       .catch((error) => {
@@ -70,8 +74,14 @@ export function usePanelLayout(
     };
   }, [persist]);
   useEffect(() => {
-    if (loaded && !dragging)
-      void persist.write('window.panels', layout).catch((error) => errorHandler.current?.(error));
+    const serialized = JSON.stringify(layout);
+    if (loaded && !dragging && serialized !== lastLayout.current)
+      void persist
+        .write('window.panels', layout)
+        .then(() => {
+          lastLayout.current = serialized;
+        })
+        .catch((error) => errorHandler.current?.(error));
   }, [layout, loaded, persist, dragging]);
   return [layout, setLayout] as const;
 }

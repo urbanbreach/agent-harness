@@ -76,6 +76,7 @@ export function ThemeProvider({
   const [systemAppearance, setSystemAppearance] = useState<string>();
   const [reducedMotion, setReducedMotion] = useState(false);
   const errorHandler = useRef(onError);
+  const lastPreferences = useRef('');
   errorHandler.current = onError;
 
   useEffect(() => {
@@ -88,7 +89,7 @@ export function ThemeProvider({
         return undefined;
       });
       if (!active) return;
-      setPreferences({
+      const restored: Preferences = {
         preference:
           saved?.preference === 'light' || saved?.preference === 'dark'
             ? saved.preference
@@ -98,7 +99,9 @@ export function ThemeProvider({
           saved?.codeFontSize ?? DEFAULT_CODE_FONT_SIZE,
           DEFAULT_CODE_FONT_SIZE,
         ),
-      });
+      };
+      lastPreferences.current = JSON.stringify(restored);
+      setPreferences(restored);
       setReady(true);
     };
     void load().catch((error) => {
@@ -123,8 +126,13 @@ export function ThemeProvider({
     if (!ready) return;
     native?.setWindowAppearance?.(preferences.preference);
     native?.setRemSize?.(preferences.uiFontSize);
+    const serialized = JSON.stringify(preferences);
+    if (serialized === lastPreferences.current) return;
     void persist
       .write(THEME_PERSIST_KEY, preferences)
+      .then(() => {
+        lastPreferences.current = serialized;
+      })
       .catch((error) => errorHandler.current(error));
   }, [native, persist, preferences, ready]);
 

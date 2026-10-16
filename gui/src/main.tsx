@@ -10,6 +10,7 @@ import { CommandPalette } from './app/palette';
 import { Sidebar } from './app/sidebar';
 import { ProjectSelector } from './app/pickers';
 import { TaskSwitcher, createTaskSwitcherController } from './app/switcher';
+import { EnvironmentPopover } from './app/environment';
 import { registerAction, runAction } from './app/actions';
 import { createBackend } from './backend/fixture';
 import { AppStore, setAppStore, useStore } from './store';
@@ -139,6 +140,10 @@ function Application() {
       displayId: bounds.displayId,
     };
     const serialized = JSON.stringify(geometry);
+    if (!lastGeometry.current) {
+      lastGeometry.current = serialized;
+      return;
+    }
     if (serialized === lastGeometry.current) return;
     await persist.write('window.geometry', geometry);
     lastGeometry.current = serialized;
@@ -549,6 +554,14 @@ function Application() {
         state.selectedTask && cwd ? (
           <GitChangesChip cwd={cwd} onOpen={() => runAction('panel.review')} />
         ) : undefined
+      }
+      environment={
+        <EnvironmentPopover
+          key={state.selectedTask ?? cwd ?? ''}
+          cwd={cwd ?? null}
+          sessionId={state.selectedTask ?? null}
+          view={view}
+        />
       }
       settings={settings ? <SettingsPage page={settings} onClose={focusComposer} /> : undefined}
       onNewTask={() => newTask()}
