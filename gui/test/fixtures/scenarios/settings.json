@@ -697,7 +697,7 @@
         "unpricedRecords": 0
       },
       "scan": {
-        "scanned": 0,
+        "scanned": 1,
         "skipped": 0,
         "records": 0,
         "elapsedMs": 0

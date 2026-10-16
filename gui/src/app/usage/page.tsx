@@ -350,7 +350,11 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                     </text>
                   </div>
                 ))}
-              {!data.byProvider.length && <text style={text}>{t('usage.no_activity_window')}</text>}
+              {!data.byProvider.length && (
+                <text style={{ ...text, color: colors.text_tertiary }}>
+                  {t('usage.no_activity_window')}
+                </text>
+              )}
             </div>
             <div
               style={{
@@ -374,7 +378,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                     { value: 'tokens', label: t('usage.tokens_upper') },
                   ]}
                   style={segmentStyle}
-                  itemStyle={{ ...itemStyle, height: 22, paddingLeft: 9, paddingRight: 9 }}
+                  itemStyle={{ ...itemStyle, height: 22, paddingLeft: 8, paddingRight: 8 }}
                 />
                 <div style={{ ...row, justifyContent: 'flex-end', gap: 14 }}>
                   {providers.map((p) => (
@@ -444,7 +448,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                     { value: 'day', label: t('usage.day_upper') },
                   ]}
                   style={segmentStyle}
-                  itemStyle={{ ...itemStyle, height: 22 }}
+                  itemStyle={{ ...itemStyle, height: 22, paddingLeft: 8, paddingRight: 8 }}
                 />
               </div>
               <TableRow
@@ -487,9 +491,11 @@ export function UsagePage({ cwd }: { cwd?: string }) {
                 />
               ))}
               {!sortedModels.length && (
-                <text style={{ ...text, marginTop: 26, textAlign: 'center' }}>
-                  {t('usage.no_activity_window')}
-                </text>
+                <div style={{ ...row, justifyContent: 'center', marginTop: 24 }}>
+                  <text style={{ ...text, color: colors.text_tertiary }}>
+                    {t('usage.no_activity_window')}
+                  </text>
+                </div>
               )}
             </div>
             <div style={{ width: 240 }}>
@@ -603,7 +609,7 @@ export function UsagePage({ cwd }: { cwd?: string }) {
         </div>
       )}
       {data && (
-        <text style={{ ...text, color: colors.text_tertiary, marginTop: 14 }}>
+        <text style={{ ...text, color: colors.text_ghost, marginTop: 12 }}>
           {t('usage.scan_summary', {
             scanned: data.scan.scanned,
             skipped: data.scan.skipped,
@@ -696,19 +702,26 @@ function TableRow({ cells, heading = false }: { cells: string[]; heading?: boole
       }}
     >
       {cells.map((cell, i) => (
-        <text
+        <div
           key={i}
           style={{
-            ...ellipsis,
+            ...row,
             flexGrow: i ? 0 : 1,
+            minWidth: 0,
             width: i ? (i === cells.length - 2 && cells.length === 4 ? 64 : 84) : undefined,
-            textAlign: i ? 'right' : 'left',
-            fontSize: sp(12.5),
-            color: heading || i > 1 ? colors.text_tertiary : colors.text,
+            justifyContent: i ? 'flex-end' : 'flex-start',
           }}
         >
-          {cell}
-        </text>
+          <text
+            style={{
+              ...ellipsis,
+              fontSize: sp(12.5),
+              color: heading || i > 1 ? colors.text_tertiary : colors.text,
+            }}
+          >
+            {cell}
+          </text>
+        </div>
       ))}
     </div>
   );
@@ -1027,7 +1040,18 @@ function DailyChart({ data, metric }: { data: Snapshot; metric: Metric }) {
           )}
         </div>
       </div>
-      <div style={{ ...row, justifyContent: 'space-between', paddingLeft: 64, marginTop: 8 }}>
+      <div
+        style={{
+          ...row,
+          justifyContent: 'space-between',
+          paddingLeft: 64,
+          marginLeft: -1,
+          marginRight: -1,
+          marginTop: 8,
+          position: 'relative',
+          top: 1,
+        }}
+      >
         {[0, Math.floor(days.length / 2), days.length - 1].map((i, n) => (
           <text key={n} style={{ fontSize: sp(12.5), color: colors.text_tertiary }}>
             {days[i] ? shortDay(days[i]!.key, locale) : ''}
