@@ -1,56 +1,21 @@
 import { t, useLocale } from '../../i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findRanges, useGpuix, useTextSearch, type PublicInstance } from '@gpuix/react';
-import { useSessionView, usePreferences } from '../../store';
+import { getAppStore, useSessionView, usePreferences } from '../../store';
 import { emptySessionView } from '../../model/session';
 import { nativeRenderer } from '../../native';
-import { parseMarkdown, type MarkdownBlock } from '../../markdown';
+import { parseMarkdown, renderedText } from '../../markdown';
 import { useTheme } from '../../theme';
-import { Button, Icon, IconButton, TextField } from '../../ui';
+import { Button, Icon, IconButton, TextField, useToast } from '../../ui';
 import { registerAction } from '../actions';
 import { transcriptRows, duration } from './rows';
 import { ActivityGroup } from './activity';
-import { AssistantMessage, UserMessage, ResponseFooter } from './messages';
+import { AssistantMessage, UserMessage, ResponseFooter, promptRevealers } from './messages';
 import { BackgroundWork } from './background';
 import { useTurnCheckpoints } from './checkpoints';
 import { CheckpointCard } from './checkpoint-card';
 import { Scrollbar } from '../../ui/scrollbar';
 
-function renderedText(blocks: MarkdownBlock[]): string {
-  return blocks
-    .map((block) => {
-      switch (block.type) {
-        case 'heading':
-        case 'paragraph':
-          return block.spans
-            .map((span) => (span.type === 'text' ? span.text : span.source))
-            .join('');
-        case 'quote':
-          return renderedText(block.blocks);
-        case 'list':
-          return block.items.map((item) => renderedText(item.blocks)).join('\n');
-        case 'table':
-          return [block.header, ...block.rows]
-            .map((row) =>
-              row
-                .map((cell) =>
-                  cell.map((span) => (span.type === 'text' ? span.text : span.source)).join(''),
-                )
-                .join('\t'),
-            )
-            .join('\n');
-        case 'code':
-          return block.text;
-        case 'math':
-          return block.source;
-        case 'image':
-          return block.alt;
-        case 'rule':
-          return '';
-      }
-    })
-    .join('\n\n');
-}
 const empty = emptySessionView();
 export function TranscriptView({ sessionId }: { sessionId: string }) {
   const locale = useLocale();
@@ -86,6 +51,33 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     return Number.isFinite(date) ? date : (referenceNow ?? Date.now());
   }, [sessionId, view.turns.at(-1)?.id, referenceNow]);
   const checkpoints = useTurnCheckpoints(sessionId, view);
+  const { showToast } = useToast();
+  const [rewindPoints, setRewindPoints] = useState<ReadonlySet<string>>(new Set());
+  const rewindGeneration = useRef(0);
+  const idle = view.status === 'idle' || view.status === 'failed';
+  const hasCheckpoints = Object.keys(checkpoints).length > 0;
+  useEffect(() => {
+    setRewindPoints(new Set());
+    if (!idle || !hasCheckpoints) return;
+    let active = true;
+    const generation = ++rewindGeneration.current;
+    const unsubscribe = getAppStore().backend.subscribe((notification) => {
+      if (notification.method !== 'session.update' || notification.params.sessionId !== sessionId)
+        return;
+      const update = notification.params.update;
+      if (active && update.kind === 'rewindPoints' && update.generation === generation)
+        setRewindPoints(new Set(update.points?.map((point) => point.request_id) ?? []));
+    });
+    void getAppStore()
+      .sendIntent(sessionId, { kind: 'loadRewindPoints', generation, cancelTaskIds: [] })
+      .catch((cause) => {
+        if (active) showToast(String(cause));
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [sessionId, idle, hasCheckpoints, view.turns.length]);
   const rows = useMemo(
     () => transcriptRows(view, expanded, preferences.showReasoning !== false),
     [view, expanded, preferences.showReasoning],
@@ -133,6 +125,19 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     setFollowing(false);
     if (list.current) renderer?.scrollToItem?.(list.current.id, index, -24);
   }
+  useEffect(() => {
+    promptRevealers.set(sessionId, (requestId) => {
+      const index = rows.findIndex(
+        (row) =>
+          row.kind === 'message' && row.entry.kind === 'user' && row.entry.requestId === requestId,
+      );
+      if (index >= 0) reveal(index);
+      return index >= 0;
+    });
+    return () => {
+      promptRevealers.delete(sessionId);
+    };
+  }, [sessionId, rows, renderer]);
   function followTail() {
     setFollowing(true);
     setAnchoredTurn(undefined);
@@ -367,6 +372,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                       entry={row.entry}
                       view={view}
                       checkpoint={row.entry.turnId ? checkpoints[row.entry.turnId] : undefined}
+                      rewindPoints={rewindPoints}
                     />
                   </div>
                 )}
@@ -390,7 +396,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                       view={view}
                       turnId={row.entry.turnId}
                       text={row.entry.text}
-                      streaming={row.entry.streaming && !reducedMotion}
+                      streaming={row.entry.streaming}
                     />
                   </div>
                 )}

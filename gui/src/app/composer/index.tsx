@@ -26,6 +26,7 @@ import {
   appCommands,
   terminalCommands,
   suggestions,
+  fileTag,
   triggerAt,
   type Suggestion,
 } from './completion';
@@ -323,7 +324,12 @@ export function Composer({ target }: { target: ComposerTarget }) {
         ),
       );
       if (!entry) throw new Error(t('composer.unknown_model', { name: args }));
-      const value = { profile: entry.profile, model: entry.model, variant: entry.variant };
+      const value = {
+        profile: entry.profile,
+        provider: entry.provider,
+        model: entry.model,
+        variant: entry.variant,
+      };
       update({ selection: value });
       if (sessionId) await store.sendIntent(sessionId, { kind: 'switchModel', selection: value });
       return true;
@@ -421,12 +427,16 @@ export function Composer({ target }: { target: ComposerTarget }) {
     }
     if (!providerAvailable && !current.text.trim().startsWith('/')) return;
     setPreparing(true);
+    let consumed = false;
+    const submitted = current;
     try {
       if (await localCommand(current.text.trim())) {
         if (!/^\/(?:new|clear)(?:\s|$)/.test(current.text.trim()))
           store.setDraft(selection, { ...(store.getDraft(selection) ?? emptyDraft), text: '' });
         return;
       }
+      store.consumeDraft(selection);
+      consumed = true;
       const invocation = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(current.text.trim());
       if (
         invocation &&
@@ -447,7 +457,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
       const shouldSteer = (steer || view?.status === 'background') && canSteerDraft(current);
       if ((busy && !shouldSteer) || (!steer && queue.length > 0)) {
         saveQueue([...queue, { id: crypto.randomUUID(), draft: current }]);
-        store.consumeDraft(selection);
+        consumed = false;
         return;
       }
       if (current.text.trim().startsWith('!')) {
@@ -459,18 +469,21 @@ export function Composer({ target }: { target: ComposerTarget }) {
           kind: 'runShell',
           command: current.text.trim().slice(1).trim(),
         });
-        store.consumeDraft(selection);
+        consumed = false;
       } else
         await store.submit(selection, {
           ...prepareDraft(current, cwd),
           accessMode,
           mode: busy ? 'steer' : 'submit',
+          consumeDraft: false,
           runBeforeSubmit: current.invocation
             ? ({ sessionId }) =>
                 recordPromptDisplay(sessionId, prepareDraft(current, cwd).text, current.invocation!)
             : undefined,
         });
+      consumed = false;
     } catch (error) {
+      if (consumed) store.restoreDraft(selection, submitted);
       fail(error);
     } finally {
       setPreparing(false);
@@ -570,6 +583,11 @@ export function Composer({ target }: { target: ComposerTarget }) {
           resourceTags: [...(draft.resourceTags ?? []), { ...row.resource, source }],
         });
     }
+    if (trigger.kind === '@' && !row.agent && !row.resource)
+      update({
+        text,
+        fileTags: [...(draft.fileTags ?? []), fileTag(row.value.slice(1), cwd, trigger.start)],
+      });
   }
   function keys(event: KeyEvent) {
     const keyName = event.key;
@@ -778,7 +796,8 @@ export function Composer({ target }: { target: ComposerTarget }) {
                   ...(store.getDraft(selection) ?? emptyDraft),
                   text: event.value ?? draft.text,
                 };
-                if (current.text.trim() || primary) void submit(!!primary, current);
+                if (current.text.trim() || current.attachments?.length || primary)
+                  void submit(!!primary, current);
               }
             }}
             onMouseDown={(event) => {

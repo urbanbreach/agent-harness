@@ -61,6 +61,13 @@ export function transcriptRows(
   const visibleEntries = showReasoning
     ? view.entries
     : view.entries.filter((entry) => entry.kind !== 'reasoning');
+  const entriesByTurn = new Map<string, TranscriptEntry[]>();
+  for (const entry of visibleEntries) {
+    if (!entry.turnId) continue;
+    const entries = entriesByTurn.get(entry.turnId);
+    if (entries) entries.push(entry);
+    else entriesByTurn.set(entry.turnId, [entry]);
+  }
   const append = (entries: TranscriptEntry[], live: boolean) => {
     let activity: TranscriptEntry[] = [];
     const flush = () => {
@@ -91,7 +98,7 @@ export function transcriptRows(
     }
     if (grouped.has(turn.id)) continue;
     grouped.add(turn.id);
-    const entries = visibleEntries.filter((item) => item.turnId === turn.id);
+    const entries = entriesByTurn.get(turn.id)!;
     const live = turn.status === 'working' || turn.status === 'queued';
     if (live) {
       append(entries, true);

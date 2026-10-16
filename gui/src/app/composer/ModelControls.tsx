@@ -52,6 +52,7 @@ const modelKey = (entry: ModelEntry) =>
   JSON.stringify([entry.profile, entry.provider, entry.model]);
 const selectionFor = (entry: ModelEntry): ModelSelection => ({
   profile: entry.profile,
+  provider: entry.provider,
   model: entry.model,
   variant: entry.variant,
 });
@@ -99,12 +100,14 @@ export function ModelControls({
     catalog?.models.find(
       (entry) =>
         entry.profile === selection?.profile &&
+        (!selection.provider || entry.provider === selection.provider) &&
         (!selection.model || entry.model === selection.model) &&
         entry.variant === selection.variant,
     ) ??
     catalog?.models.find(
       (entry) =>
         entry.profile === selection?.profile &&
+        (!selection.provider || entry.provider === selection.provider) &&
         (!selection.model || entry.model === selection.model),
     ) ??
     catalog?.current ??
@@ -738,7 +741,7 @@ export function ModelControls({
           style={{ opacity: 1 }}
         />
       )}
-      {((catalog?.profiles.length ?? 0) > 1 || profileOpen) && (
+      {catalog && (catalog.profiles.length > 1 || profileOpen) && (
         <Dropdown
           open={profileOpen}
           onOpenChange={setProfileOpen}
@@ -747,7 +750,7 @@ export function ModelControls({
           icon="bot"
           label={selection?.profile ?? current?.profile ?? t('composer.profile')}
           menuStyle={{ minWidth: 364, maxWidth: 364 }}
-          items={catalog!.profiles.map((profile) => ({
+          items={catalog.profiles.map((profile) => ({
             id: profile,
             label: profile,
             selected: profile === (selection?.profile ?? current?.profile),

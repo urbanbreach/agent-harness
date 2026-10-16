@@ -22,9 +22,6 @@ test('settled work folds only interim content and keeps the complete trailing an
       kind: 'user',
       text: 'Review',
       attachments: [],
-      fileTags: [],
-      agentTags: [],
-      resourceTags: [],
       steering: false,
     },
     { ...base, id: 'interim', kind: 'text', text: 'I will inspect it.', streaming: false },
@@ -77,5 +74,73 @@ test('settled work folds only interim content and keeps the complete trailing an
     'prompt',
     'answer-a',
     'footer:turn',
+  ]);
+});
+
+test('interleaved turns retain first-seen ordering without losing loose entries or reasoning visibility', () => {
+  const view = emptySessionView();
+  view.turns = ['second', 'first'].map((id) => ({
+    id,
+    requestIds: [id],
+    userIds: [],
+    status: 'completed' as const,
+    startedMs: 0,
+  }));
+  view.entries = [
+    {
+      id: 'a',
+      turnId: 'first',
+      kind: 'text',
+      text: 'A',
+      streaming: false,
+      startedMs: 0,
+      requestId: 'first',
+    },
+    { id: 'loose', kind: 'notice', message: 'Notice', level: 'info', startedMs: 0 },
+    {
+      id: 'b',
+      turnId: 'second',
+      kind: 'text',
+      text: 'B',
+      streaming: false,
+      startedMs: 0,
+      requestId: 'second',
+    },
+    {
+      id: 'thought',
+      turnId: 'first',
+      kind: 'reasoning',
+      text: 'Thinking',
+      streaming: false,
+      startedMs: 0,
+      requestId: 'first',
+    },
+    {
+      id: 'c',
+      turnId: 'first',
+      kind: 'text',
+      text: 'C',
+      streaming: false,
+      startedMs: 0,
+      requestId: 'first',
+    },
+  ];
+  expect(transcriptRows(view, new Set(['first']), false).map((row) => row.id)).toEqual([
+    'a',
+    'c',
+    'footer:first',
+    'activity:loose',
+    'b',
+    'footer:second',
+  ]);
+  expect(transcriptRows(view, new Set(['first'])).map((row) => row.id)).toEqual([
+    'fold:first',
+    'a',
+    'activity:thought',
+    'c',
+    'footer:first',
+    'activity:loose',
+    'b',
+    'footer:second',
   ]);
 });

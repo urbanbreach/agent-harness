@@ -5,6 +5,19 @@ import { getAppStore } from '../../store';
 import { Button, Dialog, Icon, Tooltip } from '../../ui';
 import type { AttachmentMetadata } from '../../model/harness-events';
 import type { Attachment } from '../../backend/protocol';
+import type { Backend } from '../../backend/client';
+
+export async function resolveToolImage(
+  backend: Backend,
+  runDir: string | undefined,
+  image: { ref: string; mime: string },
+): Promise<string | undefined> {
+  if (/^(data:image\/|file:\/\/)/.test(image.ref)) return image.ref;
+  if (!runDir || !image.mime.startsWith('image/') || !image.ref.startsWith('attachment:blake3:'))
+    return undefined;
+  const { dataBase64 } = await backend.call('sessions.attachment', { runDir, ref: image.ref });
+  return `data:${image.mime};base64,${dataBase64}`;
+}
 
 export async function loadPromptAttachments(
   attachments: AttachmentMetadata[],

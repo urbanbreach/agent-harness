@@ -20,6 +20,8 @@ import { openPanelFile } from '../panel/index';
 import { runAction } from '../actions';
 import { highlightCode } from '../../syntax';
 import type { IconName } from '../../ui';
+import { getAppStore, useStore } from '../../store';
+import { resolveToolImage } from './attachments';
 
 const column: StyleDesc = {
   display: 'flex',
@@ -655,14 +657,20 @@ function OpenFile({ path }: { path: string }) {
   );
 }
 
-function ToolImages({ tool }: { tool: ToolActivity }) {
-  const { colors } = useTheme();
+function ToolImages({ tool, view }: { tool: ToolActivity; view: SessionView }) {
+  const runDir = useStore(
+    (state) =>
+      state.live[view.runId ?? '']?.runDir ??
+      Object.values(state.sessions)
+        .flat()
+        .find((session) => session.runId === view.runId)?.runDir,
+  );
   const raw = object(tool.output);
   const content = Array.isArray(raw.content) ? raw.content : [];
   const images = [
     ...(tool.metadata?.attachments ?? [])
       .filter((item) => item.mime.startsWith('image/'))
-      .map((item) => ({ id: item.id, ref: item.content_ref })),
+      .map((item) => ({ id: item.id, ref: item.content_ref, mime: item.mime })),
     ...content.flatMap((item, index) => {
       const part = object(item);
       const mime = String(part.mimeType ?? part.mime_type ?? '');
@@ -670,6 +678,7 @@ function ToolImages({ tool }: { tool: ToolActivity }) {
         ? [
             {
               id: `output-${index}`,
+              mime,
               ref:
                 typeof part.data === 'string' && mime.startsWith('image/')
                   ? `data:${mime};base64,${part.data}`
@@ -681,35 +690,57 @@ function ToolImages({ tool }: { tool: ToolActivity }) {
   ];
   return (
     <>
-      {images.map((image) =>
-        /^(data:image\/|file:\/\/)/.test(image.ref) ? (
-          <img
-            key={image.id}
-            src={image.ref}
-            objectFit="contain"
-            style={{ width: 300, maxWidth: '100%', maxHeight: 200, marginTop: 8, borderRadius: 4 }}
-          />
-        ) : (
-          <div
-            key={image.id}
-            role="img"
-            aria-label={t('transcript.image_unavailable')}
-            style={{
-              ...row,
-              width: 300,
-              maxWidth: '100%',
-              height: 80,
-              marginTop: 8,
-              borderRadius: 4,
-              justifyContent: 'center',
-              backgroundColor: colors.inset,
-            }}
-          >
-            <Icon name="file" size={18} color={colors.text_ghost} />
-          </div>
-        ),
-      )}
+      {images.map((image) => (
+        <ToolImage key={image.id} runDir={runDir} image={image} />
+      ))}
     </>
+  );
+}
+
+function ToolImage({ runDir, image }: { runDir?: string; image: { ref: string; mime: string } }) {
+  const { colors } = useTheme();
+  const [resolved, setResolved] = useState<{ ref: string; runDir?: string; source?: string }>();
+  useEffect(() => {
+    let active = true;
+    void resolveToolImage(getAppStore().backend, runDir, image)
+      .then((source) => {
+        if (active) setResolved({ ref: image.ref, runDir, source });
+      })
+      .catch(() => {
+        if (active) setResolved({ ref: image.ref, runDir });
+      });
+    return () => {
+      active = false;
+    };
+  }, [runDir, image.ref, image.mime]);
+  const source = /^(data:image\/|file:\/\/)/.test(image.ref)
+    ? image.ref
+    : resolved?.ref === image.ref && resolved.runDir === runDir
+      ? resolved.source
+      : undefined;
+  return source ? (
+    <img
+      src={source}
+      objectFit="contain"
+      style={{ width: 300, maxWidth: '100%', maxHeight: 200, marginTop: 8, borderRadius: 4 }}
+    />
+  ) : (
+    <div
+      role="img"
+      aria-label={t('transcript.image_unavailable')}
+      style={{
+        ...row,
+        width: 300,
+        maxWidth: '100%',
+        height: 80,
+        marginTop: 8,
+        borderRadius: 4,
+        justifyContent: 'center',
+        backgroundColor: colors.inset,
+      }}
+    >
+      <Icon name="file" size={18} color={colors.text_ghost} />
+    </div>
   );
 }
 
@@ -846,7 +877,7 @@ function ToolCard({ tool, view, live }: { tool: ToolActivity; view: SessionView;
                 command={command}
                 live={live && !complete(tool)}
               >
-                {images ? <ToolImages tool={tool} /> : undefined}
+                {images ? <ToolImages tool={tool} view={view} /> : undefined}
               </CopySection>
             </div>
           )}

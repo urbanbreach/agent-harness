@@ -5,7 +5,7 @@ import { Markdown } from '../../markdown';
 import { getAppStore, usePreferences } from '../../store';
 import { nativeRenderer } from '../../native';
 import { useTheme } from '../../theme';
-import { Button, ContextMenu, Icon, IconButton, Tooltip, type MenuItem } from '../../ui';
+import { Button, ContextMenu, Icon, IconButton, Tooltip, useToast, type MenuItem } from '../../ui';
 import type { SessionView, UserEntry, TurnView } from '../../model/session';
 import type { Update } from '../../backend/protocol';
 import { restoreNamedSnapshot, copySessionSnapshots } from '../../workspace/checkpoints';
@@ -15,11 +15,28 @@ import { timestamp } from './rows';
 import { AttachmentTile, loadPromptAttachments } from './attachments';
 import { copyTurnCheckpoints, getTurnCheckpoint } from './checkpoints';
 import { usePromptDisplay } from '../composer/prompt-display';
+import { openUrl } from '../../workspace/os';
+
+function useOpenTranscriptLink() {
+  const { showToast } = useToast();
+  return (url: string) => {
+    void openUrl(url).catch((cause) => showToast(String(cause)));
+  };
+}
 const promptEditors = new Map<string, () => void>();
+/** Scrolls a session's transcript to a prompt; registered by the mounted transcript. */
+export const promptRevealers = new Map<string, (requestId: string) => boolean>();
+let pendingEdit: string | undefined;
 export function requestPromptEdit(sessionId: string, requestId: string): boolean {
-  const edit = promptEditors.get(`${sessionId}:${requestId}`);
-  if (!edit) return false;
-  edit();
+  const key = `${sessionId}:${requestId}`;
+  const edit = promptEditors.get(key);
+  if (edit) {
+    edit();
+    return true;
+  }
+  // The virtual transcript only mounts visible rows; the prompt opens its editor once revealed.
+  if (!promptRevealers.get(sessionId)?.(requestId)) return false;
+  pendingEdit = key;
   return true;
 }
 
@@ -229,16 +246,19 @@ export function UserMessage({
   entry,
   view,
   checkpoint,
+  rewindPoints,
 }: {
   sessionId: string;
   entry: UserEntry;
   view: SessionView;
   checkpoint?: { cwd: string; startRef: string };
+  rewindPoints: ReadonlySet<string>;
 }) {
   const { colors, sp } = useTheme();
   const { renderer } = useGpuix();
   const preferences = usePreferences();
   const displayText = usePromptDisplay(sessionId, entry.text);
+  const onOpenLink = useOpenTranscriptLink();
   const editor = useRef<PublicInstance>(null);
   const bubble = useRef<PublicInstance>(null);
   const [hovered, setHovered] = useState(false);
@@ -246,38 +266,21 @@ export function UserMessage({
   const [value, setValue] = useState(entry.text);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [points, setPoints] = useState<string[]>([]);
   const generation = useRef(0);
   const idle = view.status === 'idle' || view.status === 'failed';
-  useEffect(() => {
-    if (!idle || !checkpoint || entry.steering) return;
-    let active = true;
-    const current = ++generation.current;
-    const unsubscribe = getAppStore().backend.subscribe((notification) => {
-      if (notification.method !== 'session.update' || notification.params.sessionId !== sessionId)
-        return;
-      const update = notification.params.update;
-      if (active && update.kind === 'rewindPoints' && update.generation === current)
-        setPoints(update.points?.map((point) => point.request_id) ?? []);
-    });
-    void getAppStore()
-      .sendIntent(sessionId, { kind: 'loadRewindPoints', generation: current, cancelTaskIds: [] })
-      .catch((cause) => {
-        if (active) setError(String(cause));
-      });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [sessionId, idle, checkpoint?.startRef, entry.requestId, entry.steering]);
-  const canEdit = idle && !entry.steering && !!checkpoint && points.includes(entry.requestId);
+  const canEdit = idle && !entry.steering && !!checkpoint && rewindPoints.has(entry.requestId);
   useEffect(() => {
     if (!canEdit) return;
     const key = `${sessionId}:${entry.requestId}`;
-    promptEditors.set(key, () => {
+    const edit = () => {
       setValue(entry.text);
       setEditing(true);
-    });
+    };
+    promptEditors.set(key, edit);
+    if (pendingEdit === key) {
+      pendingEdit = undefined;
+      edit();
+    }
     return () => {
       promptEditors.delete(key);
     };
@@ -528,6 +531,7 @@ export function UserMessage({
               context="user"
               menuItems={menu()}
               onHover={updateHover}
+              onOpenLink={onOpenLink}
             />
           </div>
         </ContextMenu>
@@ -589,6 +593,7 @@ export function AssistantMessage({
   streaming: boolean;
 }) {
   const { renderer } = useGpuix();
+  const onOpenLink = useOpenTranscriptLink();
   const copy = (value: string) => {
     if (renderer) nativeRenderer(renderer).writeClipboardText(value);
   };
@@ -640,7 +645,7 @@ export function AssistantMessage({
   };
   return (
     <ContextMenu items={items}>
-      <Markdown source={text} streaming={streaming} menuItems={items()} />
+      <Markdown source={text} streaming={streaming} menuItems={items()} onOpenLink={onOpenLink} />
     </ContextMenu>
   );
 }

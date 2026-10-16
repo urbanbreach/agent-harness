@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { fileTags, suggestions, triggerAt } from '../../src/app/composer/completion';
+import { fileTag, fileTags, suggestions, triggerAt } from '../../src/app/composer/completion';
+import { prepareDraft } from '../../src/app/composer/queue-store';
 
 describe('composer completion', () => {
   test('completes only line commands and whitespace-delimited file mentions, replacing whole token', () => {
@@ -63,5 +64,35 @@ describe('composer completion', () => {
         source: { start: 22, end: 28, value: '@docs/' },
       },
     ]);
+  });
+  test('submits selected paths whole and all tag spans in Unicode scalar offsets', () => {
+    const text = '  😀 @docs/release notes.md @agent:review @resource:docs  ';
+    const prepared = prepareDraft(
+      {
+        text,
+        fileTags: [fileTag('docs/release notes.md', '/project', 5)],
+        agentTags: [{ name: 'review', source: { start: 0, end: 0, value: '@agent:review' } }],
+        resourceTags: [
+          {
+            name: 'docs',
+            uri: 'docs://index',
+            mime: 'text/plain',
+            source: { start: 0, end: 0, value: '@resource:docs' },
+          },
+        ],
+        attachments: [{ path: '/project/report 😀.txt', mime: 'text/plain', dataBase64: '' }],
+      },
+      '/project',
+    );
+    expect(prepared.fileTags?.map((tag) => tag.path)).toEqual([
+      '/project/docs/release notes.md',
+      '/project/report 😀.txt',
+    ]);
+    expect(prepared.fileTags?.[0]?.source.start).toBe(2);
+    for (const tag of [...prepared.fileTags!, ...prepared.agentTags!, ...prepared.resourceTags!])
+      expect([...prepared.text].slice(tag.source.start, tag.source.end).join('')).toBe(
+        tag.source.value,
+      );
+    expect(fileTags('😀 @README.md', '/project')[0]?.source.start).toBe(3);
   });
 });

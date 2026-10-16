@@ -20,7 +20,7 @@ export function prepareDraft(draft: Draft, cwd: string): Draft {
     (item) => item.path && !item.mime.startsWith('image/'),
   );
   let text = draft.text.trim();
-  const tags = fileTags(text, cwd);
+  const tags = fileTags(text, cwd, draft.fileTags);
   for (const attachment of files) {
     if (text) text += ' ';
     const start = text.length;
@@ -34,27 +34,38 @@ export function prepareDraft(draft: Draft, cwd: string): Draft {
       source: { start, end: text.length, value },
     });
   }
+  const sourceOffsets = <T extends { source: { start: number; end: number; value: string } }>(
+    tag: T,
+  ): T => ({
+    ...tag,
+    source: {
+      ...tag.source,
+      start: Array.from(text.slice(0, tag.source.start)).length,
+      end: Array.from(text.slice(0, tag.source.end)).length,
+    },
+  });
   return {
     ...draft,
     text,
-    agentTags: [...text.matchAll(/(^|\s)(@agent:\S+)/g)].flatMap((match) => {
-      const tag = draft.agentTags?.find((entry) => entry.source.value === match[2]);
-      const start = match.index! + match[1]!.length;
-      return tag
-        ? [{ ...tag, source: { start, end: start + match[2]!.length, value: match[2]! } }]
-        : [];
-    }),
-    resourceTags: [...text.matchAll(/(^|\s)(@resource:\S+)/g)].flatMap((match) => {
-      const tag = draft.resourceTags?.find((entry) => entry.source.value === match[2]);
-      const start = match.index! + match[1]!.length;
-      return tag
-        ? [{ ...tag, source: { start, end: start + match[2]!.length, value: match[2]! } }]
-        : [];
-    }),
-    fileTags: [
-      ...(draft.fileTags ?? []).filter((tag) => !tags.some((item) => item.path === tag.path)),
-      ...tags,
-    ],
+    agentTags: [...text.matchAll(/(^|\s)(@agent:\S+)/g)]
+      .flatMap((match) => {
+        const tag = draft.agentTags?.find((entry) => entry.source.value === match[2]);
+        const start = match.index! + match[1]!.length;
+        return tag
+          ? [{ ...tag, source: { start, end: start + match[2]!.length, value: match[2]! } }]
+          : [];
+      })
+      .map(sourceOffsets),
+    resourceTags: [...text.matchAll(/(^|\s)(@resource:\S+)/g)]
+      .flatMap((match) => {
+        const tag = draft.resourceTags?.find((entry) => entry.source.value === match[2]);
+        const start = match.index! + match[1]!.length;
+        return tag
+          ? [{ ...tag, source: { start, end: start + match[2]!.length, value: match[2]! } }]
+          : [];
+      })
+      .map(sourceOffsets),
+    fileTags: tags.map(sourceOffsets),
     attachments: (draft.attachments ?? []).filter(
       (item) => item.mime.startsWith('image/') && item.dataBase64,
     ),

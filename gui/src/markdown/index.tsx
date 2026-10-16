@@ -18,7 +18,7 @@ import type { MenuItem } from '../ui/menus';
 import type { IconName } from '../ui/icon-names';
 import { t, useLocale } from '../i18n';
 import { highlightCode } from '../syntax';
-import { parseMarkdown } from './parse';
+import { StreamingMarkdownParser } from './parse';
 import type { MarkdownBlock, MarkdownInline } from './model';
 import { renderFormula } from './math';
 import type { FormulaImage } from './math';
@@ -114,16 +114,9 @@ export function Markdown({
   style,
 }: MarkdownProps) {
   const theme = useTheme();
-  const previous = useRef<MarkdownBlock[]>([]);
-  const blocks = useMemo(() => {
-    const parsed = parseMarkdown(source, { streaming });
-    for (let i = 0; i < parsed.length && i < previous.current.length; i++) {
-      if (JSON.stringify(parsed[i]) !== JSON.stringify(previous.current[i])) break;
-      parsed[i] = previous.current[i]!;
-    }
-    previous.current = parsed;
-    return parsed;
-  }, [source, streaming]);
+  const parser = useRef<StreamingMarkdownParser | null>(null);
+  if (!parser.current) parser.current = new StreamingMarkdownParser();
+  const blocks = useMemo(() => parser.current!.parse(source, streaming), [source, streaming]);
   const environment = useMemo<Environment>(
     () => ({
       ...markdownMetrics(context, theme.uiFontSize, theme.codeFontSize),

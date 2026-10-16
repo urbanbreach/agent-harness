@@ -90,16 +90,40 @@ export function parseMarkdown(
   source: string,
   { streaming = false }: { streaming?: boolean } = {},
 ): MarkdownBlock[] {
+  return parseDocument(source, streaming).blocks;
+}
+
+function parseDocument(source: string, streaming: boolean) {
   const display = streaming ? guardStreamingSetext(source) : source;
-  const tokens = parser.parse(display, {
+  const environment = {
     streaming,
     tailLine: display.replace(/\n$/, '').split('\n').length,
-  });
+    references: undefined as Record<string, { href: string; title: string }> | undefined,
+  };
+  const tokens = parser.parse(display, environment);
+  const lines = [0];
+  for (const match of source.matchAll(/\r\n?|\n/g)) lines.push(match.index + match[0].length);
+  let tailOffset = 0;
+  let tailBlock = 0;
+  let pendingMath = false;
   let position = 0;
   function blocks(until?: string): MarkdownBlock[] {
     const result: MarkdownBlock[] = [];
     while (position < tokens.length) {
       const token = tokens[position++]!;
+      if (!until && token.map && token.nesting >= 0 && !pendingMath) {
+        tailOffset = lines[token.map[0]] ?? source.length;
+        tailBlock = result.length;
+        // An unfinished display-math opener can absorb later paragraphs when it closes.
+        pendingMath =
+          token.type !== 'fence' &&
+          token.type !== 'code_block' &&
+          token.type !== 'html_block' &&
+          token.type !== 'math_display' &&
+          /(?:^|\r?\n|\r) {0,3}\$\$/.test(
+            source.slice(tailOffset, lines[token.map[1]] ?? source.length),
+          );
+      }
       if (token.type === until) break;
       switch (token.type) {
         case 'paragraph_open':
@@ -219,7 +243,44 @@ export function parseMarkdown(
     }
     return result;
   }
-  return blocks();
+  return {
+    blocks: blocks(),
+    tailOffset,
+    tailBlock,
+    hasReferences: environment.references !== undefined,
+  };
+}
+
+/** Reparse only the last top-level block; earlier blocks keep their render identity. */
+export class StreamingMarkdownParser {
+  private source = '';
+  private blocks: MarkdownBlock[] = [];
+  private tailOffset = 0;
+  private tailBlock = 0;
+  private hasReferences = false;
+
+  parse(source: string, streaming = false): MarkdownBlock[] {
+    let offset = !this.hasReferences && source.startsWith(this.source) ? this.tailOffset : 0;
+    let retained = offset ? this.tailBlock : 0;
+    let parsed = parseDocument(source.slice(offset), streaming);
+    // Reference definitions can change links anywhere, including already settled blocks.
+    if (offset && parsed.hasReferences) {
+      offset = 0;
+      retained = 0;
+      parsed = parseDocument(source, streaming);
+    }
+    const next = this.blocks.slice(0, retained).concat(parsed.blocks);
+    for (let i = retained; i < next.length && i < this.blocks.length; i++) {
+      if (JSON.stringify(next[i]) !== JSON.stringify(this.blocks[i])) break;
+      next[i] = this.blocks[i]!;
+    }
+    this.source = source;
+    this.blocks = next;
+    this.tailOffset = offset + parsed.tailOffset;
+    this.tailBlock = retained + parsed.tailBlock;
+    this.hasReferences = parsed.hasReferences;
+    return next;
+  }
 }
 
 type InlinePart =

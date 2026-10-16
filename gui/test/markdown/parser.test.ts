@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { parseMarkdown, renderedText } from '../../src/markdown/parse';
+import { parseMarkdown, renderedText, StreamingMarkdownParser } from '../../src/markdown/parse';
 import type { MarkdownInline } from '../../src/markdown/model';
 
 test('bare HTTP links trim sentence punctuation and unmatched delimiters, but retain balanced delimiters', () => {
@@ -96,4 +96,42 @@ test('streaming mends only content-bearing trailing inline syntax and settles to
   expect(renderedText(parseMarkdown('**settled\n\nlast', { streaming: true }))).toBe(
     '**settled\n\nlast',
   );
+});
+
+test('incremental streams preserve settled identities, repair the tail, and match whole-document semantics', () => {
+  const parser = new StreamingMarkdownParser();
+  const initial = parser.parse('**settled**\n\n*tail', true);
+  const extended = parser.parse('**settled**\n\n*tail grows', true);
+  expect(extended[0]).toBe(initial[0]);
+  expect(extended[1]).toEqual({
+    type: 'paragraph',
+    spans: [{ type: 'text', text: 'tail grows', emphasis: true }],
+  });
+  const complete = parser.parse('**settled**\n\n*tail grows');
+  expect(complete[0]).toBe(initial[0]);
+  expect(renderedText(complete)).toBe('settled\n\n*tail grows');
+
+  const cases = [
+    'first ![alt](a.png) last\n\nnext\n---\n\nend',
+    'first\n\n7. outer\n   - [x] done\n\n     continuation\n8. next\n\nend',
+    'first\n\n> quote\n>\n> second\n\nend',
+    'first\n\n| a | b |\n| --- | ---: |\n| one | two |\n\nend',
+    'first\n\n```js\n**literal\n\nmore\n```\n\nend',
+    'first\n\n$$\nx_* + y\n\nlater paragraph\n$$\n\nend',
+    'first\nmath starts here\n$$\nx\n\nlater\n$$\n\nend',
+    'first\n\n[link][id]\n\n[id]: https://example.test "title"\n\n[id]: /ignored\n\nend',
+    '[id]: /first\n\ntext\n\n[link][id]\n\nend',
+    'first\r\n\r\n**second**\r\n\r\nend',
+  ];
+  for (const source of cases) {
+    const stream = new StreamingMarkdownParser();
+    for (let end = 1; end <= source.length; end++) {
+      const prefix = source.slice(0, end);
+      expect(stream.parse(prefix, true)).toEqual(parseMarkdown(prefix, { streaming: true }));
+    }
+    expect(stream.parse(source)).toEqual(parseMarkdown(source));
+    expect(stream.parse('replacement\n\n*tail', true)).toEqual(
+      parseMarkdown('replacement\n\n*tail', { streaming: true }),
+    );
+  }
 });

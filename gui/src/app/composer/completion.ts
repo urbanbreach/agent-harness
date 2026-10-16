@@ -174,21 +174,38 @@ export function suggestions(
     .slice(0, 64)
     .map((item) => item.row);
 }
-export function fileTags(text: string, cwd: string): SelectedFileTag[] {
+export function fileTag(value: string, cwd: string, start: number): SelectedFileTag {
+  const path = isAbsolute(value) ? value : resolve(cwd, value);
+  return {
+    path,
+    filename: basename(path),
+    url: pathToFileURL(path).href,
+    mime: value.endsWith('/') ? 'application/x-directory' : 'application/octet-stream',
+    source: { start, end: start + value.length + 1, value: `@${value}` },
+  };
+}
+export function fileTags(
+  text: string,
+  cwd: string,
+  selected: readonly SelectedFileTag[] = [],
+): SelectedFileTag[] {
   const tags: SelectedFileTag[] = [];
   const tokens = /(^|\s)@([^\s]+)/g;
   for (const match of text.matchAll(tokens)) {
-    const value = match[2]!;
+    const offset = match.index! + match[1]!.length;
+    if (tags.some((tag) => offset < tag.source.end)) continue;
+    const picked = selected
+      .filter((tag) => text.startsWith(tag.source.value, offset))
+      .filter(
+        (tag) =>
+          !text[offset + tag.source.value.length] ||
+          /\s/.test(text[offset + tag.source.value.length]!),
+      )
+      .sort((a, b) => b.source.value.length - a.source.value.length)[0];
+    const value = picked ? picked.source.value.slice(1) : match[2]!;
     if (value.startsWith('agent:') || value.startsWith('resource:')) continue;
-    const path = isAbsolute(value) ? value : resolve(cwd, value);
-    const start = match.index! + match[1]!.length;
-    tags.push({
-      path,
-      filename: basename(path),
-      url: pathToFileURL(path).href,
-      mime: value.endsWith('/') ? 'application/x-directory' : 'application/octet-stream',
-      source: { start, end: start + value.length + 1, value: `@${value}` },
-    });
+    const tag = fileTag(value, cwd, offset);
+    tags.push(picked ? { ...picked, source: tag.source } : tag);
   }
   return tags;
 }
