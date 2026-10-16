@@ -35,6 +35,10 @@ export interface MenuProps {
   ignoreOutsideId?: number;
   position?: { x: number; y: number };
   side?: 'top' | 'bottom' | 'right';
+  /** Which trigger edge the menu lines up with; settings rows open toward the left. */
+  align?: 'start' | 'end';
+  /** Anchor inside a bordered trigger's border instead of its outer edge. */
+  inset?: number;
   flyout?: boolean;
   autoHighlight?: boolean;
   onReturn?: () => void;
@@ -48,6 +52,8 @@ export function Menu({
   ignoreOutsideId,
   position,
   side = 'bottom',
+  align = 'start',
+  inset = 0,
   flyout = false,
   autoHighlight = false,
   onReturn,
@@ -161,8 +167,13 @@ export function Menu({
       <anchored
         position={position}
         side={side}
-        align="start"
+        align={align}
         gap={position ? 0 : side === 'right' ? -4 : 4}
+        offset={
+          inset
+            ? { x: align === 'end' ? -inset : inset, y: side === 'top' ? inset : -inset }
+            : undefined
+        }
         fit="switch"
         snapMargin={8}
         deferred
@@ -323,6 +334,7 @@ export interface DropdownProps extends Omit<MenuChipProps, 'onClick' | 'open'> {
   menuStyle?: StyleDesc;
   menuItemStyle?: StyleDesc;
   menuSide?: MenuProps['side'];
+  menuAlign?: MenuProps['align'];
 }
 export function Dropdown({
   items,
@@ -331,6 +343,7 @@ export function Dropdown({
   menuStyle,
   menuItemStyle,
   menuSide,
+  menuAlign,
   disabled,
   ...props
 }: DropdownProps) {
@@ -366,6 +379,8 @@ export function Dropdown({
           style={menuStyle}
           itemStyle={menuItemStyle}
           side={menuSide}
+          align={menuAlign}
+          inset={props.outlined ? 1 : 0}
           restoreFocusId={trigger.current?.id}
           onClose={() => change(false)}
         />

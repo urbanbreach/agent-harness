@@ -154,6 +154,7 @@ function Appearance() {
       <SettingsRow title={t('settings.theme')} description={t('settings.theme_description')}>
         <Dropdown
           outlined
+          menuAlign="end"
           label={
             theme.preference === 'system'
               ? t('settings.theme_system')
@@ -173,6 +174,7 @@ function Appearance() {
       <SettingsRow title={t('language.title')} description={t('language.description')}>
         <Dropdown
           outlined
+          menuAlign="end"
           style={{ width: 116, justifyContent: 'space-between' }}
           label={languages.find(([value]) => value === language)?.[1] ?? t('language.system')}
           items={languages.map(([value, label]) => ({
@@ -189,6 +191,7 @@ function Appearance() {
       >
         <Dropdown
           outlined
+          menuAlign="end"
           style={{ width: 116, justifyContent: 'space-between' }}
           label={`${theme.uiFontSize} px`}
           items={sizes.map((size) => ({
@@ -206,6 +209,7 @@ function Appearance() {
       >
         <Dropdown
           outlined
+          menuAlign="end"
           style={{ width: 116, justifyContent: 'space-between' }}
           label={`${theme.codeFontSize} px`}
           items={sizes.map((size) => ({

@@ -70,6 +70,7 @@ export function RuntimePage({ cwd }: { cwd: string }) {
                   ) : setting.choices?.length ? (
                     <Dropdown
                       outlined
+                      menuAlign="end"
                       disabled={!setting.editable}
                       label={String(setting.value)}
                       items={setting.choices.map((value) => ({
