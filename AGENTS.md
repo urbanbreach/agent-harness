@@ -29,6 +29,7 @@ agent-harness/
 │   └── harness-testkit/     # temporary workspaces and preserved terminal fixtures
 ├── configs/                 # strict JSON/JSONC configuration contracts
 ├── docs/                    # operator, architecture, and testing documentation
+├── gui/                     # Bun + GPUIX desktop GUI; talks to `harness gui-server` over stdio
 └── scripts/                 # test lanes, suite gates, and QA dogfood tooling
 ```
 
@@ -45,6 +46,7 @@ agent-harness/
 | Add or modify tools | `crates/harness-tools/src/` | Registry, validation, execution, edit, LSP, and MCP boundaries |
 | Change code kernels | `crates/harness-eval/src/` | Persistent language sessions; host callbacks cross coordinator policy |
 | Change terminal behavior | `crates/harness-tui/src/` | Runtime I/O, state, view model, rendering, and terminal adapters |
+| Change the desktop GUI | `gui/src/` (see `gui/README.md`), `crates/harness/src/tui/gui_server.rs`, `crates/harness/src/tui/gui_server/`, `docs/gui/protocol.md` | The GUI never writes journals; Harness work goes through the gui-server, which reuses the TUI runtime wiring in `tui/live_runtime.rs` |
 | Add deterministic fixtures | The owning crate's `tests/` directory | Use existing local provider and tool fixtures; shared temporary workspaces live in `harness-testkit` |
 | Run scoped test suites | `scripts/test-lanes.sh` | Canonical lane runner; gated modes fail closed |
 
@@ -89,6 +91,8 @@ Reference centrality was not measured; `Refs` records only that limitation.
   `<key>` is `v2-` plus the full BLAKE3 hex digest of the canonical UTF-8 project
   path. Legacy `--path--` directories are left intact and require explicit
   migration; see `docs/architecture/sessions-and-replay.md`.
+  The desktop GUI keeps its state, drafts and attachment blobs in `<home>/gui/` and
+  projectless workspaces in `<home>/scratch/`; both are created on first write.
   `<project>/.harness/` keeps authored `agents/`, `commands/`,
   `skills/`, `prompts/`, project config and remembered permission grants. After
   successful sign-in, Harness may create a minimal user config with create-new
@@ -172,6 +176,8 @@ scripts/test-lanes.sh all-deterministic
 python3 scripts/check-test-suite-gates.py
 HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness --test binary_smoke --ignore-default-filter
 bash scripts/harness-qa-dogfood.sh --self-test
+gui/native/build.sh
+(cd gui && bun install && bun x tsc --noEmit -p . && bun test && bun run format:check)
 ```
 
 ## NOTES

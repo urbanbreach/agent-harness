@@ -86,6 +86,18 @@ The first public release.
 
 ### Added
 
+- `harness gui` opens a native desktop app (Linux, built with GPUIX). It keeps
+  projects and their sessions in a sidebar, runs several sessions at once, and
+  covers what the TUI does: streaming transcripts with tool cards, permission
+  and question prompts, queued follow-ups and steering, model, profile and
+  access-mode pickers (including an automatic reviewer that approves routine
+  requests), compaction, rewind, fork and clone, subagents, provider sign-in,
+  settings, memory and diagnostics. It adds a file editor, review diffs for the
+  last turn, uncommitted, staged and branch changes, a commit dialog that can
+  draft the message, terminals, per-turn git checkpoints that let you edit an
+  earlier prompt with its files restored, a usage page built from your session
+  history, skills management and subscription usage windows for Claude and
+  Codex logins. `gui/README.md` explains how to build and run it.
 - Context maintenance rebuilt as an ordered chain of methods: provider-native
   remote compaction, an image archive of older history for vision models, a
   handoff document written by the live model, shake (heavy output moved to a

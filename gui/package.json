@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "./scripts/dev.sh",
+    "dev": "./scripts/run.sh --hot",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "format": "prettier --write src test scripts native/smoke",
