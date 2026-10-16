@@ -604,7 +604,12 @@ export function UsagePage({ cwd }: { cwd?: string }) {
       )}
       {data && (
         <text style={{ ...text, color: colors.text_tertiary, marginTop: 14 }}>
-          {`${t('usage.scan_summary', { scanned: data.scan.scanned, skipped: data.scan.skipped, records: data.scan.records, seconds: (data.scan.elapsedMs / 1000).toFixed(1) })} · ${t('settings.usage_timezone_dates', { timeZone: data.timeZone })}`}
+          {t('usage.scan_summary', {
+            scanned: data.scan.scanned,
+            skipped: data.scan.skipped,
+            records: data.scan.records,
+            seconds: (data.scan.elapsedMs / 1000).toFixed(1),
+          })}
         </text>
       )}
     </div>

@@ -311,7 +311,6 @@ export const en = {
   'usage.no_projects_match': 'No projects match the filter',
   'usage.scan_summary':
     'Scanned %{scanned} transcripts (%{skipped} outside the window) · %{records} usage records · %{seconds}s',
-  'settings.usage_timezone_dates': '%{timeZone} dates',
   'usage.show_models': 'Show %{models} with spend details',
   'usage.model_many': '%{count} models',
   'usage.models_by_spend': '%{models} · by spend',
@@ -637,7 +636,6 @@ export const zhCN: Translations<typeof en> = {
   'usage.no_projects_match': '没有符合筛选条件的项目',
   'usage.scan_summary':
     '已扫描 %{scanned} 份记录（%{skipped} 份在时间范围外）· %{records} 条用量记录 · %{seconds}秒',
-  'settings.usage_timezone_dates': '%{timeZone} 日期',
   'usage.show_models': '显示 %{models}及费用明细',
   'usage.model_many': '%{count} 个模型',
   'usage.models_by_spend': '%{models} · 按费用',
@@ -976,7 +974,6 @@ export const ja: Translations<typeof en> = {
   'usage.no_projects_match': '条件に一致するプロジェクトがありません',
   'usage.scan_summary':
     '%{scanned}件の記録をスキャン（期間外%{skipped}件）· 使用記録%{records}件 · %{seconds}秒',
-  'settings.usage_timezone_dates': '%{timeZone} の日付',
   'usage.show_models': '%{models}と費用の詳細を表示',
   'usage.model_many': '%{count}モデル',
   'usage.models_by_spend': '%{models} · 費用順',
