@@ -132,6 +132,91 @@ describe('session projection', () => {
     ).toBe(view.entries);
   });
 
+  test('tool boundaries end reasoning and durable settlement preserves the phase duration', () => {
+    for (const inputFirst of [false, true]) {
+      let view = projectEvents([prompt, start]);
+      view = applyUpdate(view, {
+        kind: 'event',
+        delivery: 'live',
+        event: live(
+          {
+            event_type: 'provider_reasoning_delta',
+            data: { request_id: 'provider', delta: 'Inspect the release.' },
+          },
+          300,
+        ),
+      });
+      if (inputFirst)
+        view = applyUpdate(view, {
+          kind: 'event',
+          delivery: 'live',
+          event: live(
+            {
+              event_type: 'provider_tool_input_delta',
+              data: {
+                request_id: 'provider',
+                tool_call_id: 'call',
+                tool_name: 'bash',
+                delta: '{"command":',
+              },
+            },
+            2300,
+          ),
+        });
+      view = applyUpdate(view, {
+        kind: 'event',
+        delivery: 'durable',
+        event: {
+          ...event(3, {
+            event_type: 'tool_call_requested',
+            data: {
+              tool_call_id: 'call',
+              tool_id: 'bash',
+              args_summary: '{"command":"pwd"}',
+              args_digest: '',
+              metadata: null,
+            },
+          }),
+          mono_ms: inputFirst ? 2400 : 2300,
+        },
+      });
+      expect(view.entries[1]).toMatchObject({
+        kind: 'reasoning',
+        startedMs: 300,
+        endedMs: 2300,
+        streaming: false,
+      });
+      for (const parts of [[], [{ kind: 'reasoning' as const, text: 'Inspect the release.' }]]) {
+        const settled = applyUpdate(view, {
+          kind: 'event',
+          delivery: 'durable',
+          event: {
+            ...answer,
+            seq: 4,
+            event_id: 'finished',
+            mono_ms: 8000,
+            payload: {
+              ...answer.payload,
+              event_type: 'assistant_message_finished',
+              data: {
+                request_id: 'provider',
+                tool_call_count: 1,
+                parts,
+                provenance: null,
+                assistant_message: null,
+              },
+            },
+          },
+        });
+        expect(settled.entries.find((entry) => entry.kind === 'reasoning')).toMatchObject({
+          startedMs: 300,
+          endedMs: 2300,
+          streaming: false,
+        });
+      }
+    }
+  });
+
   test('tool permission lifecycle retains decision, failure output and elapsed time', () => {
     const requested = event(3, {
       event_type: 'tool_call_requested',

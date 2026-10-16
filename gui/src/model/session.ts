@@ -653,6 +653,7 @@ function reduceEvent(
       appendDelta(event.data.request_id, event.data.delta, 'reasoning');
       return view;
     case 'provider_tool_input_delta':
+      closeReasoning();
       updateTool(event.data.tool_call_id, {
         toolId: event.data.tool_name ?? view.tools[event.data.tool_call_id]?.toolId ?? '',
         inputDelta: (view.tools[event.data.tool_call_id]?.inputDelta ?? '') + event.data.delta,
@@ -744,7 +745,7 @@ function reduceEvent(
               text: part.text,
               streaming: false,
               startedMs: prior?.startedMs ?? ms,
-              endedMs: ms,
+              endedMs: prior && isText(prior) ? (prior.endedMs ?? ms) : ms,
             });
           }
         }
@@ -755,7 +756,7 @@ function reduceEvent(
           ...view,
           entries: view.entries.map((entry) =>
             isText(entry) && entry.requestId === data.request_id
-              ? { ...entry, streaming: false, endedMs: ms }
+              ? { ...entry, streaming: false, endedMs: entry.endedMs ?? ms }
               : entry,
           ),
         };
