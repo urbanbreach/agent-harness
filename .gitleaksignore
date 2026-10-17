@@ -41,3 +41,7 @@ c4cb629f3097d723eedee1e282950ac2cca0e792:crates/harness-core/src/event.rs:generi
 139477566552bd92efa04d251314f3bef0038cda:crates/harness-core/src/event.rs:generic-api-key:614
 465f5f18b5586e04ffd8df112b98a1e172ae60d2:crates/harness-core/src/redact.rs:generic-api-key:62
 465f5f18b5586e04ffd8df112b98a1e172ae60d2:crates/harness-core/src/event.rs:generic-api-key:528
+3b9069405f0094114782bbaf51759cac923ef181:docs/evidence/tui-rewrite/reader-wake/crossterm-upstream.json:generic-api-key:31
+3b9069405f0094114782bbaf51759cac923ef181:vendor/crossterm/UPSTREAM.json:generic-api-key:31
+3b9069405f0094114782bbaf51759cac923ef181:docs/evidence/tui-rewrite/reader-wake/source-files.json:generic-api-key:26
+62eae8c300cc0209485350af3a43493002cb5c8d:crates/harness-core/src/tool.rs:generic-api-key:849
