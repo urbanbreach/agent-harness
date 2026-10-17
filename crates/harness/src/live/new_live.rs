@@ -28,7 +28,7 @@ use super::workflow::{
 };
 use super::{await_task, stop_live_source_run, unique_interactive_run_id, TuiCommand};
 
-pub(super) async fn run_new_worktree_live_session(
+pub(crate) async fn run_new_worktree_live_session(
     cmd: &TuiCommand,
     settings: &LiveSettings,
     demo_mode: bool,
@@ -72,7 +72,7 @@ pub(super) async fn run_new_worktree_live_session(
     .await
 }
 
-pub(super) fn prepare_worktree_live_settings(
+pub(crate) fn prepare_worktree_live_settings(
     settings: &LiveSettings,
     name: Option<&str>,
     base_branch: Option<&str>,
@@ -122,7 +122,7 @@ pub(super) fn prepare_worktree_live_settings(
     Ok(worktree_settings)
 }
 
-pub(super) async fn run_new_live_session(
+pub(crate) async fn run_new_live_session(
     cmd: &TuiCommand,
     settings: &LiveSettings,
     demo_mode: bool,
@@ -326,10 +326,10 @@ async fn run_new_live_runtime(
     }
 }
 
-pub(super) struct NewLiveRuntime {
-    pub(super) coordinator: CoordinatorHandle,
-    pub(super) event_forwarder_task: JoinHandle<Result<(), String>>,
-    pub(super) ui_intent_task: JoinHandle<Result<(), String>>,
+pub(crate) struct NewLiveRuntime {
+    pub(crate) coordinator: CoordinatorHandle,
+    pub(crate) event_forwarder_task: JoinHandle<Result<(), String>>,
+    pub(crate) ui_intent_task: JoinHandle<Result<(), String>>,
 }
 
 impl NewLiveRuntime {
@@ -347,7 +347,7 @@ impl NewLiveRuntime {
     }
 }
 
-pub(super) fn spawn_session_history_refresh(
+pub(crate) fn spawn_session_history_refresh(
     session_dir: PathBuf,
     live_update_tx: LiveUpdateSender,
 ) -> JoinHandle<Result<(), String>> {

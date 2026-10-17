@@ -1,14 +1,18 @@
+use super::auth_backend::TuiAuthBackendContext;
+use super::coordinator_warmup::LiveCoordinatorConfigWarmup;
+use super::launch_metadata::continue_launch_metadata;
+use super::live_events::{forward_events_to_tui, latest_request_id_for_agent};
+use super::live_intents::{handle_ui_intents, LiveAgentTarget};
+use super::live_settings::LiveSettings;
 use super::new_live::NewLiveRuntime;
 use super::profile_log::profile_handoff;
-use super::{
-    continue_launch_metadata, forward_events_to_tui, handle_ui_intents,
-    latest_request_id_for_agent, latest_run_name, load_events_from_run_dir,
-    load_recorded_runtime_context, recover_mutex_lock, select_resume_agent_id, user_actor,
-    LaunchSelection, LiveAgentTarget, LiveCoordinatorConfigWarmup, LiveSettings,
-    TuiAuthBackendContext,
-};
+use super::session_history::load_recorded_runtime_context;
+use super::workflow::LaunchSelection;
+use super::{recover_mutex_lock, user_actor};
 use crate::cli_config::apply_runtime_metadata;
+use crate::cli_io::load_events_from_run_dir;
 use crate::logging;
+use crate::recovery::{latest_run_name, select_resume_agent_id};
 use crate::scenarios::supervisor_actor;
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::coord::spawn_coordinator;
@@ -24,7 +28,7 @@ use tokio::sync::mpsc;
     clippy::too_many_arguments,
     reason = "shared bootstrap takes explicit session channels"
 )]
-pub(super) async fn bootstrap(
+pub(crate) async fn bootstrap(
     settings: &LiveSettings,
     demo_mode: bool,
     run_id: String,
@@ -128,7 +132,7 @@ pub(super) async fn bootstrap(
     clippy::too_many_arguments,
     reason = "bootstrap receives explicit workspace and runtime channels"
 )]
-pub(super) async fn bootstrap_new_live_runtime(
+pub(crate) async fn bootstrap_new_live_runtime(
     settings: &LiveSettings,
     demo_mode: bool,
     workspace: PathBuf,

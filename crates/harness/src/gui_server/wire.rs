@@ -72,7 +72,7 @@ pub(super) fn selection(
                 && option.variant() == variant
         })
         .ok_or_else(|| format!("model selection is unavailable for profile {profile}"))?;
-    Ok(super::super::model_selection::launch_metadata_from_model_option(metadata, option))
+    Ok(crate::live::model_selection::launch_metadata_from_model_option(metadata, option))
 }
 
 pub(super) fn intent(value: &Value, metadata: &LaunchMetadata) -> Result<UiIntent, String> {

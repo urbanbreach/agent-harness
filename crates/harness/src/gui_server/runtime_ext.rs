@@ -11,8 +11,8 @@ use harness_providers::{
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 
-use super::super::live_settings::LiveSettings;
 use super::Server;
+use crate::live::live_settings::LiveSettings;
 
 static TOGGLES_LOCK: Mutex<()> = Mutex::new(());
 
@@ -70,7 +70,7 @@ pub(super) async fn dispatch(
         ),
         "app.doctor" | "app.configSources" => inspect(server, method, params).await,
         "app.releaseNotes" => Ok(
-            json!({"version":env!("CARGO_PKG_VERSION"),"markdown":include_str!("../../../../../CHANGELOG.md")}),
+            json!({"version":env!("CARGO_PKG_VERSION"),"markdown":include_str!("../../../../CHANGELOG.md")}),
         ),
         "session.info" => session_info(server, params).await,
         _ => Err("method_not_found: unknown runtime method".into()),
@@ -314,7 +314,7 @@ pub(super) fn apply_overrides(settings: &mut LiveSettings) -> Result<(), String>
         } else {
             crate::bootstrap::interactive_profile_name(config)
         };
-        let rebuilt = super::super::launch_metadata::interactive_launch_metadata(
+        let rebuilt = crate::live::launch_metadata::interactive_launch_metadata(
             Some(config),
             &profiles,
             &profile,

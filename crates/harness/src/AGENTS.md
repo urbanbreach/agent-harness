@@ -12,7 +12,7 @@ return errors rather than exiting the process.
 | Session continuation | `prompt/session.rs`, `sessions/operations.rs` |
 | Replay indexing | `replay/index.rs` |
 | Export redaction | `exports.rs`, `exports/` |
-| TUI event flow | `tui/live_events.rs`, `tui/live_intents.rs` |
+| Live event flow (TUI and GUI) | `live/live_events.rs`, `live/live_intents.rs` |
 
 Prompt completion belongs to its agent-turn terminal event. A child result or
 provider completion cannot finish the parent prompt. Live fragments do not

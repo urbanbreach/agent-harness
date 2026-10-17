@@ -6,7 +6,7 @@ use harness_tui::app::SessionHistoryEntry;
 use crate::cli_io::load_run_metadata;
 use crate::replay::{inspect_session_catalog, SessionInspectionEntry};
 
-pub(super) fn load_startup_session_history_entries(
+pub(crate) fn load_startup_session_history_entries(
     session_dir: &Path,
 ) -> Result<Vec<SessionHistoryEntry>, String> {
     inspect_session_catalog(session_dir).map(|entries| {
@@ -21,7 +21,7 @@ pub(super) fn load_startup_session_history_entries(
     })
 }
 
-pub(super) fn load_live_session_history_entries(
+pub(crate) fn load_live_session_history_entries(
     run_dir: &Path,
     fallback_session_dir: &Path,
 ) -> Result<Vec<SessionHistoryEntry>, String> {
@@ -29,6 +29,6 @@ pub(super) fn load_live_session_history_entries(
     load_startup_session_history_entries(session_dir)
 }
 
-pub(super) fn load_recorded_runtime_context(run_dir: &Path) -> Option<RecordedRuntimeContext> {
+pub(crate) fn load_recorded_runtime_context(run_dir: &Path) -> Option<RecordedRuntimeContext> {
     load_run_metadata(run_dir).and_then(|metadata| metadata.recorded_runtime_context)
 }

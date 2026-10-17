@@ -7,7 +7,7 @@ use harness_core::session_lineage::{
 };
 use harness_tui::{LiveUpdate, OperatorNoticeLevel};
 
-pub(super) fn materialize_tui_lineage_child(
+pub(crate) fn materialize_tui_lineage_child(
     operation: &'static str,
     source_run_dir: PathBuf,
     events: Vec<EventEnvelopeV1>,
@@ -32,7 +32,7 @@ pub(super) fn materialize_tui_lineage_child(
     }
 }
 
-pub(super) fn materialize_tui_fork_child(
+pub(crate) fn materialize_tui_fork_child(
     source_run_dir: PathBuf,
     events: Vec<EventEnvelopeV1>,
     stable_prefix: StableSessionPrefix,

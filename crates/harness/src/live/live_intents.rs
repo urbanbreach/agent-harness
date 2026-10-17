@@ -17,13 +17,13 @@ use super::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
 use super::recover_mutex_lock;
 use crate::scenarios::supervisor_actor;
 
-pub(super) type LiveAgentTargetState = Arc<Mutex<LiveAgentTarget>>;
+pub(crate) type LiveAgentTargetState = Arc<Mutex<LiveAgentTarget>>;
 
 #[derive(Debug, Clone)]
-pub(super) struct LiveAgentTarget {
-    pub(super) agent_id: Option<String>,
-    pub(super) profile: String,
-    pub(super) last_request_id: Option<String>,
+pub(crate) struct LiveAgentTarget {
+    pub(crate) agent_id: Option<String>,
+    pub(crate) profile: String,
+    pub(crate) last_request_id: Option<String>,
 }
 
 async fn load_rewind_points(
@@ -345,7 +345,7 @@ async fn send_prompt(
     Ok(())
 }
 
-pub(super) async fn handle_ui_intents(
+pub(crate) async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     user_actor: EventActor,
@@ -958,7 +958,7 @@ async fn manual_compaction_outcome(
 
 /// `/shake` reports what it dropped; a pass that dropped nothing says so, whichever mode
 /// asked, and does not rebuild the transcript.
-pub(super) fn shake_outcome(
+pub(crate) fn shake_outcome(
     outcome: &harness_core::coord::ShakeOutcome,
 ) -> CompactionCommandOutcome {
     let nothing = outcome.tokens_freed == 0
@@ -1128,7 +1128,7 @@ fn prompt_attachment_metadata(
         .collect())
 }
 
-pub(super) fn foreground_background_success_message(count: usize) -> String {
+pub(crate) fn foreground_background_success_message(count: usize) -> String {
     if count == 1 {
         "foreground subagent moved to background".to_string()
     } else {

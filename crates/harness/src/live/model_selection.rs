@@ -8,21 +8,21 @@ const MODEL_SELECTION_STATE_FILE: &str = "model.json";
 const MODEL_SELECTION_SCHEMA_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct PersistedModelSelection {
-    pub(super) schema_version: u8,
-    pub(super) config_digest: String,
-    pub(super) profile: String,
-    pub(super) provider: String,
-    pub(super) model: String,
+pub(crate) struct PersistedModelSelection {
+    pub(crate) schema_version: u8,
+    pub(crate) config_digest: String,
+    pub(crate) profile: String,
+    pub(crate) provider: String,
+    pub(crate) model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) variant: Option<String>,
+    pub(crate) variant: Option<String>,
 }
 
 fn model_selection_state_path() -> Option<PathBuf> {
     model_selection_state_path_from_lookup(&|name| std::env::var(name).ok())
 }
 
-pub(super) fn model_selection_state_path_from_lookup(
+pub(crate) fn model_selection_state_path_from_lookup(
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Option<PathBuf> {
     if let Some(path) = lookup("HARNESS_MODEL_SELECTION_STATE_FILE") {
@@ -32,7 +32,7 @@ pub(super) fn model_selection_state_path_from_lookup(
         .map(|root| root.join(MODEL_SELECTION_STATE_FILE))
 }
 
-pub(super) fn load_persisted_model_selection_from_path(
+pub(crate) fn load_persisted_model_selection_from_path(
     path: &Path,
 ) -> Option<PersistedModelSelection> {
     let body = fs::read_to_string(path).ok()?;
@@ -52,11 +52,11 @@ fn persisted_model_selection_valid(selection: &PersistedModelSelection) -> bool 
             .is_none_or(model_selection_value_present)
 }
 
-pub(super) fn model_selection_value_present(value: &str) -> bool {
+pub(crate) fn model_selection_value_present(value: &str) -> bool {
     !value.trim().is_empty()
 }
 
-pub(super) fn save_persisted_model_selection(
+pub(crate) fn save_persisted_model_selection(
     launch_metadata: &LaunchMetadata,
     config_digest: &str,
 ) -> Result<(), String> {
@@ -66,7 +66,7 @@ pub(super) fn save_persisted_model_selection(
     save_persisted_model_selection_to_path(&path, launch_metadata, config_digest)
 }
 
-pub(super) fn save_persisted_model_selection_to_path(
+pub(crate) fn save_persisted_model_selection_to_path(
     path: &Path,
     launch_metadata: &LaunchMetadata,
     config_digest: &str,
@@ -119,7 +119,7 @@ fn persisted_model_selection_from_metadata(
     })
 }
 
-pub(super) fn apply_persisted_model_selection(
+pub(crate) fn apply_persisted_model_selection(
     launch_metadata: LaunchMetadata,
     config_digest: &str,
     lookup: &dyn Fn(&str) -> Option<String>,
@@ -130,7 +130,7 @@ pub(super) fn apply_persisted_model_selection(
     apply_persisted_model_selection_from_path(launch_metadata, &path, config_digest)
 }
 
-pub(super) fn apply_persisted_model_selection_from_path(
+pub(crate) fn apply_persisted_model_selection_from_path(
     launch_metadata: LaunchMetadata,
     path: &Path,
     config_digest: &str,
@@ -144,7 +144,7 @@ pub(super) fn apply_persisted_model_selection_from_path(
     apply_model_selection_to_launch_metadata(launch_metadata, &selection)
 }
 
-pub(super) fn apply_model_selection_to_launch_metadata(
+pub(crate) fn apply_model_selection_to_launch_metadata(
     launch_metadata: LaunchMetadata,
     selection: &PersistedModelSelection,
 ) -> LaunchMetadata {
@@ -154,7 +154,7 @@ pub(super) fn apply_model_selection_to_launch_metadata(
     launch_metadata_from_model_option(&launch_metadata, option)
 }
 
-pub(super) fn launch_metadata_from_model_option(
+pub(crate) fn launch_metadata_from_model_option(
     launch_metadata: &LaunchMetadata,
     option: &ModelOption,
 ) -> LaunchMetadata {

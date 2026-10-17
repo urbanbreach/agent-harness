@@ -976,7 +976,7 @@ fn zero_change_shake_modes_report_nothing_to_shake() {
         "No thinking blocks found in this session.",
         "Nothing to shake.",
     ] {
-        let outcome = super::live_intents::shake_outcome(&ShakeOutcome {
+        let outcome = crate::live::live_intents::shake_outcome(&ShakeOutcome {
             summary: summary.into(),
             tokens_freed: 0,
         });

@@ -10,7 +10,7 @@ use super::profile_log::profile_handoff;
 use super::recover_mutex_lock;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum InteractiveWorkflow {
+pub(crate) enum InteractiveWorkflow {
     Startup,
     NewSession,
     NewWorktreeSession { name: Option<String> },
@@ -20,30 +20,30 @@ pub(super) enum InteractiveWorkflow {
     Quit,
 }
 
-pub(super) type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
-pub(super) type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
-pub(super) type LaunchSelection = Arc<Mutex<LaunchSelectionState>>;
+pub(crate) type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
+pub(crate) type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
+pub(crate) type LaunchSelection = Arc<Mutex<LaunchSelectionState>>;
 
-pub(super) struct LaunchSelectionState {
-    pub(super) metadata: LaunchMetadata,
-    pub(super) config_digest: String,
+pub(crate) struct LaunchSelectionState {
+    pub(crate) metadata: LaunchMetadata,
+    pub(crate) config_digest: String,
 }
 
-pub(super) fn persist_launch_selection_for_exit(selection: &LaunchSelectionState) {
+pub(crate) fn persist_launch_selection_for_exit(selection: &LaunchSelectionState) {
     if let Err(err) = save_persisted_model_selection(&selection.metadata, &selection.config_digest)
     {
         profile_handoff(&format!("model_selection.persist_failed {err}"));
     }
 }
 
-pub(super) fn record_launch_selection(
+pub(crate) fn record_launch_selection(
     selection: &LaunchSelection,
     launch_metadata: &LaunchMetadata,
 ) {
     recover_mutex_lock(selection).metadata = launch_metadata.clone().without_mode_label();
 }
 
-pub(super) fn handle_model_switch_intent(
+pub(crate) fn handle_model_switch_intent(
     intent: &UiIntent,
     launch_selection: &LaunchSelection,
     persist_model_selection: bool,
@@ -62,7 +62,7 @@ pub(super) fn handle_model_switch_intent(
     true
 }
 
-pub(super) async fn run_interactive_workflow_loop(
+pub(crate) async fn run_interactive_workflow_loop(
     initial_workflow: InteractiveWorkflow,
     mut load_startup_entries: impl FnMut() -> Result<Vec<SessionHistoryEntry>, String>,
     mut run_startup: impl AsyncFnMut(
@@ -112,7 +112,7 @@ pub(super) async fn run_interactive_workflow_loop(
     }
 }
 
-pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkflow {
+pub(crate) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkflow {
     match intent {
         Some(UiIntent::NewSession) => InteractiveWorkflow::NewSession,
         Some(UiIntent::NewWorktreeSession { name }) => {
@@ -166,7 +166,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
     }
 }
 
-pub(super) fn build_live_ui_intent_router(
+pub(crate) fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
     receipt_updates: harness_tui::LiveUpdateSender,
     launch_selection: LaunchSelection,
@@ -193,7 +193,7 @@ pub(super) fn build_live_ui_intent_router(
     (selected_workflow, on_ui_intent)
 }
 
-pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
+pub(crate) fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
     match intent {
         UiIntent::NewSession => Some(InteractiveWorkflow::NewSession),
         UiIntent::NewWorktreeSession { name } => {
@@ -283,7 +283,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
     )
 }
 
-pub(super) fn capture_first_workflow(
+pub(crate) fn capture_first_workflow(
     selected_workflow: &SelectedWorkflow,
     workflow: InteractiveWorkflow,
 ) {
@@ -294,13 +294,13 @@ pub(super) fn capture_first_workflow(
     }
 }
 
-pub(super) fn take_selected_workflow(
+pub(crate) fn take_selected_workflow(
     selected_workflow: &SelectedWorkflow,
 ) -> Result<InteractiveWorkflow, String> {
     take_selected_workflow_or(selected_workflow, InteractiveWorkflow::Quit)
 }
 
-pub(super) fn take_selected_workflow_or(
+pub(crate) fn take_selected_workflow_or(
     selected_workflow: &SelectedWorkflow,
     default: InteractiveWorkflow,
 ) -> Result<InteractiveWorkflow, String> {

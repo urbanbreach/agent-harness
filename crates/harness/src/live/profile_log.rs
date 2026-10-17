@@ -20,7 +20,7 @@ fn handoff_profile_start() -> &'static Instant {
     &START
 }
 
-pub(super) fn profile_handoff(event: &str) {
+pub(crate) fn profile_handoff(event: &str) {
     let Some(file) = handoff_profile_file() else {
         return;
     };

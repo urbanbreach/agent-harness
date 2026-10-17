@@ -7,11 +7,11 @@ use harness_tui::{LiveUpdate, LiveUpdateSender};
 use super::live_intents::LiveAgentTargetState;
 use harness_core::event::EventV1;
 
-pub(super) fn is_terminal_event(payload: &EventV1) -> bool {
+pub(crate) fn is_terminal_event(payload: &EventV1) -> bool {
     matches!(payload, EventV1::RunFinished(_) | EventV1::RunFailed(_))
 }
 
-pub(super) fn latest_request_id_for_agent(
+pub(crate) fn latest_request_id_for_agent(
     historical_events: &[EventEnvelopeV1],
     agent_id: &str,
 ) -> Option<String> {
@@ -22,7 +22,7 @@ pub(super) fn latest_request_id_for_agent(
     })
 }
 
-pub(super) async fn forward_events_to_tui(
+pub(crate) async fn forward_events_to_tui(
     store: Arc<dyn EventStore>,
     live_update_tx: LiveUpdateSender,
     start_from_seq: u64,

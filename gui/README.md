@@ -39,8 +39,8 @@ gui/src (Bun, React)  ──JSON lines over stdio──▶  harness gui-server (
 ```
 
 - The backend owns everything Harness-specific: configuration, credentials,
-  sessions, coordinators (several live at once), events and intents. It reuses
-  the terminal UI's runtime wiring (`crates/harness/src/tui/live_runtime.rs`).
+  sessions, coordinators (several live at once), events and intents. It shares
+  the live session wiring with the terminal UI (`crates/harness/src/live/`).
   The wire contract is `docs/gui/protocol.md`.
 - The GUI process owns generic workspace work and never writes Harness
   journals. Per-turn checkpoints are snapshot commits under

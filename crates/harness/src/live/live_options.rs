@@ -11,7 +11,7 @@ use super::workflow::UiIntentSink;
     clippy::too_many_arguments,
     reason = "continue live TUI options mirror the live handoff state explicitly"
 )]
-pub(super) fn continue_live_tui_options(
+pub(crate) fn continue_live_tui_options(
     run_dir: PathBuf,
     historical_events: Vec<EventEnvelopeV1>,
     session_history_entries: Vec<SessionHistoryEntry>,
@@ -47,7 +47,7 @@ pub(super) fn continue_live_tui_options(
     clippy::too_many_arguments,
     reason = "new live TUI options mirror the live handoff state explicitly"
 )]
-pub(super) fn new_live_tui_options(
+pub(crate) fn new_live_tui_options(
     run_dir: PathBuf,
     session_history_entries: Vec<SessionHistoryEntry>,
     update_rx: LiveUpdateReceiver,

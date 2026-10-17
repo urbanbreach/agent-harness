@@ -44,6 +44,8 @@ mod cli_labels;
 mod defaults;
 #[path = "../../src/generated_model_catalog.rs"]
 mod generated_model_catalog;
+#[path = "../../src/live.rs"]
+mod live;
 #[path = "../../src/logging.rs"]
 mod logging;
 #[path = "../../src/recovery.rs"]
@@ -56,6 +58,7 @@ mod runtime_catalog;
 mod scenarios;
 #[path = "../../src/tui.rs"]
 mod tui_impl;
+use tui_impl as tui;
 
 fn startup_draft_test_lock() -> &'static Mutex<()> {
     tui_impl::tests::startup_draft_test_lock()

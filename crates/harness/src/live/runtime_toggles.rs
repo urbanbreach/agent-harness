@@ -4,7 +4,7 @@ use harness_core::config::{AgentMode, HarnessConfig};
 use harness_tools::{discover_skill_catalog, SkillCatalogEntry};
 use harness_tui::app::{ToggleEntryConfig, ToggleEntryKind, TogglesConfig};
 
-pub(super) fn runtime_toggles_config(
+pub(crate) fn runtime_toggles_config(
     config: Option<&HarnessConfig>,
     workspace_root: &Path,
 ) -> TogglesConfig {

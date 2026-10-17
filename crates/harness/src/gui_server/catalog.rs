@@ -245,7 +245,7 @@ async fn providers(server: &Server) -> Result<Value, String> {
                 store.as_ref(), &|name| std::env::var(name).ok())?.connected_provider_ids
         };
         let registry = harness_core::auth::plugin::AuthPluginRegistry::with_builtins();
-        Ok(Value::Array(super::super::connect_provider_options(settings.config.as_ref(), &registry, Some(&catalog))
+        Ok(Value::Array(crate::live::connect_provider_options(settings.config.as_ref(), &registry, Some(&catalog))
             .into_iter().map(|provider| {
                 let methods = provider.methods.iter().map(|method| {
                     let (id, label) = match method {

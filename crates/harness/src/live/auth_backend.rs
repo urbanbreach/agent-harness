@@ -10,21 +10,21 @@ use super::live_settings::{resolve_live_settings_with_deps, LiveSettings, LiveSe
 use super::TuiCommand;
 
 #[derive(Clone)]
-pub(super) struct TuiAuthBackendContext {
-    pub(super) config_path: Option<PathBuf>,
-    pub(super) session_dir: Option<PathBuf>,
-    pub(super) workspace_root: PathBuf,
-    pub(super) prompt_overrides: std::collections::BTreeMap<String, String>,
+pub(crate) struct TuiAuthBackendContext {
+    pub(crate) config_path: Option<PathBuf>,
+    pub(crate) session_dir: Option<PathBuf>,
+    pub(crate) workspace_root: PathBuf,
+    pub(crate) prompt_overrides: std::collections::BTreeMap<String, String>,
     /// Providers that run every turn through the installed Claude Code.
-    pub(super) claude_code_providers: std::collections::BTreeSet<String>,
+    pub(crate) claude_code_providers: std::collections::BTreeSet<String>,
     /// The config every live session clones; a login adds its provider to the shared router.
-    pub(super) providers: Option<super::coordinator_warmup::LiveCoordinatorConfigWarmup>,
+    pub(crate) providers: Option<super::coordinator_warmup::LiveCoordinatorConfigWarmup>,
     /// What the next session starts with; a login refreshes its model catalog.
-    pub(super) launch_selection: Option<super::workflow::LaunchSelection>,
+    pub(crate) launch_selection: Option<super::workflow::LaunchSelection>,
 }
 
 impl TuiAuthBackendContext {
-    pub(super) fn from_settings(settings: &LiveSettings) -> Self {
+    pub(crate) fn from_settings(settings: &LiveSettings) -> Self {
         Self {
             config_path: settings.config_path.clone(),
             session_dir: Some(settings.session_dir.clone()),
@@ -59,7 +59,7 @@ impl TuiAuthBackendContext {
         }
     }
 
-    pub(super) fn with_login_refresh(
+    pub(crate) fn with_login_refresh(
         mut self,
         providers: super::coordinator_warmup::LiveCoordinatorConfigWarmup,
         launch_selection: super::workflow::LaunchSelection,
@@ -69,7 +69,7 @@ impl TuiAuthBackendContext {
         self
     }
 
-    pub(super) fn model_prompt_notice(&self, metadata: &LaunchMetadata) -> Option<LiveUpdate> {
+    pub(crate) fn model_prompt_notice(&self, metadata: &LaunchMetadata) -> Option<LiveUpdate> {
         let target = super::launch_metadata::launch_metadata_model_target(metadata)?;
         if self.claude_code_providers.contains(&target.provider) {
             let environment: std::collections::BTreeMap<String, String> =
@@ -111,7 +111,7 @@ static AUTH_BACKEND_INPUT: std::sync::Mutex<LoginInput> = std::sync::Mutex::new(
 static AUTH_BACKEND_LOGINS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A line for the running login, or `None` to cancel it (the channel closes).
-pub(super) fn send_tui_auth_backend_input(line: Option<String>) {
+pub(crate) fn send_tui_auth_backend_input(line: Option<String>) {
     let Ok(mut slot) = AUTH_BACKEND_INPUT.lock() else {
         return;
     };
@@ -129,7 +129,7 @@ pub(super) fn send_tui_auth_backend_input(line: Option<String>) {
     }
 }
 
-pub(super) struct TuiAuthCleanup;
+pub(crate) struct TuiAuthCleanup;
 
 impl Drop for TuiAuthCleanup {
     fn drop(&mut self) {
@@ -137,7 +137,7 @@ impl Drop for TuiAuthCleanup {
     }
 }
 
-pub(super) fn spawn_tui_auth_backend_task(
+pub(crate) fn spawn_tui_auth_backend_task(
     attempt: Option<u64>,
     coordinator: Option<harness_core::coord::CoordinatorHandle>,
     args: Vec<String>,
@@ -254,7 +254,7 @@ pub(super) fn spawn_tui_auth_backend_task(
     });
 }
 
-pub(super) fn refreshed_settings_after_auth(
+pub(crate) fn refreshed_settings_after_auth(
     command: Option<&str>,
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
@@ -300,7 +300,7 @@ pub(super) fn refreshed_settings_after_auth(
 }
 
 #[cfg(test)]
-pub(super) fn run_tui_auth_backend_once_with_deps(
+pub(crate) fn run_tui_auth_backend_once_with_deps(
     args: Vec<String>,
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
@@ -318,7 +318,7 @@ pub(super) fn run_tui_auth_backend_once_with_deps(
     (message, level)
 }
 
-pub(super) fn run_tui_auth_backend_streaming_with_deps(
+pub(crate) fn run_tui_auth_backend_streaming_with_deps(
     args: Vec<String>,
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
@@ -440,7 +440,7 @@ impl Write for TuiAuthNoticeWriter {
     }
 }
 
-pub(super) fn normalize_tui_auth_args(args: Vec<String>) -> Vec<String> {
+pub(crate) fn normalize_tui_auth_args(args: Vec<String>) -> Vec<String> {
     if args.is_empty() {
         vec!["list".to_string()]
     } else {
@@ -448,7 +448,7 @@ pub(super) fn normalize_tui_auth_args(args: Vec<String>) -> Vec<String> {
     }
 }
 
-pub(super) fn display_tui_auth_args(args: &[String]) -> String {
+pub(crate) fn display_tui_auth_args(args: &[String]) -> String {
     let mut display = Vec::with_capacity(args.len());
     let mut redact_next = false;
     for arg in args {

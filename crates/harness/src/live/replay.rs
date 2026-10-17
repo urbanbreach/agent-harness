@@ -40,7 +40,7 @@ pub fn replay_workspace_root_from_events(events: &[EventEnvelopeV1]) -> Option<P
     })
 }
 
-pub(super) fn execute_replay_mode(
+pub(crate) fn execute_replay_mode(
     run_dir: &Path,
     exit_on_finish: bool,
     skip_alternate_screen: bool,
@@ -80,7 +80,7 @@ pub(super) fn execute_replay_mode(
     ExitCode::SUCCESS
 }
 
-pub(super) async fn run_replay_tui(
+pub(crate) async fn run_replay_tui(
     run_dir: PathBuf,
     exit_on_finish: bool,
     skip_alternate_screen: bool,
@@ -129,7 +129,7 @@ fn replay_launch_metadata_for_run(
     )
 }
 
-pub(super) fn is_terminal_event(payload: &EventV1) -> bool {
+pub(crate) fn is_terminal_event(payload: &EventV1) -> bool {
     matches!(payload, EventV1::RunFinished(_) | EventV1::RunFailed(_))
 }
 

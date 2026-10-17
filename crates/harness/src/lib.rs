@@ -13,7 +13,9 @@ mod config_commands;
 mod defaults;
 mod deps;
 mod exports;
+mod gui_server;
 mod inspect;
+mod live;
 mod logging;
 mod models;
 mod operations;
@@ -29,7 +31,7 @@ mod worktrees;
 pub use cli_io::CliIo;
 pub use deps::CliDeps;
 pub use harness_core::UnwrapOrAbort;
-pub use tui::replay_workspace_root_from_events;
+pub use live::replay_workspace_root_from_events;
 
 #[derive(Parser)]
 #[command(
@@ -174,8 +176,8 @@ where
         })
     });
     let result = match command {
-        Commands::Gui => tui::gui_server::launch(),
-        Commands::GuiServer { mock, mock_script } => tui::gui_server::execute(
+        Commands::Gui => gui_server::launch(),
+        Commands::GuiServer { mock, mock_script } => gui_server::execute(
             mock || cli.mock,
             mock_script,
             cli.config,

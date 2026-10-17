@@ -11,7 +11,8 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 # Shared terminal owners remain outside the backend rewrite.
 TUI_PREFIXES = (
-    "crates/harness-tui/", "crates/harness/src/tui", "crates/harness/tests/tui",
+    "crates/harness-tui/", "crates/harness/src/tui", "crates/harness/src/live",
+    "crates/harness/tests/tui",
     "crates/harness/tests/common/",
     "crates/harness/tests/pty_", "crates/harness-testkit/tests/",
     "crates/harness-testkit/src/bin/", "crates/harness-testkit/examples/",

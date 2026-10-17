@@ -240,7 +240,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
     );
     assert!(success, "{message}");
     assert!(home.join("harness.jsonc").is_file());
-    let refreshed = super::super::auth_backend::refreshed_settings_after_auth(
+    let refreshed = crate::live::auth_backend::refreshed_settings_after_auth(
         Some("login"),
         None,
         None,
@@ -272,7 +272,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
         launch_metadata: picked.clone(),
     });
     let recorded = recover_mutex_lock(&selection);
-    super::super::model_selection::save_persisted_model_selection_to_path(
+    crate::live::model_selection::save_persisted_model_selection_to_path(
         &state_path,
         &recorded.metadata,
         &recorded.config_digest,

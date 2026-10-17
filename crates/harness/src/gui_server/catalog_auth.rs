@@ -3,11 +3,11 @@ use std::sync::{atomic::Ordering, Arc};
 use harness_tui::{LiveUpdate, OperatorNoticeLevel};
 use serde_json::{json, Value};
 
-use super::super::super::auth_backend::{
+use super::super::{required as string, Server, Session};
+use crate::live::auth_backend::{
     refreshed_settings_after_auth, run_tui_auth_backend_streaming_with_deps,
     send_tui_auth_backend_input, spawn_tui_auth_backend_task, TuiAuthBackendContext,
 };
-use super::super::{required as string, Server, Session};
 
 pub(super) async fn auth_start(server: &Server, params: &Value) -> Result<Value, String> {
     let args: Vec<String> = serde_json::from_value(
@@ -119,7 +119,7 @@ async fn refresh_sessions(
             .with_available_models(settings.launch_metadata.available_models().to_vec())
             .with_resolved_models(settings.launch_metadata.resolved_models().to_vec())
             .with_switchable_profiles(settings.launch_metadata.switchable_profiles().to_vec());
-        let mut selection = super::super::super::recover_mutex_lock(&session.launch_selection);
+        let mut selection = crate::live::recover_mutex_lock(&session.launch_selection);
         selection.metadata = session.metadata.clone();
         selection.config_digest = settings.config_digest;
     }

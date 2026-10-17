@@ -16,9 +16,9 @@ use harness_core::config::ShellAllowlist;
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
-use harness_core::event::{ActorKind, EventActor, ToolCallStatus};
+use harness_core::event::ToolCallStatus;
 #[cfg(test)]
-use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::PermissionDecision;
 use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
@@ -40,10 +40,12 @@ use harness_tui::{
 #[cfg(test)]
 use harness_tui::{CompactionCommandKind, CompactionCommandOutcome, OperatorNoticeLevel};
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinHandle;
-use uuid::Uuid;
 
 use crate::cli_config::apply_runtime_metadata;
+use crate::live::{
+    await_task, connect_provider_options, recover_mutex_lock,
+    set_pending_prompt_commands_from_settings, stop_live_source_run, user_actor,
+};
 
 #[cfg(test)]
 use crate::bootstrap;
@@ -60,98 +62,62 @@ use crate::scenarios::{
     supervisor_actor, worker_actor, ScenarioName,
 };
 
-#[path = "tui/auth_backend.rs"]
-mod auth_backend;
-#[path = "tui/coordinator_warmup.rs"]
-mod coordinator_warmup;
-#[path = "tui/gui_server.rs"]
-pub(crate) mod gui_server;
-#[path = "tui/launch_metadata.rs"]
-mod launch_metadata;
-#[path = "tui/lineage.rs"]
-mod lineage;
-#[path = "tui/live_events.rs"]
-mod live_events;
-#[path = "tui/live_intents.rs"]
-mod live_intents;
-#[path = "tui/live_options.rs"]
-mod live_options;
-#[path = "tui/live_runtime.rs"]
-mod live_runtime;
-#[path = "tui/live_settings.rs"]
-mod live_settings;
-#[path = "tui/model_selection.rs"]
-mod model_selection;
-#[path = "tui/new_live.rs"]
-mod new_live;
-#[path = "tui/profile_log.rs"]
-mod profile_log;
-#[path = "tui/replay.rs"]
-mod replay;
-#[path = "tui/runtime_toggles.rs"]
-mod runtime_toggles;
-#[path = "tui/session_history.rs"]
-mod session_history;
-#[path = "tui/workflow.rs"]
-mod workflow;
-
 #[cfg(test)]
-use self::auth_backend::{
+use crate::live::auth_backend::{
     run_tui_auth_backend_once_with_deps, run_tui_auth_backend_streaming_with_deps,
 };
-use self::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
-use self::coordinator_warmup::LiveCoordinatorConfigWarmup;
-use self::launch_metadata::continue_launch_metadata;
+use crate::live::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
+use crate::live::coordinator_warmup::LiveCoordinatorConfigWarmup;
+use crate::live::launch_metadata::continue_launch_metadata;
 #[cfg(test)]
-use self::launch_metadata::interactive_launch_metadata;
+use crate::live::launch_metadata::interactive_launch_metadata;
 #[cfg(test)]
-use self::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
-use self::live_events::{forward_events_to_tui, latest_request_id_for_agent};
+use crate::live::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
+use crate::live::live_events::{forward_events_to_tui, latest_request_id_for_agent};
 #[cfg(test)]
-use self::live_intents::foreground_background_success_message;
-use self::live_intents::{handle_ui_intents, LiveAgentTarget};
-use self::live_options::{continue_live_tui_options, new_live_tui_options};
+use crate::live::live_intents::foreground_background_success_message;
+use crate::live::live_intents::{handle_ui_intents, LiveAgentTarget};
+use crate::live::live_options::{continue_live_tui_options, new_live_tui_options};
 #[cfg(test)]
-use self::live_settings::prepare_new_live_workspace;
-use self::live_settings::{
+use crate::live::live_settings::prepare_new_live_workspace;
+use crate::live::live_settings::{
     launch_metadata_for_mode, resolve_tui_mode, scenario_launch_metadata, LiveSettings,
     ResolvedTuiMode,
 };
 #[cfg(test)]
-use self::live_settings::{
+use crate::live::live_settings::{
     resolve_live_settings, resolve_live_settings_for_test, LiveSettingsDeps,
 };
 #[cfg(test)]
-use self::new_live::spawn_session_history_refresh;
-use self::new_live::{run_new_live_session, run_new_worktree_live_session};
-use self::profile_log::profile_handoff;
+use crate::live::new_live::spawn_session_history_refresh;
+use crate::live::new_live::{run_new_live_session, run_new_worktree_live_session};
+use crate::live::profile_log::profile_handoff;
 #[cfg(test)]
-use self::replay::is_terminal_event;
-pub use self::replay::replay_workspace_root_from_events;
-use self::replay::{execute_replay_mode, run_replay_tui};
+use crate::live::replay::is_terminal_event;
+use crate::live::replay::{execute_replay_mode, run_replay_tui};
 #[cfg(test)]
-use self::runtime_toggles::runtime_toggles_config;
-use self::session_history::{
+use crate::live::runtime_toggles::runtime_toggles_config;
+use crate::live::session_history::{
     load_live_session_history_entries, load_recorded_runtime_context,
     load_startup_session_history_entries,
 };
 #[cfg(test)]
-use self::workflow::UiIntentSink;
-use self::workflow::{
+use crate::live::workflow::UiIntentSink;
+use crate::live::workflow::{
     build_live_ui_intent_router, handle_model_switch_intent, map_startup_intent_to_workflow,
     persist_launch_selection_for_exit, run_interactive_workflow_loop, take_selected_workflow,
     InteractiveWorkflow, LaunchSelection, LaunchSelectionState,
 };
 
 #[cfg(test)]
-use self::model_selection::{
+use crate::live::model_selection::{
     apply_model_selection_to_launch_metadata, apply_persisted_model_selection_from_path,
     load_persisted_model_selection_from_path, save_persisted_model_selection_to_path,
     PersistedModelSelection,
 };
 
 #[cfg(test)]
-use self::launch_metadata::replay_launch_metadata;
+use crate::live::launch_metadata::replay_launch_metadata;
 
 use harness_core::auth::plugin::AuthPluginRegistry;
 #[cfg(test)]
@@ -176,14 +142,6 @@ fn set_pending_connect_providers_from_config(
     ));
 }
 
-fn set_pending_prompt_commands_from_settings(settings: &LiveSettings) {
-    harness_tui::app::set_pending_prompt_commands(harness_core::commands::discover(
-        &settings.workspace_root,
-        Some(&settings.data_dir),
-        &harness_tui::keybindings::reserved_slash_names(),
-    ));
-}
-
 fn connect_provider_options_for_mode(
     config: Option<&harness_core::config::HarnessConfig>,
     demo_mode: bool,
@@ -199,73 +157,6 @@ fn connect_provider_options_for_mode(
         &AuthPluginRegistry::with_builtins(),
         catalog.as_ref(),
     )
-}
-
-fn connect_provider_options(
-    config: Option<&harness_core::config::HarnessConfig>,
-    registry: &AuthPluginRegistry,
-    catalog: Option<&harness_core::provider_catalog::ProviderCatalog>,
-) -> Vec<ConnectProviderOption> {
-    use harness_core::auth::plugin::AuthMethodSpec;
-    use harness_core::auth::ProviderId;
-    use harness_core::config::ProviderConfig;
-    use harness_tui::app::auth_dialog::catalog_providers;
-    use std::collections::BTreeSet;
-
-    let mut providers = catalog
-        .map(|catalog| catalog_providers(catalog, registry))
-        .unwrap_or_default();
-    let mut provider_ids = providers
-        .iter()
-        .map(|provider| provider.id.to_string())
-        .collect::<BTreeSet<_>>();
-
-    let Some(config) = config else {
-        return providers;
-    };
-
-    for (provider_id, provider_config) in &config.providers {
-        if provider_ids.contains(provider_id) {
-            continue;
-        }
-        let ProviderConfig::OpenAiCompatible(oc) = provider_config else {
-            continue;
-        };
-        let label = oc.name.as_deref().unwrap_or(provider_id).to_string();
-
-        if let Some(auth_provider) = oc.auth_provider.clone() {
-            if provider_ids.contains(auth_provider.as_str()) {
-                continue;
-            }
-            if let Some(plugin) = registry.get(&auth_provider) {
-                provider_ids.insert(auth_provider.to_string());
-                providers.push(ConnectProviderOption {
-                    id: auth_provider.clone(),
-                    label,
-                    description: plugin.description().to_string(),
-                    methods: plugin.auth_methods().to_vec(),
-                    models: Vec::new(),
-                });
-            }
-        } else if !oc.api_key_env.is_empty() {
-            let env_var = oc.api_key_env[0].clone();
-            let already_set = std::env::var(&env_var).is_ok_and(|v| !v.trim().is_empty());
-            if !already_set && let Some(id) = ProviderId::parse(provider_id.as_str()) {
-                provider_ids.insert(provider_id.clone());
-                providers.push(ConnectProviderOption {
-                    id,
-                    label,
-                    description: "API key".to_string(),
-                    methods: vec![AuthMethodSpec::ApiKey {
-                        label: "Manually enter API Key".to_string(),
-                    }],
-                    models: Vec::new(),
-                });
-            }
-        }
-    }
-
-    providers
 }
 
 #[derive(Debug, Args, Clone)]
@@ -311,13 +202,6 @@ pub struct TuiCommand {
 struct LiveBootstrap {
     store: Arc<dyn EventStore>,
     run_dir: PathBuf,
-}
-
-fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
 }
 
 pub fn execute(
@@ -639,7 +523,7 @@ async fn run_startup_launcher(
         }
 
         if let UiIntent::AuthBackendInput { line } = intent {
-            auth_backend::send_tui_auth_backend_input(line);
+            crate::live::auth_backend::send_tui_auth_backend_input(line);
             return;
         }
         if let UiIntent::OpenAuthManager {
@@ -687,7 +571,7 @@ async fn run_startup_launcher(
     });
 
     let tui_result = tokio::task::spawn_blocking(move || {
-        let _auth_cleanup = auth_backend::TuiAuthCleanup;
+        let _auth_cleanup = crate::live::auth_backend::TuiAuthCleanup;
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Startup {
                 session_history_entries,
@@ -728,7 +612,7 @@ async fn run_continue_session_bootstrap(
     let (live_update_tx, live_update_rx) = live_update_channel();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let receipt_updates = live_update_tx.clone();
-    let (runtime, continue_metadata, historical_events) = live_runtime::bootstrap(
+    let (runtime, continue_metadata, historical_events) = crate::live::live_runtime::bootstrap(
         settings,
         demo_mode,
         run_id,
@@ -739,7 +623,7 @@ async fn run_continue_session_bootstrap(
         intent_rx,
     )
     .await?;
-    let new_live::NewLiveRuntime {
+    let crate::live::new_live::NewLiveRuntime {
         coordinator,
         event_forwarder_task,
         ui_intent_task,
@@ -828,7 +712,7 @@ async fn run_continue_session_bootstrap(
             no_alt_screen,
         );
         options.storage_data_dir = Some(data_dir);
-        let _auth_cleanup = auth_backend::TuiAuthCleanup;
+        let _auth_cleanup = crate::live::auth_backend::TuiAuthCleanup;
         run_tui_with_options(options)
     })
     .await
@@ -852,16 +736,6 @@ async fn run_continue_session_bootstrap(
     stop_result?;
 
     Ok(selected_workflow)
-}
-
-async fn stop_live_source_run(coordinator: &CoordinatorHandle) -> Result<(), String> {
-    let stop_result = coordinator.stop_run().await;
-    if let Err(err) = stop_result
-        && !matches!(err, CoordinatorError::RunNotStarted)
-    {
-        return Err(err.to_string());
-    }
-    Ok(())
 }
 
 async fn run_live_mode(
@@ -945,7 +819,7 @@ async fn run_live_mode(
             .await
             .map_err(|error| error.to_string())?;
         Some(Arc::new(std::sync::Mutex::new(
-            live_intents::LiveAgentTarget {
+            crate::live::live_intents::LiveAgentTarget {
                 agent_id: Some(agent_id),
                 profile: "default".into(),
                 last_request_id: None,
@@ -1048,7 +922,7 @@ async fn run_live_mode(
             no_alt_screen,
         );
         options.storage_data_dir = Some(data_dir);
-        let _auth_cleanup = auth_backend::TuiAuthCleanup;
+        let _auth_cleanup = crate::live::auth_backend::TuiAuthCleanup;
         run_tui_with_options(options)
     })
     .await
@@ -1202,35 +1076,12 @@ async fn run_scenario_runner(
     Ok(())
 }
 
-fn user_actor() -> EventActor {
-    EventActor::new(ActorKind::User, Some("interactive-user".to_string()))
-}
-
-async fn await_task(name: &str, handle: JoinHandle<Result<(), String>>) -> Result<(), String> {
-    match handle.await {
-        Ok(result) => result.map_err(|err| format!("{name} task failed: {err}")),
-        Err(err) => Err(format!("{name} task join failed: {err}")),
-    }
-}
-
-fn unique_interactive_run_id() -> String {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let namespace = Uuid::new_v5(
-        &Uuid::NAMESPACE_OID,
-        format!("interactive:{}:{}", std::process::id(), stamp).as_bytes(),
-    );
-    format!("run_{}", namespace.simple())
-}
-
 #[cfg(test)]
 pub(crate) fn replay_launch_metadata_for_test(
     run_dir: &Path,
     historical_events: &[EventEnvelopeV1],
 ) -> LaunchMetadata {
-    replay::replay_launch_metadata_for_test(run_dir, historical_events)
+    crate::live::replay::replay_launch_metadata_for_test(run_dir, historical_events)
 }
 
 #[cfg(test)]

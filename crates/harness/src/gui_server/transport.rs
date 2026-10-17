@@ -58,7 +58,7 @@ pub(super) async fn serve<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         while let Some(result) = requests.join_next().await {
             result.map_err(|e| e.to_string())?;
         }
-        super::super::auth_backend::send_tui_auth_backend_input(None);
+        crate::live::auth_backend::send_tui_auth_backend_input(None);
         let ids = server
             .sessions
             .lock()

@@ -234,11 +234,12 @@ fn persisted_model_selection_ignores_unconfigured_variant() {
 #[test]
 fn persisted_model_selection_round_trips_model_json() {
     let temp = tempfile::tempdir().unwrap_or_abort();
-    let path = model_selection::model_selection_state_path_from_lookup(&|name| match name {
-        "HARNESS_HOME" => Some(temp.path().to_string_lossy().into_owned()),
-        _ => None,
-    })
-    .unwrap_or_abort();
+    let path =
+        crate::live::model_selection::model_selection_state_path_from_lookup(&|name| match name {
+            "HARNESS_HOME" => Some(temp.path().to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .unwrap_or_abort();
     assert_eq!(path, temp.path().join("model.json"));
     let metadata = LaunchMetadata::from_model_option(&ModelOption {
         profile: "default".to_string(),

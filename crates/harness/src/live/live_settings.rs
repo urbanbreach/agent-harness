@@ -29,23 +29,23 @@ use super::workflow::LaunchSelection;
 use super::{recover_mutex_lock, TuiCommand};
 
 #[derive(Debug, Clone)]
-pub(super) struct LiveSettings {
-    pub(super) config: Option<HarnessConfig>,
-    pub(super) config_path: Option<PathBuf>,
-    pub(super) session_dir: PathBuf,
-    pub(super) data_dir: PathBuf,
-    pub(super) workspace_root: PathBuf,
-    pub(super) shell_allowlist: ShellAllowlist,
-    pub(super) deterministic: bool,
-    pub(super) yolo: bool,
-    pub(super) seed: u64,
-    pub(super) config_digest: String,
-    pub(super) launch_metadata: LaunchMetadata,
-    pub(super) launch_mode_label: Option<String>,
-    pub(super) toggles: TogglesConfig,
+pub(crate) struct LiveSettings {
+    pub(crate) config: Option<HarnessConfig>,
+    pub(crate) config_path: Option<PathBuf>,
+    pub(crate) session_dir: PathBuf,
+    pub(crate) data_dir: PathBuf,
+    pub(crate) workspace_root: PathBuf,
+    pub(crate) shell_allowlist: ShellAllowlist,
+    pub(crate) deterministic: bool,
+    pub(crate) yolo: bool,
+    pub(crate) seed: u64,
+    pub(crate) config_digest: String,
+    pub(crate) launch_metadata: LaunchMetadata,
+    pub(crate) launch_mode_label: Option<String>,
+    pub(crate) toggles: TogglesConfig,
 }
 
-pub(super) enum ResolvedTuiMode {
+pub(crate) enum ResolvedTuiMode {
     Replay {
         run_dir: PathBuf,
         workspace_root: Option<PathBuf>,
@@ -66,13 +66,13 @@ pub(super) enum ResolvedTuiMode {
     },
 }
 
-pub(super) struct LiveSettingsDeps<'a> {
-    pub(super) credential_store: Option<&'a CredentialStore>,
-    pub(super) env_lookup: &'a dyn Fn(&str) -> Option<String>,
-    pub(super) model_selection_path: Option<&'a Path>,
+pub(crate) struct LiveSettingsDeps<'a> {
+    pub(crate) credential_store: Option<&'a CredentialStore>,
+    pub(crate) env_lookup: &'a dyn Fn(&str) -> Option<String>,
+    pub(crate) model_selection_path: Option<&'a Path>,
 }
 
-pub(super) fn resolve_tui_mode(
+pub(crate) fn resolve_tui_mode(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
@@ -159,7 +159,7 @@ fn session_workspace_root_from_run_dir(run_dir: &Path) -> Option<PathBuf> {
     path.is_dir().then_some(path)
 }
 
-pub(super) fn resolve_live_settings(
+pub(crate) fn resolve_live_settings(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
@@ -182,7 +182,7 @@ pub(super) fn resolve_live_settings(
 }
 
 #[cfg(test)]
-pub(super) fn resolve_live_settings_for_test(
+pub(crate) fn resolve_live_settings_for_test(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
@@ -200,7 +200,7 @@ pub(super) fn resolve_live_settings_for_test(
     )
 }
 
-pub(super) fn resolve_live_settings_with_deps(
+pub(crate) fn resolve_live_settings_with_deps(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
@@ -362,7 +362,7 @@ fn uses_oauth_credential(
         })
 }
 
-pub(super) fn launch_metadata_for_mode(
+pub(crate) fn launch_metadata_for_mode(
     settings: &LiveSettings,
     selection: &LaunchSelection,
 ) -> LaunchMetadata {
@@ -374,7 +374,7 @@ pub(super) fn launch_metadata_for_mode(
     }
 }
 
-pub(super) fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorConfig {
+pub(crate) fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorConfig {
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
     coordinator_config.data_dir.clone_from(&settings.data_dir);
     coordinator_config.yolo_on_start = settings.yolo;
@@ -386,7 +386,7 @@ pub(super) fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorCon
     coordinator_config
 }
 
-pub(super) fn interactive_coordinator_config(
+pub(crate) fn interactive_coordinator_config(
     settings: &LiveSettings,
 ) -> Result<CoordinatorConfig, String> {
     let mut config = settings
@@ -407,7 +407,7 @@ pub(super) fn interactive_coordinator_config(
     Ok(coordinator_config)
 }
 
-pub(super) fn prepare_new_live_workspace(
+pub(crate) fn prepare_new_live_workspace(
     settings: &LiveSettings,
     demo_mode: bool,
     run_id_override: &str,
@@ -423,6 +423,6 @@ pub(super) fn prepare_new_live_workspace(
     Ok(settings.workspace_root.clone())
 }
 
-pub(super) fn scenario_launch_metadata() -> LaunchMetadata {
+pub(crate) fn scenario_launch_metadata() -> LaunchMetadata {
     LaunchMetadata::from_model_ref("default", "mock:model-1").with_mode_label("Demo")
 }

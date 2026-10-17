@@ -9,7 +9,7 @@ use super::live_settings::{demo_coordinator_config, interactive_coordinator_conf
 use super::profile_log;
 
 #[derive(Clone)]
-pub(super) struct LiveCoordinatorConfigWarmup {
+pub(crate) struct LiveCoordinatorConfigWarmup {
     state: Arc<tokio::sync::Mutex<(std::path::PathBuf, LiveCoordinatorConfigWarmupState)>>,
     mock_provider: Option<Arc<dyn harness_providers::Provider>>,
 }
@@ -21,7 +21,7 @@ enum LiveCoordinatorConfigWarmupState {
 }
 
 impl LiveCoordinatorConfigWarmup {
-    pub(super) fn start(settings: &LiveSettings, demo_mode: bool) -> Self {
+    pub(crate) fn start(settings: &LiveSettings, demo_mode: bool) -> Self {
         profile_log::profile_handoff(&format!(
             "warmup.start demo_mode={} has_config={}",
             demo_mode,
@@ -47,7 +47,7 @@ impl LiveCoordinatorConfigWarmup {
         }
     }
 
-    pub(super) fn with_mock_provider(
+    pub(crate) fn with_mock_provider(
         mut self,
         provider: Arc<dyn harness_providers::Provider>,
     ) -> Self {
@@ -55,7 +55,7 @@ impl LiveCoordinatorConfigWarmup {
         self
     }
 
-    pub(super) async fn coordinator_config(
+    pub(crate) async fn coordinator_config(
         &self,
         settings: &LiveSettings,
         demo_mode: bool,
@@ -111,7 +111,7 @@ impl LiveCoordinatorConfigWarmup {
     }
 
     /// Every live session clones this config, so its router serves a provider signed in mid-run.
-    pub(super) async fn add_signed_in_providers(
+    pub(crate) async fn add_signed_in_providers(
         &self,
         settings: &LiveSettings,
         coordinator: Option<&harness_core::coord::CoordinatorHandle>,

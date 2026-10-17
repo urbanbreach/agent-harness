@@ -1,6 +1,6 @@
-use super::coordinator_warmup::LiveCoordinatorConfigWarmup;
-use super::live_settings::{resolve_live_settings, LiveSettings};
-use super::workflow::LaunchSelectionState;
+use crate::live::coordinator_warmup::LiveCoordinatorConfigWarmup;
+use crate::live::live_settings::{resolve_live_settings, LiveSettings};
+use crate::live::workflow::LaunchSelectionState;
 use harness_core::config::ConfigLoadContext;
 use harness_core::coord::CoordinatorHandle;
 use harness_core::event::{EventV1, RuntimeEvent};
@@ -44,7 +44,7 @@ mod subscription_anthropic;
 mod subscription_codex;
 #[path = "gui_server/wire.rs"]
 mod wire;
-use super::live_runtime as resume;
+use crate::live::live_runtime as resume;
 #[cfg(test)]
 #[path = "gui_server/tests.rs"]
 mod tests;
@@ -55,7 +55,7 @@ struct Session {
     cwd: PathBuf,
     metadata: LaunchMetadata,
     warmup: LiveCoordinatorConfigWarmup,
-    launch_selection: super::workflow::LaunchSelection,
+    launch_selection: crate::live::workflow::LaunchSelection,
     intents: mpsc::UnboundedSender<UiIntent>,
     /// Access mode in the low byte; the upper bits count changes.
     access: Arc<Access>,
@@ -76,8 +76,8 @@ struct Server {
     auth_sequence: AtomicU64,
 }
 
-fn command(mock: bool) -> super::TuiCommand {
-    super::TuiCommand {
+fn command(mock: bool) -> crate::tui::TuiCommand {
+    crate::tui::TuiCommand {
         replay: None,
         continue_session: None,
         scenario: None,
@@ -191,7 +191,7 @@ impl Server {
                 .to_path_buf();
         }
         if !continuing && let Some(worktree) = params.get("worktree") {
-            settings = super::new_live::prepare_worktree_live_settings(
+            settings = crate::live::new_live::prepare_worktree_live_settings(
                 &settings,
                 worktree.get("name").and_then(Value::as_str),
                 worktree.get("baseBranch").and_then(Value::as_str),
@@ -218,7 +218,7 @@ impl Server {
                 .ok_or("invalid_params: invalid runDir")?
                 .to_owned()
         } else {
-            super::unique_interactive_run_id()
+            crate::live::unique_interactive_run_id()
         };
         let (runtime, metadata) = if let Some(path) = run_dir {
             let (runtime, resumed_metadata, _) = resume::bootstrap(
@@ -234,7 +234,7 @@ impl Server {
             .await?;
             (runtime, resumed_metadata)
         } else {
-            let runtime = super::live_runtime::bootstrap_new_live_runtime(
+            let runtime = crate::live::live_runtime::bootstrap_new_live_runtime(
                 &settings,
                 self.mock,
                 settings.workspace_root.clone(),

@@ -12,7 +12,7 @@ streams, environment values, providers, clocks, and cancellation tokens.
 | Sessions and replay | `src/sessions.rs`, `src/sessions/`, `src/replay.rs` |
 | Exports and archives | `src/exports.rs`, `src/archives.rs` |
 | Configuration and readiness | `src/config_commands.rs`, `src/inspect.rs` |
-| Interactive execution | `src/tui.rs`, `src/tui/` |
+| Interactive execution | `src/tui.rs` (TUI command), `src/gui_server.rs`, `src/gui_server/` (GUI backend), `src/live.rs`, `src/live/` (session wiring both share) |
 
 Keep runtime authority in the coordinator. Inspection and readiness must not
 execute tools, hooks, providers, or network probes. Export scans fail before

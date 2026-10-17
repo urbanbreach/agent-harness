@@ -46,7 +46,7 @@ agent-harness/
 | Add or modify tools | `crates/harness-tools/src/` | Registry, validation, execution, edit, LSP, and MCP boundaries |
 | Change code kernels | `crates/harness-eval/src/` | Persistent language sessions; host callbacks cross coordinator policy |
 | Change terminal behavior | `crates/harness-tui/src/` | Runtime I/O, state, view model, rendering, and terminal adapters |
-| Change the desktop GUI | `gui/src/` (see `gui/README.md`), `crates/harness/src/tui/gui_server.rs`, `crates/harness/src/tui/gui_server/`, `docs/gui/protocol.md` | The GUI never writes journals; Harness work goes through the gui-server, which reuses the TUI runtime wiring in `tui/live_runtime.rs` |
+| Change the desktop GUI | `gui/src/` (see `gui/README.md`), `crates/harness/src/gui_server.rs`, `crates/harness/src/gui_server/`, `docs/gui/protocol.md` | The GUI never writes journals; Harness work goes through the gui-server, which shares the live session wiring in `crates/harness/src/live/` with the TUI |
 | Add deterministic fixtures | The owning crate's `tests/` directory | Use existing local provider and tool fixtures; shared temporary workspaces live in `harness-testkit` |
 | Run scoped test suites | `scripts/test-lanes.sh` | Canonical lane runner; gated modes fail closed |
 

@@ -10,7 +10,7 @@ use harness_core::model_resolution::{resolve_model, ModelResolutionInput};
 use harness_core::proj::RecordedRuntimeContext;
 use harness_tui::app::{LaunchMetadata, ModelOption};
 
-pub(super) fn interactive_launch_metadata(
+pub(crate) fn interactive_launch_metadata(
     config: Option<&HarnessConfig>,
     agent_profiles: &BTreeMap<String, AgentProfile>,
     profile: &str,
@@ -227,7 +227,7 @@ fn model_options_from_profiles(
         .collect()
 }
 
-pub(super) fn launch_metadata_for_connected_providers(
+pub(crate) fn launch_metadata_for_connected_providers(
     launch_metadata: LaunchMetadata,
     connected_provider_ids: &[String],
     no_provider_connected: bool,
@@ -269,7 +269,7 @@ pub(super) fn launch_metadata_for_connected_providers(
     selected
 }
 
-pub(super) fn launch_metadata_model_ref(launch_metadata: &LaunchMetadata) -> Option<String> {
+pub(crate) fn launch_metadata_model_ref(launch_metadata: &LaunchMetadata) -> Option<String> {
     Some(format!(
         "{}:{}",
         launch_metadata.provider(),
@@ -277,7 +277,7 @@ pub(super) fn launch_metadata_model_ref(launch_metadata: &LaunchMetadata) -> Opt
     ))
 }
 
-pub(super) fn launch_metadata_model_settings(
+pub(crate) fn launch_metadata_model_settings(
     launch_metadata: &LaunchMetadata,
 ) -> AgentModelSettings {
     AgentModelSettings {
@@ -291,7 +291,7 @@ pub(super) fn launch_metadata_model_settings(
     }
 }
 
-pub(super) fn launch_metadata_model_target(
+pub(crate) fn launch_metadata_model_target(
     launch_metadata: &LaunchMetadata,
 ) -> Option<ResolvedModelTarget> {
     let provider = launch_metadata.provider();
@@ -379,7 +379,7 @@ fn metadata_value_present(value: &str) -> bool {
     !value.trim().is_empty()
 }
 
-pub(super) fn replay_launch_metadata(
+pub(crate) fn replay_launch_metadata(
     recorded_runtime_context: Option<&RecordedRuntimeContext>,
     historical_events: &[EventEnvelopeV1],
 ) -> LaunchMetadata {
@@ -417,7 +417,7 @@ pub(super) fn replay_launch_metadata(
     LaunchMetadata::new(profile, provider, model).with_mode_label("Replay")
 }
 
-pub(super) fn continue_launch_metadata(
+pub(crate) fn continue_launch_metadata(
     run_id: &str,
     recorded_runtime_context: Option<&RecordedRuntimeContext>,
     historical_events: &[EventEnvelopeV1],
